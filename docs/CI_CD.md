@@ -186,6 +186,14 @@ Maintainer review remains essential: contributor code can modify its own propose
 
 A successful production deployment creates a semantic-version release for the **deployed SHA**, not the controller checkout SHA. Documentation-only changes create no deployment release. Repeating a release reuses the existing release for that commit.
 
+| Label on any PR merged since the previous release | Version change |
+|---|---|
+| `release:major` | `X.0.0`: full or breaking release |
+| `release:minor` | `0.X.0`: new feature |
+| `release:patch`, or no label | `0.0.X`: fix or small change |
+
+Contributors label their own `feature/<user>` PRs. The release uses the largest label among all merged PRs since the previous release, so promotion PRs need no relabeling. The first release is `v0.1.0`.
+
 Source: [`promotion.yml`](../.github/workflows/promotion.yml), [`promote.py`](../scripts/promote.py), [`release_version.py`](../scripts/release_version.py).
 
 ## 5. Deployment fails closed before publication
