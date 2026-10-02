@@ -113,7 +113,7 @@ def prepare_pr(repo, run, target):
             'head': source, 'base': target,
             'title': f'Promote {source} to {target}',
             'body': f'Candidate `{sha}` passed [{run["name"]}]({run["html_url"]}).\n\n'
-                    'An organization admin must review and merge. This controller cannot merge. '
+                    'A maintainer must review and merge. This controller cannot merge. '
                     'Use a hold label, request changes, or close this PR to stop promotion.'})
     # Dispatched runs are not attached to the PR automatically. Publish only the
     # verified exact head; strict branch rules still require the current base.
