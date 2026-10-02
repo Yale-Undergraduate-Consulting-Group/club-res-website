@@ -1,7 +1,7 @@
 ---
 description: Create a contributor branch named feature/<github-login> or feature/<github-login>-<topic> from the current shared base branch.
+when_to_use: Use on your own before the first file edit when the current branch is main, integration, dev, or prod. A hook blocks edits on those branches.
 argument-hint: "[optional short topic, e.g. search]"
-disable-model-invocation: true
 allowed-tools: Bash(git fetch *) Bash(git switch *) Bash(gh api user *)
 ---
 
@@ -24,4 +24,4 @@ Topic: $ARGUMENTS
    - `origin/integration` when it exists.
    - Otherwise `origin/main`. Tell me that `integration`, `dev`, and `prod` are not set up yet, so the staged checks do not run yet.
 6. Run `git switch -c <name> <base>`. If the branch already exists, switch to it and ask before resetting anything.
-7. Do not push. Tell me the next step: build the change, then run `/open-pr`.
+7. Do not push. Continue with the task. When it is complete, use the `open-pr` skill.

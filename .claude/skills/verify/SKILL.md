@@ -1,5 +1,6 @@
 ---
 description: Run this repository's checks for the files that changed, and report what ran and what did not. Use before committing or opening a PR.
+when_to_use: Use on your own after changing code, before committing, and before saying a task is done.
 ---
 
 ## Changed files

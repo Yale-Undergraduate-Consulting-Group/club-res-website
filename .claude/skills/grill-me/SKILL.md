@@ -1,10 +1,10 @@
 ---
-description: Interview the contributor about a plan, one question at a time, until the plan is clear enough to build. Use before nontrivial work.
+description: Interview the contributor about a planned change, one question at a time, until the plan is clear enough to build. Writes no code.
+when_to_use: Use on your own before writing code for any new feature, page, data flow, AWS change, or change spanning several files. Skip typo fixes, one-line bug fixes, and doc wording changes.
 argument-hint: "[what you want to build or change]"
-disable-model-invocation: true
 ---
 
-Plan to examine: $ARGUMENTS
+Plan to examine: $ARGUMENTS (when empty, use the change the contributor just asked for)
 
 Interview me about this plan until we share one clear understanding of it. Do not write or edit code during the interview.
 

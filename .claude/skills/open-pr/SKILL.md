@@ -1,6 +1,6 @@
 ---
 description: Check, push, and open a pull request from a feature/<user> branch into the shared base branch, with a release label.
-disable-model-invocation: true
+when_to_use: Use on your own when the requested change is complete and the verify skill passes, unless the contributor said not to open a PR yet. The push asks the contributor for approval.
 ---
 
 ## Current state
