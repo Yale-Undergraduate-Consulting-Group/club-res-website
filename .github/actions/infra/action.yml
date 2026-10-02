@@ -1,0 +1,27 @@
+name: Infrastructure and controller checks
+description: Controller tests, shell syntax and offline Terraform checks for staged club delivery.
+runs:
+  using: composite
+  steps:
+    - name: Check delivery script syntax
+      shell: bash
+      run: for script in scripts/*.sh; do bash -n "$script"; done
+    - name: Test the delivery controller, policy and workflow contracts
+      shell: bash
+      run: python3 -m unittest discover -s tests -p 'test_*.py'
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |
+          /tmp/club-terraform
+          ~/.terraform.d/plugin-cache
+        key: club-terraform-${{ runner.os }}-${{ hashFiles('scripts/install-terraform.sh', 'terraform/.terraform.lock.hcl') }}
+    - name: Install checksum-verified Terraform
+      shell: bash
+      run: bash scripts/install-terraform.sh
+    - name: Validate infrastructure contracts without AWS credentials
+      shell: bash
+      run: |
+        terraform -chdir=terraform fmt -check -recursive
+        terraform -chdir=terraform init -backend=false -lockfile=readonly -input=false
+        terraform -chdir=terraform validate
+        terraform -chdir=terraform test

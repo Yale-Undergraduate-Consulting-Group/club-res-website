@@ -1,0 +1,79 @@
+name: Ship the verified static site
+description: Publish the verified static export to its S3 bucket, invalidate CloudFront and check the live site.
+inputs:
+  role:
+    description: Deploy role supplied by the stage workflow.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Require an explicit environment binding
+      shell: bash
+      env:
+        ROLE: ${{ inputs.role }}
+      run: |
+        [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+        [[ "$ROLE" == "arn:aws:iam::${AWS_ACCOUNT_ID}:role/"?* ]]
+        test -n "$AWS_REGION"
+        [[ "$SITE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
+        [[ "$CLOUDFRONT_DISTRIBUTION_ID" =~ ^[A-Z0-9]+$ ]]
+        [[ "$SITE_URL" == https://* ]]
+        [[ "$EXPECTED_SITE_SHA256" =~ ^[a-f0-9]{64}$ ]]
+        case "$DEPLOYMENT_ENV:$GITHUB_REF" in
+          beta:refs/heads/feature|production:refs/heads/main) ;;
+          *) exit 1 ;;
+        esac
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: club-site-${{ github.sha }}
+        path: /tmp/club-site
+    - name: Verify and unpack the exact verified export
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd /tmp/club-site
+        echo "${EXPECTED_SITE_SHA256}  site.tar.gz" | sha256sum -c -
+        sha256sum -c SHA256SUMS
+        mkdir out
+        tar -xzf site.tar.gz -C out
+        test -s out/index.html
+    - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+      with:
+        role-to-assume: ${{ inputs.role }}
+        aws-region: ${{ env.AWS_REGION }}
+        allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+        retry-max-attempts: 3
+    - name: Publish hashed assets, then pages
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd /tmp/club-site/out
+        # Content-hashed Next.js assets are immutable and stay available for
+        # pages still open in browsers; they are uploaded before any page
+        # that references them.
+        if [ -d _next/static ]; then
+          aws s3 sync _next/static "s3://${SITE_BUCKET}/_next/static" \
+            --cache-control 'public,max-age=31536000,immutable' --only-show-errors
+        fi
+        # Pages: browsers revalidate every load; the edge keeps them until the
+        # invalidation below. --delete removes pages this revision no longer has.
+        aws s3 sync . "s3://${SITE_BUCKET}" --delete --exclude '_next/static/*' \
+          --cache-control 'public,max-age=0,s-maxage=31536000,must-revalidate' --only-show-errors
+    - name: Invalidate CloudFront and wait for completion
+      shell: bash
+      run: |
+        set -euo pipefail
+        INVALIDATION="$(aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+          --paths '/*' --query Invalidation.Id --output text)"
+        aws cloudfront wait invalidation-completed --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --id "$INVALIDATION"
+    - name: Verify the public site serves this revision
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl --fail --silent --show-error --location --max-time 20 --retry 3 --retry-all-errors \
+          "$SITE_URL" -o /tmp/club-site/live-index.html
+        if ! cmp -s /tmp/club-site/live-index.html /tmp/club-site/out/index.html; then
+          echo "::error::$SITE_URL answered, but not with this revision's index.html"
+          exit 1
+        fi
+        echo "Live: $SITE_URL serves the index.html of ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
