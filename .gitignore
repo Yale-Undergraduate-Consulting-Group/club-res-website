@@ -3,6 +3,10 @@
 !.env.example
 .DS_Store
 
+# Personal Claude Code files; shared settings live in .claude/settings.json
+CLAUDE.local.md
+.claude/settings.local.json
+
 # Python
 __pycache__/
 *.pyc
