@@ -1,0 +1,32 @@
+name: Promotion
+'on':
+  workflow_run:
+    workflows:
+    - Intake
+    - Dev
+    - Production
+    types:
+    - completed
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  statuses: write
+concurrency:
+  group: trusted-promotion
+  cancel-in-progress: false
+jobs:
+  advance:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+        persist-credentials: false
+    - name: Prepare reviewed PR or next verification
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/promote.py

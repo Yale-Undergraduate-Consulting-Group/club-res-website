@@ -1,34 +1,13 @@
-name: Production
+name: Dev
 'on':
   push:
     branches:
-    - prod
+    - integration
+    - dev
   pull_request:
     branches:
-    - prod
-  workflow_dispatch:
-    inputs:
-      operation:
-        description: Application delivery or reviewed infrastructure operation
-        type: choice
-        options:
-        - deliver
-        - plan
-        - apply
-        default: deliver
-      target:
-        description: Infrastructure account
-        type: choice
-        options:
-        - dev
-        - prod
-        default: prod
-      plan_run_id:
-        description: Reviewed saved plan run ID
-        type: string
-      plan_sha256:
-        description: Reviewed saved plan SHA256
-        type: string
+    - dev
+  workflow_dispatch: {}
 permissions:
   contents: read
 concurrency:
@@ -57,24 +36,17 @@ jobs:
         HEAD_REF: ${{ github.head_ref }}
         BASE_REF: ${{ github.base_ref }}
         SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-        OPERATION: ${{ inputs.operation || 'deliver' }}
       run: |
         set -euo pipefail
-        if [ "$OPERATION" != deliver ]; then
-          test "$REF" = refs/heads/prod
-          case "$OPERATION" in plan|apply) ;; *) exit 1 ;; esac
-          echo phase=maintenance >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
         if [ "$EVENT" = pull_request ]; then
           test "$SAME_REPOSITORY" = true
-          test "$BASE_REF" = "prod"
-          case "$HEAD_REF" in dev) ;; *) exit 1 ;; esac
+          test "$BASE_REF" = "dev"
+          case "$HEAD_REF" in integration) ;; *) exit 1 ;; esac
           echo phase=verify >> "$GITHUB_OUTPUT"
         else
           case "$REF" in
-            refs/heads/dev) echo phase=verify >> "$GITHUB_OUTPUT" ;;
-            refs/heads/prod) echo phase=ship >> "$GITHUB_OUTPUT" ;;
+            refs/heads/integration) echo phase=verify >> "$GITHUB_OUTPUT" ;;
+            refs/heads/dev) echo phase=ship >> "$GITHUB_OUTPUT" ;;
             *) exit 1 ;;
           esac
         fi
@@ -82,17 +54,16 @@ jobs:
       with:
         persist-credentials: false
         fetch-depth: 0
-      if: steps.route.outputs.phase != 'maintenance'
     - uses: ./.github/actions/scope
       id: classify
       if: steps.route.outputs.phase != 'maintenance'
       with:
-        stage: production
+        stage: dev
         phase: ${{ steps.route.outputs.phase }}
     - uses: ./.github/actions/security
       if: steps.classify.outputs.security == 'true'
       with:
-        stage: production
+        stage: dev
   backend:
     needs: scope
     if: needs.scope.outputs.backend == 'true'
@@ -104,7 +75,7 @@ jobs:
         persist-credentials: false
     - uses: ./.github/actions/backend
       with:
-        stage: production
+        stage: dev
   frontend:
     needs: scope
     if: needs.scope.outputs.frontend == 'true'
@@ -116,7 +87,7 @@ jobs:
         persist-credentials: false
     - uses: ./.github/actions/frontend
       with:
-        stage: production
+        stage: dev
         phase: ${{ needs.scope.outputs.phase }}
       id: build
     outputs:
@@ -132,7 +103,7 @@ jobs:
         persist-credentials: false
     - uses: ./.github/actions/infra
       with:
-        stage: production
+        stage: dev
   image:
     needs: scope
     if: needs.scope.outputs.image == 'true'
@@ -144,20 +115,16 @@ jobs:
         persist-credentials: false
     - uses: ./.github/actions/image
   required-checks:
-    name: production-required-checks
+    name: dev-required-checks
     needs:
     - scope
     - backend
     - frontend
     - infra
     - image
-    if: ${{ always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.operation == '' || inputs.operation
-      == 'deliver') }}
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
     steps:
     - name: Require route and security success
       env:
@@ -170,12 +137,6 @@ jobs:
       with:
         scope: ${{ needs.scope.outputs.scope }}
         results: ${{ toJSON(needs) }}
-    - name: Require the exact candidate deployment in dev
-      if: needs.scope.outputs.phase == 'verify'
-      env:
-        GH_TOKEN: ${{ github.token }}
-        CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      run: python3 scripts/promote.py --verify-dev "$CANDIDATE_SHA"
   deploy:
     needs:
     - scope
@@ -185,7 +146,7 @@ jobs:
       needs.scope.outputs.deploy == 'true' && needs.frontend.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: prod
+    environment: dev
     permissions:
       contents: read
       id-token: write
@@ -198,7 +159,7 @@ jobs:
       SITE_BUCKET: ${{ vars.SITE_BUCKET }}
       CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
       SITE_URL: ${{ vars.SITE_URL }}
-      DEPLOYMENT_ENV: prod
+      DEPLOYMENT_ENV: dev
       EXPECTED_SITE_SHA256: ${{ needs.frontend.outputs.site_sha256 }}
       BACKEND_CHANGED: ${{ needs.scope.outputs.backend_runtime }}
     steps:
@@ -217,45 +178,3 @@ jobs:
     - uses: ./.github/actions/ship
       with:
         role: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-  infrastructure:
-    needs: scope
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.operation == 'plan' || inputs.operation == 'apply') && github.ref
-      == 'refs/heads/prod' }}
-    environment: infrastructure-${{ inputs.target }}-${{ inputs.operation }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-      with:
-        path: |
-          /tmp/club-terraform
-          ~/.terraform.d/plugin-cache
-        key: club-terraform-${{ runner.os }}-${{ hashFiles('scripts/install-terraform.sh', 'terraform/.terraform.lock.hcl')
-          }}
-    - run: bash scripts/install-terraform.sh
-    - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
-      with:
-        role-to-assume: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
-        aws-region: ${{ vars.TF_REGION }}
-        allowed-account-ids: ${{ vars.TF_ACCOUNT_ID }}
-        retry-max-attempts: 3
-    - name: Execute the reviewed infrastructure operation
-      env:
-        OPERATION: ${{ inputs.operation }}
-        PLAN_RUN_ID: ${{ inputs.plan_run_id }}
-        APPROVED_PLAN_SHA256: ${{ inputs.plan_sha256 }}
-        TF_TARGET: ${{ inputs.target }}
-        TF_REGION: ${{ vars.TF_REGION }}
-        TF_ACCOUNT_ID: ${{ vars.TF_ACCOUNT_ID }}
-        TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-        TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
-        TF_BUDGET_EMAIL: ${{ vars.TF_BUDGET_EMAIL }}
-        TF_MONTHLY_BUDGET_USD: ${{ vars.TF_MONTHLY_BUDGET_USD }}
-        TF_MANAGE_GITHUB_OIDC_PROVIDER: ${{ vars.TF_MANAGE_GITHUB_OIDC_PROVIDER }}
-      run: bash scripts/terraform-release.sh "$OPERATION"

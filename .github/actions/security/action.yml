@@ -1,5 +1,9 @@
 name: Security scans
 description: File-level security scans for staged club delivery; runs inside the scope job.
+inputs:
+  stage:
+    description: Intake scans secrets without requiring AWS configuration compatibility.
+    required: true
 runs:
   using: composite
   steps:
@@ -10,7 +14,7 @@ runs:
       with:
         version: v0.70.0
         scan-type: fs
-        scanners: secret,misconfig
+        scanners: ${{ inputs.stage == 'intake' && 'secret' || 'secret,misconfig' }}
         severity: HIGH,CRITICAL
         exit-code: '1'
     - id: backend

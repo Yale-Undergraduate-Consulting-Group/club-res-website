@@ -8,9 +8,6 @@ inputs:
     description: Phase supplied by the stage workflow.
     required: true
 outputs:
-  lane:
-    description: Fast patch or standard progression lane.
-    value: ${{ steps.changes.outputs.lane }}
   scope:
     description: Scope computed for this revision.
     value: ${{ steps.changes.outputs.scope }}
@@ -18,7 +15,7 @@ outputs:
     description: Backend test lane required.
     value: ${{ steps.changes.outputs.backend }}
   frontend:
-    description: Frontend lane required (checks when verifying, static export build when shipping).
+    description: Frontend checks and build required.
     value: ${{ steps.changes.outputs.frontend }}
   infra:
     description: Terraform and controller test lane required.
@@ -32,11 +29,14 @@ outputs:
   runtime:
     description: Frontend or backend code changed.
     value: ${{ steps.changes.outputs.runtime }}
+  deploy:
+    description: Non-documentation change requires downstream deployment.
+    value: ${{ steps.changes.outputs.deploy }}
   frontend_runtime:
-    description: Frontend code changed; the static site is shipped from this revision.
+    description: Frontend source changed.
     value: ${{ steps.changes.outputs.frontend_runtime }}
   backend_runtime:
-    description: Backend code changed; it is verified but not shipped.
+    description: Backend source changed; shipping is blocked until a host exists.
     value: ${{ steps.changes.outputs.backend_runtime }}
 runs:
   using: composite
