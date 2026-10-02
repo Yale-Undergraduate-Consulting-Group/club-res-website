@@ -22,10 +22,10 @@ provider "aws" {
 
 variable "environment" {
   type        = string
-  description = "Delivery environment of this state: beta (feature branch) or production (main branch)."
+  description = "Delivery environment and branch of this state: dev or prod."
   validation {
-    condition     = contains(["beta", "production"], var.environment)
-    error_message = "environment must be beta or production."
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be dev or prod."
   }
 }
 

@@ -1,6 +1,6 @@
 # Monthly cost alert for this site environment. The filter counts only
-# resources carrying this environment's default "Site" tag, so beta and
-# production are tracked apart even in a shared account. Prerequisite: activate
+# resources carrying this environment's default "Site" tag, so dev and
+# prod are tracked apart even in a shared account. Prerequisite: activate
 # "Site" once per account under Billing > Cost allocation tags (it appears
 # about a day after the first tagged resource exists); until then AWS cannot
 # attribute spend to the tag and this budget reports zero.

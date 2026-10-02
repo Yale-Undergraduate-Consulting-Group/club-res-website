@@ -72,7 +72,7 @@ resource "aws_iam_role_policy" "deploy" {
   })
 }
 
-# Runs reviewed plan/apply from main. It reads and updates the resources of
+# Runs reviewed plan/apply from prod. It reads and updates the resources of
 # this state; it cannot create or delete them. The first apply (bootstrap) and
 # any change that creates, replaces or deletes a resource run with operator
 # credentials, and the apply environment requires a reviewer.

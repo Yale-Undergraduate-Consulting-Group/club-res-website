@@ -20,7 +20,7 @@ runs:
         [[ "$SITE_URL" == https://* ]]
         [[ "$EXPECTED_SITE_SHA256" =~ ^[a-f0-9]{64}$ ]]
         case "$DEPLOYMENT_ENV:$GITHUB_REF" in
-          beta:refs/heads/feature|production:refs/heads/main) ;;
+          dev:refs/heads/dev|prod:refs/heads/prod) ;;
           *) exit 1 ;;
         esac
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c

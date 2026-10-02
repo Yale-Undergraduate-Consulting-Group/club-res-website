@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Trusted reviewed main only. Saved plans stay in the private encrypted state
+# Trusted reviewed prod only. Saved plans stay in the private encrypted state
 # bucket, never in public artifacts. Apply runs only the exact plan whose SHA256
 # a reviewer approved, under the remote state lock.
 set -euo pipefail
@@ -8,7 +8,7 @@ umask 0077
 : "${GITHUB_SHA:?}" "${TF_TARGET:?}"
 : "${GITHUB_RUN_ID:?}" "${GITHUB_REPOSITORY:?}"
 [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
-[[ "$TF_TARGET" == beta || "$TF_TARGET" == production ]]
+[[ "$TF_TARGET" == dev || "$TF_TARGET" == prod ]]
 test "$(aws sts get-caller-identity --query Account --output text)" = "$TF_ACCOUNT_ID"
 aws s3api get-public-access-block --bucket "$TF_STATE_BUCKET" --expected-bucket-owner "$TF_ACCOUNT_ID" --query PublicAccessBlockConfiguration | jq -e '.BlockPublicAcls == true and .BlockPublicPolicy == true and .IgnorePublicAcls == true and .RestrictPublicBuckets == true' >/dev/null
 aws s3api get-bucket-versioning --bucket "$TF_STATE_BUCKET" --expected-bucket-owner "$TF_ACCOUNT_ID" | jq -e '.Status == "Enabled"' >/dev/null

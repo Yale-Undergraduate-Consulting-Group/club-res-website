@@ -1,149 +1,127 @@
 name: Intake
-on:
-  pull_request:
-    branches: [develop]
+'on':
   push:
-    branches: [develop]
-  workflow_dispatch:
+    branches:
+    - feature/*
+  pull_request:
+    branches:
+    - integration
+  workflow_dispatch: {}
 permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/feature/') }}
 jobs:
-  # Routing, classification and file-level security share one runner.
   scope:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
     outputs:
-      mode: ${{ steps.route.outputs.mode }}
-      lane: ${{ steps.classify.outputs.lane }}
+      phase: ${{ steps.route.outputs.phase }}
       scope: ${{ steps.classify.outputs.scope }}
       backend: ${{ steps.classify.outputs.backend }}
       frontend: ${{ steps.classify.outputs.frontend }}
       infra: ${{ steps.classify.outputs.infra }}
       image: ${{ steps.classify.outputs.image }}
       security: ${{ steps.classify.outputs.security }}
-      runtime: ${{ steps.classify.outputs.runtime }}
-      frontend_runtime: ${{ steps.classify.outputs.frontend_runtime }}
+      deploy: ${{ steps.classify.outputs.deploy }}
       backend_runtime: ${{ steps.classify.outputs.backend_runtime }}
     steps:
-      - id: route
-        name: Choose Intake waterfall
-        env:
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          if [ "$EVENT" = pull_request ]; then
-            test "$SAME_REPOSITORY" = true
-          fi
-          if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "$REF" != refs/heads/develop ]; }; then
-            echo mode=tests >> "$GITHUB_OUTPUT"
-            echo 'Intake: topic → develop. Classified lanes only. No image. No deploy.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo mode=promote >> "$GITHUB_OUTPUT"
-            echo 'Intake: develop is current. Open or advance Beta. Do not re-run tests.' >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: steps.route.outputs.mode == 'tests'
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: ./.github/actions/scope
-        id: classify
-        if: steps.route.outputs.mode == 'tests'
-        with:
-          stage: intake
-          phase: verify
-      - uses: ./.github/actions/security
-        if: steps.classify.outputs.security == 'true'
+    - id: route
+      name: Select the stage operation
+      env:
+        EVENT: ${{ github.event_name }}
+        REF: ${{ github.ref }}
+        HEAD_REF: ${{ github.head_ref }}
+        BASE_REF: ${{ github.base_ref }}
+        SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+      run: |
+        set -euo pipefail
+        if [ "$EVENT" = pull_request ]; then
+          test "$SAME_REPOSITORY" = true
+          test "$BASE_REF" = "integration"
+          case "$HEAD_REF" in feature/*) ;; *) exit 1 ;; esac
+          case "${HEAD_REF:-${REF#refs/heads/}}" in feature/*/*|feature/) exit 1 ;; esac
+          echo phase=verify >> "$GITHUB_OUTPUT"
+        else
+          case "$REF" in
+            refs/heads/feature/*/*|refs/heads/feature/) exit 1 ;;
+            refs/heads/feature/*) echo phase=verify >> "$GITHUB_OUTPUT" ;;
+            *) exit 1 ;;
+          esac
+        fi
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: ./.github/actions/scope
+      id: classify
+      with:
+        stage: intake
+        phase: ${{ steps.route.outputs.phase }}
+    - uses: ./.github/actions/security
+      if: steps.classify.outputs.security == 'true'
+      with:
+        stage: intake
   backend:
-    timeout-minutes: 15
     needs: scope
     if: needs.scope.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/backend
-        with:
-          stage: intake
-  frontend:
     timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/backend
+      with:
+        stage: intake
+  frontend:
     needs: scope
     if: needs.scope.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/frontend
-        with:
-          stage: intake
-          phase: verify
-  infra:
     timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/frontend
+      with:
+        stage: intake
+        phase: ${{ needs.scope.outputs.phase }}
+      id: build
+    outputs:
+      site_sha256: ${{ steps.build.outputs.site_sha256 }}
+  infra:
     needs: scope
     if: needs.scope.outputs.infra == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/infra
-  # The aggregate check also accounts for every selected lane (no separate gate runner).
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/infra
+      with:
+        stage: intake
   required-checks:
     name: intake-required-checks
+    needs:
+    - scope
+    - backend
+    - frontend
+    - infra
     if: ${{ always() && !cancelled() }}
-    needs: [scope, backend, frontend, infra]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
     steps:
-      - name: Require routing, classification and security scans
-        env:
-          SCOPE: ${{ needs.scope.result }}
-        run: test "$SCOPE" = success
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: needs.scope.outputs.mode == 'tests'
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/gate
-        if: needs.scope.outputs.mode == 'tests'
-        with:
-          scope: ${{ needs.scope.outputs.scope }}
-          results: ${{ toJSON(needs) }}
-  promote:
-    needs: required-checks
-    if: ${{ !cancelled() && needs.required-checks.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-      pull-requests: write
-      actions: write
-      statuses: write
-    steps:
-      # Load trusted code already on main; the new composites need not exist there yet.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - name: Advance the next club branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROMOTION_DISPATCH: '1'
-          PROMOTION_PUBLISH_CHECK: '1'
-          PROMOTION_STAGE: Intake
-        run: python3 scripts/promote.py
+    - name: Require route and security success
+      env:
+        SCOPE: ${{ needs.scope.result }}
+      run: test "$SCOPE" = success
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/gate
+      with:
+        scope: ${{ needs.scope.outputs.scope }}
+        results: ${{ toJSON(needs) }}

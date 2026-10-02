@@ -7,11 +7,11 @@ mock_provider "aws" {
 }
 
 variables {
-  environment        = "beta"
+  environment        = "dev"
   monthly_budget_usd = 10
   budget_email       = "treasurer@example.org"
   tf_state_bucket    = "club-res-website-tfstate-test"
-  tf_state_key       = "club-res-website/beta.tfstate"
+  tf_state_key       = "club-res-website/dev.tfstate"
 }
 
 run "site_bucket_is_private" {
@@ -60,16 +60,16 @@ run "role_trust_is_pinned_to_the_environment" {
   command = plan
 
   assert {
-    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:beta"
-    error_message = "The deploy role must trust only the beta GitHub environment of this repository."
+    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:dev"
+    error_message = "The deploy role must trust only the dev GitHub environment of this repository."
   }
   assert {
     condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Principal.Federated == "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
     error_message = "The deploy role must trust only the GitHub OIDC provider of this account."
   }
   assert {
-    condition     = toset(jsondecode(aws_iam_role.terraform.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset(["repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:infrastructure-beta-plan", "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:infrastructure-beta-apply"])
-    error_message = "The Terraform role must trust only the beta infrastructure plan and apply environments."
+    condition     = toset(jsondecode(aws_iam_role.terraform.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset(["repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:infrastructure-dev-plan", "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:infrastructure-dev-apply"])
+    error_message = "The Terraform role must trust only the dev infrastructure plan and apply environments."
   }
 }
 
@@ -77,16 +77,16 @@ run "production_trust_follows_the_environment" {
   command = plan
 
   variables {
-    environment  = "production"
-    tf_state_key = "club-res-website/production.tfstate"
+    environment  = "prod"
+    tf_state_key = "club-res-website/prod.tfstate"
   }
 
   assert {
-    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:production"
-    error_message = "The production deploy role must trust only the production GitHub environment."
+    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:prod"
+    error_message = "The production deploy role must trust only the prod GitHub environment."
   }
   assert {
-    condition     = aws_s3_bucket.site.bucket == "club-res-website-production-site-123456789012"
+    condition     = aws_s3_bucket.site.bucket == "club-res-website-prod-site-123456789012"
     error_message = "Each environment and account gets its own site bucket."
   }
 }
