@@ -77,10 +77,11 @@ A branch named `feature` cannot coexist with `feature/user` in Git.
 
 - Follow active rules and the reviewed workflow contract; never bypass a gate merely to make a run green.
 - Do not silently change branches, required checks, merge rights, or deployment approvals.
-- Prefer risk-based review and delegated maintainers over requiring an organization owner for every PR.
+- A maintainer is anyone with the repository admin role; organization owners also qualify.
+- Name roles, not individuals, in rules, docs, and configuration. Membership changes belong in GitHub settings.
 - Organization ownership, repository administration, code review, merge permission, and AWS access are different permissions.
-- Existing proposals require owner review; delegated review and low-risk auto-merge remain recommendations until approved and configured.
-- Use relevant code-owner review for IAM, client access, deletion, workflow permissions, and protection changes.
+- Shared-branch merges need one approval and a maintainer; low-risk auto-merge remains a recommendation until configured.
+- Ask a second maintainer to review IAM, client access, deletion, workflow permissions, and protection changes when one is available.
 - Keep automation credentials narrow; do not grant every candidate workflow a shared-branch bypass.
 - An empty environment list does not prove missing permission. Report the actual API result and operation.
 - Namespace rules do not prove personal ownership of `feature/<user>` branches.
