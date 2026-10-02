@@ -1,0 +1,28 @@
+name: Account for required checks
+description: Account for required checks for staged club delivery.
+inputs:
+  scope:
+    description: Scope supplied by the stage workflow.
+    required: true
+  results:
+    description: Results supplied by the stage workflow.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Account for every required or intentionally excluded check
+      shell: bash
+      env:
+        SCOPE: ${{ inputs.scope }}
+        RESULTS: ${{ inputs.results }}
+      run: |
+        python3 - <<'PYTHON'
+        import json, os, sys
+        from scripts.ci_policy import check_results
+        results = json.loads(os.environ['RESULTS'])
+        if results['scope']['result'] != 'success':
+            sys.exit('Change classification or security scans failed; no checks may be bypassed')
+        errors = check_results(json.loads(os.environ['SCOPE']), results)
+        for error in errors: print(error)
+        sys.exit(bool(errors))
+        PYTHON

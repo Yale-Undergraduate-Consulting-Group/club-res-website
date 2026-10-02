@@ -1,0 +1,30 @@
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage*
+coverage.xml
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+
+# Terraform: state, plans, variable files and local backend settings never belong in Git.
+# The provider lock file (terraform/.terraform.lock.hcl) is committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+backend.hcl
+crash.log
+crash.*.log

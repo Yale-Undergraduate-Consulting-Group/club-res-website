@@ -1,0 +1,50 @@
+name: Classify the diff
+description: Classify the diff for staged club delivery.
+inputs:
+  stage:
+    description: Stage supplied by the stage workflow.
+    required: true
+  phase:
+    description: Phase supplied by the stage workflow.
+    required: true
+outputs:
+  lane:
+    description: Fast patch or standard progression lane.
+    value: ${{ steps.changes.outputs.lane }}
+  scope:
+    description: Scope computed for this revision.
+    value: ${{ steps.changes.outputs.scope }}
+  backend:
+    description: Backend test lane required.
+    value: ${{ steps.changes.outputs.backend }}
+  frontend:
+    description: Frontend lane required (checks when verifying, static export build when shipping).
+    value: ${{ steps.changes.outputs.frontend }}
+  infra:
+    description: Terraform and controller test lane required.
+    value: ${{ steps.changes.outputs.infra }}
+  image:
+    description: Backend container image build and scan required.
+    value: ${{ steps.changes.outputs.image }}
+  security:
+    description: File-level security scans required.
+    value: ${{ steps.changes.outputs.security }}
+  runtime:
+    description: Frontend or backend code changed.
+    value: ${{ steps.changes.outputs.runtime }}
+  frontend_runtime:
+    description: Frontend code changed; the static site is shipped from this revision.
+    value: ${{ steps.changes.outputs.frontend_runtime }}
+  backend_runtime:
+    description: Backend code changed; it is verified but not shipped.
+    value: ${{ steps.changes.outputs.backend_runtime }}
+runs:
+  using: composite
+  steps:
+    - id: changes
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        STAGE: ${{ inputs.stage }}
+        PHASE: ${{ inputs.phase }}
+      run: python3 scripts/ci_policy.py "$STAGE"

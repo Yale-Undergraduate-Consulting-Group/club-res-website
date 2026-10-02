@@ -1,0 +1,42 @@
+name: Backend image
+description: Build, scan and smoke-test the backend container image with a cached layer store. Verified, not shipped.
+runs:
+  using: composite
+  steps:
+    - name: Require the backend Dockerfile
+      shell: bash
+      run: |
+        if [ ! -f backend/Dockerfile ]; then
+          echo '::error::backend/ changed but backend/Dockerfile is missing'
+          exit 1
+        fi
+    # Dependency layers change only with the Dockerfile or requirements; source-only
+    # changes restore them and rebuild just the application layers.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: /tmp/club-buildx-cache
+        key: club-backend-buildx-${{ runner.os }}-${{ hashFiles('backend/Dockerfile', 'backend/requirements*.txt') }}
+        restore-keys: |
+          club-backend-buildx-${{ runner.os }}-
+    - name: Build the backend image
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker buildx create --name club-builder --driver docker-container --use > /dev/null
+        docker buildx build --platform linux/amd64 --file backend/Dockerfile \
+          --tag "club-backend:${GITHUB_SHA}" --load \
+          --cache-from type=local,src=/tmp/club-buildx-cache \
+          --cache-to type=local,dest=/tmp/club-buildx-cache-next,mode=max \
+          backend
+        rm -rf /tmp/club-buildx-cache
+        mv /tmp/club-buildx-cache-next /tmp/club-buildx-cache
+    - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+      with:
+        version: v0.70.0
+        image-ref: club-backend:${{ github.sha }}
+        scanners: vuln,secret
+        severity: HIGH,CRITICAL
+        exit-code: '1'
+    - name: Smoke-test the image without network access
+      shell: bash
+      run: docker run --rm --network none --entrypoint python "club-backend:${GITHUB_SHA}" -c 'import main'

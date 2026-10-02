@@ -1,0 +1,38 @@
+name: Security scans
+description: File-level security scans for staged club delivery; runs inside the scope job.
+runs:
+  using: composite
+  steps:
+    - name: Lint workflow permissions, expressions, dependencies, and shell
+      shell: bash
+      run: bash scripts/lint-workflows.sh
+    - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+      with:
+        version: v0.70.0
+        scan-type: fs
+        scanners: secret,misconfig
+        severity: HIGH,CRITICAL
+        exit-code: '1'
+    - id: backend
+      name: Locate backend dependencies
+      shell: bash
+      run: |
+        if [ -f backend/requirements.txt ]; then
+          echo present=true >> "$GITHUB_OUTPUT"
+        else
+          echo present=false >> "$GITHUB_OUTPUT"
+          echo 'Python dependency audit: this revision has no backend/requirements.txt.' >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      if: steps.backend.outputs.present == 'true'
+      with:
+        python-version: "3.12"
+        cache: pip
+        cache-dependency-path: backend/requirements*.txt
+    - name: Audit backend dependencies and code
+      if: steps.backend.outputs.present == 'true'
+      shell: bash
+      run: |
+        python -m pip install -q pip-audit==2.9.0 bandit==1.8.3
+        pip-audit -r backend/requirements.txt
+        bandit -q -r backend -lll -iii

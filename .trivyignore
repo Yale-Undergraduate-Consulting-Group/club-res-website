@@ -1,0 +1,20 @@
+# Reviewed exceptions, not a blanket suppression. Each entry names the finding,
+# why it does not apply to this static site, and what change removes it.
+# Review by 2027-04-01.
+#
+# S3 encryption without a customer-managed KMS key (terraform/main.tf, site
+# bucket). The bucket holds only the public static export, is private behind
+# CloudFront Origin Access Control and uses SSE-S3 (AES256). A CMK adds about
+# $1/month plus a CloudFront grant in the key policy, with no confidentiality
+# gain for pages that are public by design.
+AVD-AWS-0132
+# CloudFront without AWS WAF (terraform/cloudfront.tf). The distribution serves
+# static files only: no server code, forms or API sit behind it. A web ACL costs
+# at least $5/month plus rule and request charges. Revisit when a backend is
+# hosted behind CloudFront.
+AVD-AWS-0011
+# CloudFront minimum TLS version (terraform/cloudfront.tf). The site uses the
+# default *.cloudfront.net certificate, for which CloudFront fixes the security
+# policy; minimum_protocol_version can be set only with a custom ACM
+# certificate. Remove this entry with the custom-domain change.
+AVD-AWS-0013

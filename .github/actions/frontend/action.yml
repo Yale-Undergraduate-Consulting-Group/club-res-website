@@ -1,0 +1,105 @@
+name: Frontend checks and static export
+description: Next.js lint, audit and static export; UI tests in Production verification; packages the export when shipping.
+inputs:
+  stage:
+    description: Stage supplied by the stage workflow.
+    required: true
+  phase:
+    description: Phase supplied by the stage workflow (verify or ship).
+    required: true
+outputs:
+  site_sha256:
+    description: SHA256 of the packaged static export (ship phase only).
+    value: ${{ steps.package.outputs.sha256 }}
+runs:
+  using: composite
+  steps:
+    - id: present
+      name: Locate the frontend
+      shell: bash
+      env:
+        PHASE: ${{ inputs.phase }}
+      run: |
+        if [ ! -e frontend ]; then
+          if [ "$PHASE" = ship ]; then
+            echo '::error::frontend/ changed but is absent; removing the site is not a deployment'
+            exit 1
+          fi
+          echo present=false >> "$GITHUB_OUTPUT"
+          echo 'Frontend: this revision has no frontend/; nothing to build.' >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        for file in package.json package-lock.json; do
+          if [ ! -f "frontend/$file" ]; then
+            echo "::error::frontend/ exists without frontend/$file"
+            exit 1
+          fi
+        done
+        echo present=true >> "$GITHUB_OUTPUT"
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      if: steps.present.outputs.present == 'true'
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - name: Install locked dependencies
+      if: steps.present.outputs.present == 'true'
+      shell: bash
+      working-directory: frontend
+      run: npm ci
+    # Ship runs rebuild only; lint and audit already passed in this stage's verification.
+    - name: Lint
+      if: steps.present.outputs.present == 'true' && inputs.phase != 'ship'
+      shell: bash
+      working-directory: frontend
+      run: npm run lint
+    - name: Audit dependencies
+      if: steps.present.outputs.present == 'true' && inputs.phase != 'ship'
+      shell: bash
+      working-directory: frontend
+      run: bash "$GITHUB_WORKSPACE/scripts/npm_audit_gate.sh"
+    - name: Build the static export
+      if: steps.present.outputs.present == 'true'
+      shell: bash
+      working-directory: frontend
+      env:
+        NEXT_TELEMETRY_DISABLED: "1"
+      run: |
+        npm run build
+        if [ ! -s out/index.html ]; then
+          echo "::error::npm run build produced no frontend/out/index.html; the site needs output: 'export' in next.config"
+          exit 1
+        fi
+    - name: Run UI tests (Production verification only)
+      if: steps.present.outputs.present == 'true' && inputs.stage == 'production' && inputs.phase == 'verify'
+      shell: bash
+      working-directory: frontend
+      run: |
+        if ! jq -e '.scripts["test:ui"]' package.json > /dev/null; then
+          echo 'UI tests: frontend/package.json defines no test:ui script, so no UI tests ran.' >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        if [ -x node_modules/.bin/playwright ]; then
+          npx playwright install --with-deps chromium
+        fi
+        npm run test:ui
+    - id: package
+      name: Package the static export with a SHA256 manifest
+      if: steps.present.outputs.present == 'true' && inputs.phase == 'ship'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p /tmp/club-site
+        tar -czf /tmp/club-site/site.tar.gz -C frontend/out .
+        cd /tmp/club-site
+        sha256sum site.tar.gz > SHA256SUMS
+        echo "sha256=$(cut -d ' ' -f 1 SHA256SUMS)" >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      if: steps.present.outputs.present == 'true' && inputs.phase == 'ship'
+      with:
+        name: club-site-${{ github.sha }}
+        path: |
+          /tmp/club-site/site.tar.gz
+          /tmp/club-site/SHA256SUMS
+        retention-days: 3
+        if-no-files-found: error
