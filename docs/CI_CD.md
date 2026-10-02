@@ -13,9 +13,11 @@ Contributor work starts as a localhost-compatible application. The first merge n
 | Not deployed | No successful AWS deployment has been verified for this repository |
 | Not implemented | The architecture has no corresponding resource or application capability |
 
-**Access enforcement is blocked.** GitHub returned HTTP 403 for rulesets and branch protection on this private repository. The response requires a plan upgrade. The environment list is empty. An organization owner must enable the required GitHub capabilities and install the settings before inviting contributors.
+**Access enforcement is not active yet.** GitHub returned HTTP 403 for rulesets and branch protection on this private repository; the response requires a plan upgrade. Install the proposed settings before inviting contributors.
 
-The current authenticated account has repository-admin permission but only organization-member status. `yifrankliu` is a verified organization owner with repository-admin permission. The proposed review settings and `CODEOWNERS` use that account.
+**Maintainer** means a person with the repository **admin** role. Organization owners also qualify. This document names roles, not individuals: change who maintains the repository in GitHub settings, not in this file.
+
+Organization-level rules need someone with permission to manage organization rulesets. After installation, day-to-day review and merging needs only a maintainer.
 
 Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap.
 
@@ -29,23 +31,25 @@ flowchart TD
   G -->|No| FIX["Fix on feature/user"]
   FIX --> F
   G -->|Yes| PR["Controller prepares PR into integration"]
-  PR --> R["Organization-owner review and merge"]
+  PR --> R["Maintainer review and merge"]
   R --> INT["integration: local-compatible shared code"]
   INT --> D["Dev verification: static export, Terraform, security"]
   D --> DG{"AWS compatibility passes?"}
   DG -->|No| FIX
   DG -->|Yes| DP["Controller prepares integration to dev PR"]
-  DP --> DR["Organization-owner review and merge"]
+  DP --> DR["Maintainer review and merge"]
   DR --> DEV["dev: recheck, approve, deploy dev account"]
   DEV --> P["Production verification on dev"]
   P --> PG{"Strict checks and<br/>exact dev deployment proven?"}
   PG -->|No| FIX
   PG -->|Yes| PP["Controller prepares dev to prod PR"]
-  PP --> PRV["Organization-owner review and merge"]
+  PP --> PRV["Maintainer review and merge"]
   PRV --> PROD["prod: recheck, approve, deploy prod account"]
 ```
 
-Each arrow across a shared branch requires a PR and an owner merge. Passing checks does not authorize a contributor to merge. The controller never merges or synchronizes branches.
+Each arrow across a shared branch requires a PR and a maintainer merge. Passing checks does not authorize a contributor to merge. The controller never merges or synchronizes branches.
+
+The controller opens every stage PR as `github-actions[bot]`. A single maintainer can therefore approve and merge it; no second person is required.
 
 `feature/<user>` is a naming convention, not a parent-child Git relationship. Create it from current `integration`. Git cannot store both a branch named `feature` and branches named `feature/user`; this is why the shared local branch is `integration`.
 
@@ -53,33 +57,34 @@ Branches do not change code automatically to make it cloud-compatible. AWS-speci
 
 Source: [stage workflows](../.github/workflows/), [`ci_policy.py`](../scripts/ci_policy.py), [`promote.py`](../scripts/promote.py).
 
-## 2. Organization rules restrict shared-branch writes
+## 2. Rules restrict shared-branch writes to maintainers
 
 ```mermaid
 flowchart TD
   A["Attempt branch creation, update, or deletion"] --> N{"Ref matches one-level<br/>feature/*?"}
   N -->|Yes| C["Contributor namespace: repository write access applies"]
-  N -->|No| O{"Actor is an<br/>organization owner?"}
+  N -->|No| O{"Actor is a maintainer<br/>(repository admin or organization owner)?"}
   O -->|No| X["Reject ref operation"]
   O -->|Yes| S{"integration, dev, or prod?"}
-  S -->|No| ADMIN["Owner administrative operation"]
+  S -->|No| ADMIN["Maintainer administrative operation"]
   S -->|Yes| Q["Separate quality rules still apply"]
-  Q --> R["PR, owner review, required checks, current base"]
-  R --> M["Owner merges; no force push or branch deletion"]
+  Q --> R["PR, one approval, required checks, current base"]
+  R --> M["Maintainer merges; no force push or branch deletion"]
 ```
 
 This diagram describes **proposed organization rules**, not active enforcement. Rules target only `club-res-website`.
 
 | Setting | Purpose | Bypass |
 |---|---|---|
-| `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Organization owners only |
+| `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners |
 | `integration.org-ruleset.proposed.json` | Require Intake, PR review, and current base | None |
 | `dev.org-ruleset.proposed.json` | Require Dev checks, PR review, and current base | None |
 | `prod.org-ruleset.proposed.json` | Require Production checks, PR review, and current base | None |
-| `.github/CODEOWNERS` | Require the verified owner to review all changed files | Governed by quality rules |
-| Environment proposals | Restrict deployment ref and require owner approval | Admin bypass disabled |
+| Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
-An organization rule prevents repository admins from removing the restriction locally. Do not grant rule-editing organization roles to contributors. The restriction has no repository-admin, deploy-key, or GitHub Actions bypass.
+An organization rule prevents a repository admin from deleting the restriction locally. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
+
+Any approving review counts; no code owner is required. Contributors cannot merge an approved PR, because merging updates a restricted ref.
 
 The namespace rule permits contributors to use any allowed `feature/*` branch. It does **not** prove that `feature/alice` belongs to Alice or prevent another writer from updating it. Personal branch isolation would require per-user rules or separate forks.
 
@@ -164,7 +169,7 @@ flowchart TD
   D -->|No| H
   H -->|Blocked| STOP
   H -->|Eligible| PR["Open or retain stage PR; publish exact-head status"]
-  PR --> OWNER["Wait for owner review and merge"]
+  PR --> OWNER["Wait for maintainer review and merge"]
 ```
 
 The controller has write permissions because it creates PRs, statuses, and production releases. It never checks out candidate code, runs candidate scripts, or downloads candidate artifacts.
@@ -177,7 +182,7 @@ Hold labels are `hold`, `do-not-merge`, and `release:hold`. Drafts, requested ch
 
 GitHub-generated PR events do not reliably start workflows when the controller uses `GITHUB_TOKEN`. Source pushes already perform Intake and Dev verification. The controller explicitly dispatches Production verification and publishes the verified status on the exact PR head.
 
-Owner review remains essential: contributor code can modify its own proposed checks. Protected shared refs, CODEOWNERS, and organization rules form the enforcement boundary, not workflow names alone.
+Maintainer review remains essential: contributor code can modify its own proposed checks. Protected shared refs and organization rules form the enforcement boundary, not workflow names alone.
 
 A successful production deployment creates a semantic-version release for the **deployed SHA**, not the controller checkout SHA. Documentation-only changes create no deployment release. Repeating a release reuses the existing release for that commit.
 
@@ -190,7 +195,7 @@ flowchart TD
   G["All stage checks pass"] --> C{"Executable change<br/>on shipping ref?"}
   C -->|No| N["No deployment required"]
   C -->|Yes| E["Enter dev or prod environment"]
-  E --> A["Owner approves through configured environment rules"]
+  E --> A["Maintainer approves through configured environment rules"]
   A --> B{"AWS bindings complete;<br/>no unsupported backend release?"}
   B -->|No| X["Fail; no promotion"]
   B -->|Yes| H["Verify artifact SHA256 and account/ref binding"]
@@ -339,7 +344,7 @@ The subject names an environment, not a branch. GitHub environment branch polici
 
 The deploy role cannot apply Terraform or read state. It can list the site bucket, publish/delete current site objects, abort multipart uploads, and invalidate its distribution. It has no permission to delete historical object versions.
 
-The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. This is **not** a general sandbox: IAM-policy modification can expand access. Owner review is essential.
+The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. This is **not** a general sandbox: IAM-policy modification can expand access. Maintainer review is essential.
 
 No long-lived AWS access key is required in GitHub. GitHub environment variables contain target identifiers, not AWS secret keys.
 
@@ -349,13 +354,13 @@ Source: [`github.tf`](../terraform/github.tf), [environment proposals](../github
 
 ```mermaid
 flowchart TD
-  O["Owner dispatches Production plan on prod"] --> E["Approve infrastructure-target-plan environment"]
+  O["Maintainer dispatches Production plan on prod"] --> E["Approve infrastructure-target-plan environment"]
   E --> A["OIDC target account check"]
   A --> B["Require private, versioned state bucket"]
   B --> LOCK["Terraform initializes S3 backend and lockfile"]
   LOCK --> PLAN["Create saved plan"]
   PLAN --> STORE["Private S3: plan, JSON, identity manifest"]
-  STORE --> REVIEW["Owner reviews resources, actions, and cost impact"]
+  STORE --> REVIEW["Maintainer reviews resources, actions, and cost impact"]
   REVIEW -->|Reject| STOP["Revise code; create new plan"]
   REVIEW -->|Accept| APPLY["Dispatch apply: same commit, target, run ID, SHA256"]
   APPLY --> APPROVE["Approve separate apply environment"]
@@ -459,7 +464,7 @@ Old hashed assets remain current S3 objects because deployment excludes that pre
 
 ```mermaid
 flowchart TD
-  F["Failed deploy or incorrect live website"] --> S["Owner inspects run, target account, and publication state"]
+  F["Failed deploy or incorrect live website"] --> S["Maintainer inspects run, target account, and publication state"]
   S --> R{"Safe code fix<br/>or content restoration?"}
   R -->|Code fix| C["feature/user fix through all stages"]
   R -->|Urgent content restoration| O["Authorized operator selects known-good object versions"]
@@ -485,7 +490,7 @@ This recovery diagram is an operator procedure, not an automated rollback workfl
 
 No uptime alarm, synthetic monitor, CloudFront access-log destination, central audit trail, or application error telemetry is provisioned here. AWS service metrics and account audit facilities require an operations review; do not infer alerting from a green deployment.
 
-Branches can diverge after merge commits. An owner can create `feature/sync` from `integration` and merge the destination history into it. That branch follows Intake and the normal reviewed sequence. Do not open a direct `prod → integration` PR: Intake rejects that source. No controller bypass exists.
+Branches can diverge after merge commits. A maintainer can create `feature/sync` from `integration` and merge the destination history into it. That branch follows Intake and the normal reviewed sequence. Do not open a direct `prod → integration` PR: Intake rejects that source. No controller bypass exists.
 
 ## 12. Cost controls avoid an always-on application server
 
@@ -496,7 +501,7 @@ flowchart TD
   FILTER --> BUDGET["Monthly environment budget"]
   BUDGET --> ACT["Actual spend greater than 80 percent"]
   BUDGET --> FORE["Forecast spend greater than 100 percent"]
-  ACT --> EMAIL["Owner-configured email"]
+  ACT --> EMAIL["Maintainer-configured email"]
   FORE --> EMAIL
 ```
 
@@ -516,22 +521,23 @@ Budget notices are not spending limits. Billing data and notices can lag. The ta
 
 Every job has a bounded timeout. Documentation changes skip costly lanes. CloudFront invalidation waiting still consumes runner time. No measured monthly AWS or CI cost estimate is claimed.
 
-## 13. Bootstrap requires an owner, plan support, and a real application
+## 13. Bootstrap requires plan support, a maintainer, and a real application
 
 1. Enable GitHub support for organization rulesets and the required private-repository environment protections.
-2. Have an organization owner review and merge this bootstrap PR into the current default branch, `main`.
+2. Have a maintainer review and merge this bootstrap PR into the current default branch, `main`.
 3. Create `integration`, `dev`, and `prod` from that reviewed commit before installing creation restrictions.
 4. Change the repository default branch to `prod` so trusted completion workflows load protected controller code.
-5. Install the four `*.org-ruleset.proposed.json` payloads through the organization rulesets API.
+5. Install the four `*.org-ruleset.proposed.json` payloads through the organization rulesets API. This step needs organization-ruleset permission.
 6. Create each proposed environment and its matching branch policy through the repository environment APIs.
-7. Verify a non-owner cannot create or update a branch outside `feature/*`.
-8. Verify owners still need checks and review to merge into shared branches.
-9. Create the dev and prod AWS accounts and private, encrypted, versioned state buckets.
-10. Define retention, access controls, and recovery procedures for those state buckets.
-11. Run initial Terraform provisioning with operator credentials, separately for each account.
-12. Configure GitHub environment variables from verified account IDs and Terraform outputs.
-13. Activate billing tags and confirm budget email delivery.
-14. Integrate the real frontend through `feature/<user>`; complete the dev and prod deployment drills.
+7. Add the current maintainers as required reviewers on `prod` and both `infrastructure-*-apply` environments.
+8. Verify a write-role contributor cannot create or update a branch outside `feature/*`.
+9. Verify maintainers still need checks and one approval to merge into shared branches.
+10. Create the dev and prod AWS accounts and private, encrypted, versioned state buckets.
+11. Define retention, access controls, and recovery procedures for those state buckets.
+12. Run initial Terraform provisioning with operator credentials, separately for each account.
+13. Configure GitHub environment variables from verified account IDs and Terraform outputs.
+14. Activate billing tags and confirm budget email delivery.
+15. Integrate the real frontend through `feature/<user>`; complete the dev and prod deployment drills.
 
 These are activation steps, not actions already performed. This PR does not create AWS accounts, change the default branch, install rules, or merge itself.
 
@@ -550,7 +556,9 @@ Run Terraform with `environment=dev` or `environment=prod`. The [Terraform outpu
 
 Install organization rules through `POST /orgs/Yale-Undergraduate-Consulting-Group/rulesets`, not the repository ruleset endpoint. Each environment payload and its branch-policy payload require separate API calls. Verify the returned settings; checked-in JSON does not prove enforcement.
 
-The current CODEOWNER is the sole verified organization owner. Owner-authored PRs may need another eligible owner reviewer. Do not weaken protections to bypass that staffing requirement. Environment self-review remains allowed for the sole-owner setup; admin bypass remains disabled.
+Environment reviewers are not stored in this repository: GitHub requires user or team IDs, and those change with membership. Set them in GitHub settings. A GitHub team of maintainers keeps that list in one place.
+
+After installing a ruleset, check that its bypass list shows **Repository admin**. The proposal uses `RepositoryRole` ID 5 for that role.
 
 ### Features not implemented by this static stack
 
