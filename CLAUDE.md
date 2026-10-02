@@ -12,7 +12,7 @@ Start `claude` in the repository once and accept the trust dialog. Until you do,
 
 Follow these steps on your own for every code change. The contributor does not need to ask for them.
 
-1. **Plan.** For a nontrivial change, use the `grill-me` skill before writing code. Skip it for typo fixes, one-line fixes, and doc wording.
+1. **Plan.** For a nontrivial change, invoke the `grill-me` skill first, before writing code. Do not replace it with your own list of questions. Skip it for typo fixes, one-line fixes, and doc wording.
 2. **Branch.** Before the first edit, if the branch is `main`, `integration`, `dev`, or `prod`, use the `start-feature` skill. A hook blocks edits on those branches.
 3. **Build.** Follow `AGENTS.md`: the smallest complete change, with its callers, tests, and docs.
 4. **Verify.** Use the `verify` skill after changing code and before saying the task is done.
@@ -26,10 +26,11 @@ Contributors can also run any step directly: `/grill-me`, `/start-feature`, `/ve
 - Pushes to `main`, `integration`, `dev`, or `prod`, and force pushes.
 - `terraform apply`, `destroy`, `import`, and `state` commands.
 - Reading `.env` secrets, Terraform state, and `*.tfvars` files.
+- File edits (Edit and Write tools) while on `main`, `integration`, `dev`, or `prod`, through the `require-feature-branch.sh` hook.
 
 It asks before any `git push`, `gh pr merge`, or `aws` command.
 
-These rules match the command text Claude writes; they are a guard against mistakes, not a security boundary. GitHub branch rules and AWS IAM are the real controls. Branch rules are not active yet; see [docs/CI_CD.md](docs/CI_CD.md).
+These rules match the command text and tools Claude uses; they are a guard against mistakes, not a security boundary. For example, a shell command such as `printf >> file` is not an Edit, so the branch hook does not see it. GitHub branch rules and AWS IAM are the real controls. Branch rules are not active yet; see [docs/CI_CD.md](docs/CI_CD.md).
 
 ## Personal settings
 
