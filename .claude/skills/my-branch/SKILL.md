@@ -26,7 +26,7 @@ Each contributor has exactly **one** branch: `feature/<login>`. All of their wor
 4. Get onto the branch:
    - Already on `feature/<login>`: stay.
    - It exists locally or on origin: `git switch feature/<login>`.
-   - It exists nowhere: `git switch -c feature/<login> <base>`. This happens once per contributor.
+   - It exists nowhere: `git switch -c feature/<login> --no-track <base>`. This happens once per contributor. `--no-track` stops the branch from tracking `main`; the first push sets its upstream to `origin/feature/<login>`.
    Uncommitted changes move with the switch. If git refuses, stop and show me why.
 5. Bring it up to date, in this order. Stop at a conflict, run `git merge --abort`, and show me the conflicting files.
    - `git merge --ff-only origin/feature/<login>` when origin has commits the local branch lacks, such as work from another computer.
