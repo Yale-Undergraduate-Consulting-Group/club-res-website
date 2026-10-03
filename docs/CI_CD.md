@@ -13,7 +13,9 @@ Contributor work starts as a localhost-compatible application. The first merge n
 | Not deployed | No successful AWS deployment has been verified for this repository |
 | Not implemented | The architecture has no corresponding resource or application capability |
 
-**Access enforcement is not active yet.** GitHub returned HTTP 403 for rulesets and branch protection on this private repository; the response requires a plan upgrade. Install the proposed settings before inviting contributors.
+**Access enforcement is active as repository rulesets (installed 2026-10-02).** The organization is on the Free plan, so the organization rulesets in `github/*.org-ruleset.proposed.json` cannot be installed. The four rules run as repository rulesets with the same conditions and rules. Shared-branch reviews and `prod` / `infrastructure-*-apply` approvals require the team `club-res-website-maintainers`.
+
+Still open: an organization owner must allow GitHub Actions to create pull requests (organization Settings → Actions). Until then the controller cannot open stage PRs.
 
 **Maintainer** means a person with the repository **admin** role. Organization owners also qualify. This document names roles, not individuals: change who maintains the repository in GitHub settings, not in this file.
 
@@ -72,7 +74,7 @@ flowchart TD
   R --> M["Maintainer merges; no force push or branch deletion"]
 ```
 
-This diagram describes **proposed organization rules**, not active enforcement. Rules target only `club-res-website`.
+This diagram describes the installed rules. They are repository rulesets on `club-res-website`.
 
 | Setting | Purpose | Bypass |
 |---|---|---|
@@ -82,9 +84,9 @@ This diagram describes **proposed organization rules**, not active enforcement. 
 | `prod.org-ruleset.proposed.json` | Require Production checks, PR review, and current base | None |
 | Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
-An organization rule prevents a repository admin from deleting the restriction locally. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
+A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
 
-Any approving review counts; no code owner is required. Contributors cannot merge an approved PR, because merging updates a restricted ref.
+One approval from a member of `club-res-website-maintainers` is required; no code owner is required. A team approval also stops a contributor workflow from approving its own PR as `github-actions[bot]`. Contributors cannot merge an approved PR, because merging updates a restricted ref.
 
 The namespace rule permits contributors to use any allowed `feature/*` branch. It does **not** prove that `feature/alice` belongs to Alice or prevent another writer from updating it. Personal branch isolation would require per-user rules or separate forks.
 
@@ -547,7 +549,7 @@ Every job has a bounded timeout. Documentation changes skip costly lanes. CloudF
 14. Activate billing tags and confirm budget email delivery.
 15. Integrate the real frontend through `feature/<user>`; complete the dev and prod deployment drills.
 
-These are activation steps, not actions already performed. This PR does not create AWS accounts, change the default branch, install rules, or merge itself.
+Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default branch `prod`, four repository rulesets, six environments with branch policies, team reviewers. Steps 8–9 need a write-role contributor to test. Steps 10–15 (AWS accounts and Terraform) are not done.
 
 ### Environment bindings
 
