@@ -55,7 +55,9 @@ Each arrow across a shared branch requires a PR and a maintainer merge. Passing 
 
 The controller opens every stage PR as `github-actions[bot]`. A single maintainer can therefore approve and merge it; no second person is required.
 
-`feature/<user>` is a naming convention, not a parent-child Git relationship. Create it from current `integration`. Git cannot store both a branch named `feature` and branches named `feature/user`; this is why the shared local branch is `integration`.
+Each contributor keeps **one** long-lived branch, `feature/<login>`, created once from `integration`. All their work is committed there. After a maintainer merges their PR, they merge `integration` back into the same branch and continue; the branch is never rebased or force-pushed. One branch per contributor keeps the branch list short and gives each person at most one open PR.
+
+`feature/<user>` is a naming convention, not a parent-child Git relationship. Git cannot store both a branch named `feature` and branches named `feature/user`; this is why the shared local branch is `integration`.
 
 Branches do not change code automatically to make it cloud-compatible. AWS-specific changes return through a contributor branch when the Dev gate fails.
 
