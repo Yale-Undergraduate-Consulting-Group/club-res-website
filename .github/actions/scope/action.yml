@@ -21,23 +21,14 @@ outputs:
     description: Terraform and controller test lane required.
     value: ${{ steps.changes.outputs.infra }}
   image:
-    description: Backend container image build and scan required.
+    description: Application image build and scan required; every deployment ships one.
     value: ${{ steps.changes.outputs.image }}
   security:
     description: File-level security scans required.
     value: ${{ steps.changes.outputs.security }}
-  runtime:
-    description: Frontend or backend code changed.
-    value: ${{ steps.changes.outputs.runtime }}
   deploy:
     description: Non-documentation change requires downstream deployment.
     value: ${{ steps.changes.outputs.deploy }}
-  frontend_runtime:
-    description: Frontend source changed.
-    value: ${{ steps.changes.outputs.frontend_runtime }}
-  backend_runtime:
-    description: Backend source changed; shipping is blocked until a host exists.
-    value: ${{ steps.changes.outputs.backend_runtime }}
 runs:
   using: composite
   steps:

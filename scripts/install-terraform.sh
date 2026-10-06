@@ -3,8 +3,10 @@
 # provider plugin cache live in directories that the workflows restore with
 # actions/cache; a restored zip is used only when its checksum still matches.
 set -euo pipefail
-VERSION=1.10.5
-SHA256=0566a24f5332098b15716ebc394be503f4094acba5ba529bf5eb0698ed5e2a90
+# 1.14+: `terraform test` ignores prevent_destroy during cleanup (1.10 exits non-zero after
+# applying the mocked data stores). Raising this pin also raises main.tf required_version.
+VERSION=1.14.9
+SHA256=2e5cffc20a0b48a67a76268723bd5a10b8666f69b2aa4f04906e206726bedd63
 CACHE_DIR=/tmp/club-terraform
 ZIP="$CACHE_DIR/terraform_${VERSION}_linux_amd64.zip"
 PLUGIN_CACHE="$HOME/.terraform.d/plugin-cache"

@@ -2,13 +2,17 @@
 # Trusted reviewed prod only. Saved plans stay in the private encrypted state
 # bucket, never in public artifacts. Apply runs only the exact plan whose SHA256
 # a reviewer approved, under the remote state lock.
+# TF_DIR selects the root: terraform (default; TF_TARGET dev or prod) or
+# organization (TF_TARGET organization, management account). TF_TARGET is the
+# namespace of saved plans, diagnostics and the manifest.
 set -euo pipefail
 umask 0077
 : "${TF_STATE_BUCKET:?}" "${TF_STATE_KEY:?}" "${TF_ACCOUNT_ID:?}" "${TF_REGION:?}"
 : "${GITHUB_SHA:?}" "${TF_TARGET:?}"
 : "${GITHUB_RUN_ID:?}" "${GITHUB_REPOSITORY:?}"
 [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
-[[ "$TF_TARGET" == dev || "$TF_TARGET" == prod ]]
+TF_DIR="${TF_DIR:-terraform}"
+case "$TF_DIR:$TF_TARGET" in terraform:dev | terraform:prod | organization:organization) ;; *) exit 1 ;; esac
 test "$(aws sts get-caller-identity --query Account --output text)" = "$TF_ACCOUNT_ID"
 aws s3api get-public-access-block --bucket "$TF_STATE_BUCKET" --expected-bucket-owner "$TF_ACCOUNT_ID" --query PublicAccessBlockConfiguration | jq -e '.BlockPublicAcls == true and .BlockPublicPolicy == true and .IgnorePublicAcls == true and .RestrictPublicBuckets == true' >/dev/null
 aws s3api get-bucket-versioning --bucket "$TF_STATE_BUCKET" --expected-bucket-owner "$TF_ACCOUNT_ID" | jq -e '.Status == "Enabled"' >/dev/null
@@ -26,19 +30,34 @@ private_failure() {
   exit 1
 }
 export TF_IN_AUTOMATION=true TF_INPUT=false
-terraform -chdir=terraform init -lockfile=readonly \
+terraform -chdir="$TF_DIR" init -lockfile=readonly \
   -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" \
   -backend-config="region=$TF_REGION" -backend-config=encrypt=true > "$TF_RELEASE_DIR/init.log" 2>&1 || private_failure init
 if [ "${1:-}" = plan ]; then
-  : "${TF_BUDGET_EMAIL:?}" "${TF_MONTHLY_BUDGET_USD:?}"
   # Input variables belong to plan only; apply executes the saved plan as reviewed.
-  export TF_VAR_environment="$TF_TARGET" TF_VAR_github_repository="$GITHUB_REPOSITORY" TF_VAR_aws_region="$TF_REGION"
-  export TF_VAR_monthly_budget_usd="$TF_MONTHLY_BUDGET_USD" TF_VAR_budget_email="$TF_BUDGET_EMAIL"
-  export TF_VAR_tf_state_bucket="$TF_STATE_BUCKET" TF_VAR_tf_state_key="$TF_STATE_KEY"
-  export TF_VAR_manage_github_oidc_provider="${TF_MANAGE_GITHUB_OIDC_PROVIDER:-true}"
+  export TF_VAR_aws_region="$TF_REGION"
+  if [ "$TF_DIR" = organization ]; then
+    : "${ORG_DEV_EMAIL:?}" "${ORG_PROD_EMAIL:?}"
+    TF_VAR_accounts="$(jq -cn --arg dev "$ORG_DEV_EMAIL" --arg prod "$ORG_PROD_EMAIL" \
+      '{dev:{name:"YUCG_Dev",email:$dev},prod:{name:"YUCG_Prod",email:$prod}}')"
+    export TF_VAR_accounts
+  else
+    : "${TF_BUDGET_EMAIL:?}" "${TF_MONTHLY_BUDGET_USD:?}"
+    export TF_VAR_environment="$TF_TARGET" TF_VAR_github_repository="$GITHUB_REPOSITORY"
+    export TF_VAR_monthly_budget_usd="$TF_MONTHLY_BUDGET_USD" TF_VAR_budget_email="$TF_BUDGET_EMAIL"
+    export TF_VAR_tf_state_bucket="$TF_STATE_BUCKET" TF_VAR_tf_state_key="$TF_STATE_KEY"
+    export TF_VAR_manage_github_oidc_provider="${TF_MANAGE_GITHUB_OIDC_PROVIDER:-true}"
+    # Optional per-environment settings, e.g. TF_INSTANCE_TYPE=t3.medium or
+    # TF_CATALOG_OPERATOR_PRINCIPAL_ARNS='["arn:aws:iam::<account>:role/<name>"]'. Unset keeps
+    # the Terraform default; every value becomes part of the reviewed saved plan.
+    for name in instance_type data_volume_gb enable_edge enable_waf origin_read_timeout office_hours_enabled catalog_operator_principal_arns; do
+      setting="TF_${name^^}"
+      if [ -n "${!setting:-}" ]; then export "TF_VAR_${name}=${!setting}"; fi
+    done
+  fi
   PREFIX="ci-plans/$TF_TARGET/$GITHUB_SHA/$GITHUB_RUN_ID"
-  terraform -chdir=terraform plan -lock-timeout=60s -out="$TF_RELEASE_DIR/saved.tfplan" > "$TF_RELEASE_DIR/plan.log" 2>&1 || private_failure plan
-  terraform -chdir=terraform show -json "$TF_RELEASE_DIR/saved.tfplan" > "$TF_RELEASE_DIR/plan.json"
+  terraform -chdir="$TF_DIR" plan -lock-timeout=60s -out="$TF_RELEASE_DIR/saved.tfplan" > "$TF_RELEASE_DIR/plan.log" 2>&1 || private_failure plan
+  terraform -chdir="$TF_DIR" show -json "$TF_RELEASE_DIR/saved.tfplan" > "$TF_RELEASE_DIR/plan.json"
   PLAN_SHA="$(sha256sum "$TF_RELEASE_DIR/saved.tfplan" | cut -d ' ' -f 1)"
   jq -n --arg sha "$PLAN_SHA" --arg commit "$GITHUB_SHA" --arg account "$TF_ACCOUNT_ID" \
     --arg key "$TF_STATE_KEY" --arg bucket "$TF_STATE_BUCKET" --arg region "$TF_REGION" --arg target "$TF_TARGET" --arg repo "$GITHUB_REPOSITORY" \
@@ -65,7 +84,7 @@ elif [ "${1:-}" = apply ]; then
     --arg key "$TF_STATE_KEY" --arg bucket "$TF_STATE_BUCKET" --arg region "$TF_REGION" --arg target "$TF_TARGET" --arg repo "$GITHUB_REPOSITORY" \
     '.sha256 == $sha and .commit == $commit and .account == $account and .state_key == $key and .state_bucket == $bucket and .region == $region and .target == $target and .repository == $repo and (now - .created_at >= 0 and now - .created_at < 86400)' "$TF_RELEASE_DIR/manifest.json" >/dev/null
   echo "$APPROVED_PLAN_SHA256  $TF_RELEASE_DIR/saved.tfplan" | sha256sum -c -
-  terraform -chdir=terraform apply -lock-timeout=60s "$TF_RELEASE_DIR/saved.tfplan" > "$TF_RELEASE_DIR/apply.log" 2>&1 || private_failure apply
+  terraform -chdir="$TF_DIR" apply -lock-timeout=60s "$TF_RELEASE_DIR/saved.tfplan" > "$TF_RELEASE_DIR/apply.log" 2>&1 || private_failure apply
   echo 'Applied the exact approved plan under the remote state lock.' >> "$GITHUB_STEP_SUMMARY"
 else
   echo 'Use plan or apply' >&2; exit 1

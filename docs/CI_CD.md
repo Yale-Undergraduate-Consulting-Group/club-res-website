@@ -6,6 +6,8 @@
 
 Contributor work starts as a localhost-compatible application. The first merge needs no Terraform or AWS compatibility. Later gates require the AWS deployment contract, then production UI coverage and deployment evidence.
 
+This repository also holds the YUCG Outreach application (`backend/`, `frontend/`, `docker/`), merged from the former `client-affairs-tools` repository, and the box scripts in `ops/`. Its runtime is one container on one EC2 instance per environment with SQLite on an encrypted volume, shipped by the same gates as the static site. **Dev is private**: no public URL, reached only through an SSM port-forward, and it may hold real client data when a feature needs it, but it never sends mail. **Prod** is the only environment with a public edge and live sending. Section 14 describes the runtime and its confidentiality limits.
+
 | Status | Meaning in this document |
 |---|---|
 | Implemented in this PR | Workflow, script, or Terraform behavior exists in this repository |
@@ -13,13 +15,15 @@ Contributor work starts as a localhost-compatible application. The first merge n
 | Not deployed | No successful AWS deployment has been verified for this repository |
 | Not implemented | The architecture has no corresponding resource or application capability |
 
-**Access enforcement is not active yet.** GitHub returned HTTP 403 for rulesets and branch protection on this private repository; the response requires a plan upgrade. Install the proposed settings before inviting contributors.
+**Access enforcement is active as repository rulesets (installed 2026-10-02).** The organization is on the Free plan, so the organization rulesets in `github/*.org-ruleset.proposed.json` cannot be installed. The four rules run as repository rulesets with the same conditions and rules. Shared-branch reviews and `prod` / `infrastructure-*-apply` approvals require the team `club-res-website-maintainers`.
+
+Still open: an organization owner must allow GitHub Actions to create pull requests (organization Settings → Actions). Until then the controller cannot open stage PRs.
 
 **Maintainer** means a person with the repository **admin** role. Organization owners also qualify. This document names roles, not individuals: change who maintains the repository in GitHub settings, not in this file.
 
 Organization-level rules need someone with permission to manage organization rulesets. After installation, day-to-day review and merging needs only a maintainer.
 
-Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap.
+Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap; section 14 for the application runtime and confidentiality.
 
 ## 1. Contributors enter through local checks
 
@@ -51,7 +55,9 @@ Each arrow across a shared branch requires a PR and a maintainer merge. Passing 
 
 The controller opens every stage PR as `github-actions[bot]`. A single maintainer can therefore approve and merge it; no second person is required.
 
-`feature/<user>` is a naming convention, not a parent-child Git relationship. Create it from current `integration`. Git cannot store both a branch named `feature` and branches named `feature/user`; this is why the shared local branch is `integration`.
+Each contributor keeps **one** long-lived branch, `feature/<login>`, created once from `integration`. All their work is committed there. After a maintainer merges their PR, they merge `integration` back into the same branch and continue; the branch is never rebased or force-pushed. One branch per contributor keeps the branch list short and gives each person at most one open PR.
+
+`feature/<user>` is a naming convention, not a parent-child Git relationship. Git cannot store both a branch named `feature` and branches named `feature/user`; this is why the shared local branch is `integration`.
 
 Branches do not change code automatically to make it cloud-compatible. AWS-specific changes return through a contributor branch when the Dev gate fails.
 
@@ -68,23 +74,27 @@ flowchart TD
   O -->|Yes| S{"integration, dev, or prod?"}
   S -->|No| ADMIN["Maintainer administrative operation"]
   S -->|Yes| Q["Separate quality rules still apply"]
-  Q --> R["PR, one approval, required checks, current base"]
+  Q --> R["PR, required checks, current base;<br/>dev and prod also need one team approval"]
   R --> M["Maintainer merges; no force push or branch deletion"]
 ```
 
-This diagram describes **proposed organization rules**, not active enforcement. Rules target only `club-res-website`.
+This diagram describes the installed rules. They are repository rulesets on `club-res-website`.
 
 | Setting | Purpose | Bypass |
 |---|---|---|
 | `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners |
-| `integration.org-ruleset.proposed.json` | Require Intake, PR review, and current base | None |
-| `dev.org-ruleset.proposed.json` | Require Dev checks, PR review, and current base | None |
-| `prod.org-ruleset.proposed.json` | Require Production checks, PR review, and current base | None |
+| `integration.org-ruleset.proposed.json` | Require Intake and current base; no approval | None |
+| `dev.org-ruleset.proposed.json` | Require Dev checks, one maintainer-team approval, and current base | None |
+| `prod.org-ruleset.proposed.json` | Require Production checks, one maintainer-team approval, and current base | None |
 | Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
-An organization rule prevents a repository admin from deleting the restriction locally. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
+A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
 
-Any approving review counts; no code owner is required. Contributors cannot merge an approved PR, because merging updates a restricted ref.
+PRs into `integration` need no approval: only maintainers can merge there, so the maintainer's merge is the review, and a single maintainer can merge their own PR. PRs into `dev` and `prod` need one approval from `club-res-website-maintainers`. The controller opens those promotion PRs as `github-actions[bot]`, so one maintainer can approve them. No code owner is required.
+
+Because only bypass actors may update `integration`, `dev`, and `prod`, GitHub shows every PR into them as **blocked**, even when every check passes. That is expected. A maintainer merges with **Merge without waiting for requirements to be met (bypass rules)**, or `gh pr merge <n> --merge --admin`. The quality rulesets have no bypass actors, so their checks and approvals are still required.
+
+Keep `require_extra_approval_for_unattributed_changes: false` in every `pull_request` rule. GitHub sets it to `true` when a payload omits it. It then demands a human approval for agent-authored commits even when no approval is required, which blocked PR #8.
 
 The namespace rule permits contributors to use any allowed `feature/*` branch. It does **not** prove that `feature/alice` belongs to Alice or prevent another writer from updating it. Personal branch isolation would require per-user rules or separate forks.
 
@@ -98,20 +108,22 @@ GitHub references: [organization ruleset API](https://docs.github.com/en/rest/or
 
 | Requirement | Intake: contributor → integration | Dev: integration → dev | Production: dev → prod |
 |---|---|---|---|
-| Frontend | Locked install, lint, dependency audit, ordinary build | Same checks plus `frontend/out/index.html` static export | Same checks plus required `test:ui` |
-| Backend, when present | Fast pytest suite, excluding `slow` | Full pytest suite | Full pytest suite |
-| Container image | None | Build, scan, import smoke for backend changes | Same for backend changes |
+| Frontend | Locked install, **unit tests (`npm run test:unit`)**, lint, dependency audit, ordinary build | Same checks plus `frontend/dist/index.html` static export | Same checks plus required `test:ui` |
+| Backend | Full pytest suite (`backend/scripts/test_suite.py`): branch coverage, 80% floor on critical modules | Same | Same |
+| Container image | None | Build for `linux/amd64`, Trivy HIGH/CRITICAL scan, non-root import smoke with no network, for runtime changes; every deployment rebuilds and rescans | Same |
 | Terraform | **Not installed or validated** | Format, validate, mocked plan tests | Same checks repeated |
 | Source scanning | Workflow lint, secrets, Python audit/code scan when present | Adds configuration misconfiguration scan | Same checks repeated |
 | Cloud credentials during verification | None | None | None |
 | Deployment after merge | None | Dev account, environment `dev` | Prod account, environment `prod` |
 | Missing frontend | Can be no-work if no frontend exists | Blocks executable changes | Blocks executable changes |
 | Missing AWS bindings | Not relevant | Blocks deployment | Blocks deployment |
-| Backend deployment | Not relevant | Blocks backend runtime releases: host not implemented | Same restriction |
+| Backend deployment | Not relevant | Image pushed to ECR and the box restarted by digest through SSM; automatic rollback on a failed health check | Same, then the public site is published and checked through CloudFront |
 
 Intake does not require Docker, static export, Terraform, or cloud credentials. A Terraform-only Intake change still gets secret scanning but no Terraform compatibility gate.
 
-Dev and Production check all non-image lanes for every non-documentation change. The image lane requires a backend path change. Ship runs retain these checks; they do not replace verification with a build-only shortcut.
+Unit tests cannot be skipped by omission. Any change to a workflow, action, script, test, `docker/`, or `.dockerignore` reruns every unit-test lane at every stage, and the aggregate `*-required-checks` status fails when a selected lane did not succeed. A frontend change without unit tests fails because Vitest exits non-zero when it finds none.
+
+Dev and Production check all non-image lanes for every non-documentation change. The image lane requires a runtime path change (`frontend/`, `backend/`, `docker/`, `ops/`, `.dockerignore`). Ship runs retain these checks; they do not replace verification with a build-only shortcut.
 
 Documentation-only changes skip application and Terraform lanes and do not deploy. Renaming application code into `docs/` does not qualify for the controller's documentation-only deployment exception.
 
@@ -176,7 +188,7 @@ The controller has write permissions because it creates PRs, statuses, and produ
 
 A successful Dev deployment dispatches Production verification on `dev`. The Production candidate must have a successful Dev deployment job for its exact SHA, unless the complete `prod…dev` diff contains only documentation.
 
-The Production required check enforces this evidence too. Opening a production PR manually does not bypass the deployment prerequisite.
+The Production required check enforces this evidence too. Opening a production PR manually does not bypass the deployment prerequisite. Any workflow in this repository can post a status with the required context, so the environment-gated production deploy job proves the evidence again itself: the second parent of the merge commit on `prod` must have a successful dev deployment, or the deploy fails before any AWS call.
 
 Hold labels are `hold`, `do-not-merge`, and `release:hold`. Drafts, requested changes, recently closed unmerged candidates, stale source heads, and branches behind their destination stop advancement. Oversized evidence pages fail closed or stop automatic advancement.
 
@@ -236,85 +248,93 @@ The live check covers the index only. It does not prove every route, dependency,
 
 Publication is not atomic. A failure after S3 writes can leave some new content live. There is no automatic rollback.
 
+### Backend runtime deployment
+
+When a `backend/`, `docker/`, or `ops/` path changes, the ship job deploys the container before it publishes any page:
+
+1. Verify the image artifact's SHA256, then push it to the environment's ECR repository as `<sha>-<run id>` (tags are immutable).
+2. Run `ops/check_deployment.py`: the instance selected by tag `Site=club-res-website-<env>` must equal `BOX_INSTANCE_ID`, require IMDSv2, have no `0.0.0.0/0` ingress, and have only encrypted volumes.
+3. Send `ops/restart-yucg.sh` to that instance with `ssm:SendCommand` (`AWS-RunShellScript`), by image digest. The script takes an online SQLite backup, regenerates `/etc/yucg/app.env` from Secrets Manager and `/etc/yucg/config.json`, starts the container, checks `/api/health` on the box, and restarts the previous digest if the check fails.
+4. Prod only: publish `frontend/dist` to S3, invalidate CloudFront, compare the live index, and require `{"status":"ok"}` from `SITE_URL/api/health`.
+
+Dev has no CloudFront: it skips step 4 and relies on the on-box health check. Shipping the image and the pages are separate steps, so a failure between them can leave new pages talking to the previous API version. Keep API changes backward compatible for one release.
+
 Source: [`frontend/action.yml`](../.github/actions/frontend/action.yml), [`ship/action.yml`](../.github/actions/ship/action.yml).
 
-## 6. Two AWS accounts isolate deployment targets
+## 6. Three AWS accounts isolate builders, dev, and prod
 
 ```mermaid
 flowchart LR
   GH["GitHub Actions"] -->|dev environment OIDC| DR
   GH -->|prod environment OIDC| PR
-  subgraph DEV["Dev AWS account"]
-    DR["Dev deploy role"] --> DS["Dev private S3 site bucket"]
-    DC["Dev CloudFront distribution"] -->|OAC signed read| DS
-    DT["Dev Terraform role"] --> DST["Dev state bucket and plans"]
-    DB["Dev tagged budget"]
+  OP["Operator, SSO role"] -->|bootstrap and first apply| B
+  subgraph B["Builder account"]
+    BS["Bootstrap scripts and rehearsal stack"]
+  end
+  subgraph DEV["Dev AWS account: private"]
+    DR["Dev deploy role"] --> DBOX["Dev box, no public listener"]
+    DEVS["Developer"] -->|"SSM port-forward"| DBOX
   end
   subgraph PROD["Prod AWS account"]
-    PR["Prod deploy role"] --> PS["Prod private S3 site bucket"]
-    PC["Prod CloudFront distribution"] -->|OAC signed read| PS
-    PT["Prod Terraform role"] --> PST["Prod state bucket and plans"]
-    PB["Prod tagged budget"]
+    PR["Prod deploy role"] --> PS["Private S3 site bucket"]
+    PR --> PBOX["Prod box, VPC origin only"]
+    PC["CloudFront and WAF"] -->|OAC| PS
+    PC -->|VPC origin /api| PBOX
   end
-  PUBLIC["Public browser"] --> DC
-  PUBLIC --> PC
+  PUBLIC["Public browser"] --> PC
 ```
 
-This is the Terraform design, not evidence that these accounts or resources have been created. The state buckets and account structure require bootstrap outside this stack.
+The builder account only rehearses and bootstraps: it holds no client data and is not a deployment target of the pipeline. Until the dev and prod accounts exist, the builder account hosts the `dev` environment.
 
-Dev is a separate deployment, but its CloudFront URL is **public**. Account isolation does not make a static dev site confidential. Use synthetic or public data there.
+**Dev is private.** It has no CloudFront distribution and its security group allows no inbound traffic. Developers reach it with `aws ssm start-session --document-name AWS-StartPortForwardingSession`, which is IAM-authenticated and logged in CloudTrail. Dev may contain real client data when a feature under development needs it. Copy only the tables the feature needs, as a deliberate and logged operation; never run a standing sync from prod. Dev must never send mail: it runs with `EMAIL_DELIVERY_ENABLED=false`, its own `JWT_SECRET` (so Gmail tokens copied from prod cannot be decrypted), and no Gmail tokens in any copied table.
 
 | AWS feature | Design choice and consequence | Source |
 |---|---|---|
 | Separate accounts | Distinct resources, state, roles, and cost tracking; no shared runtime data path | Environment inputs in [`main.tf`](../terraform/main.tf) |
-| S3 origin | Private regional S3 endpoint; not S3 public website hosting | [`main.tf`](../terraform/main.tf), [`cloudfront.tf`](../terraform/cloudfront.tf) |
-| CloudFront | Global HTTPS static delivery, compression, HTTP/2 and HTTP/3, IPv6 | [`cloudfront.tf`](../terraform/cloudfront.tf) |
-| Origin Access Control | CloudFront signs origin requests with SigV4 | [`cloudfront.tf`](../terraform/cloudfront.tf) |
-| CloudFront Function | Rewrite clean paths to exported HTML; no application server | [`cloudfront.tf`](../terraform/cloudfront.tf) |
-| Managed cache policy | `Managed-CachingOptimized`; deploy controls object cache headers | [`cloudfront.tf`](../terraform/cloudfront.tf), ship action |
-| Managed response headers | `Managed-SecurityHeadersPolicy`; not a substitute for application-specific CSP | [`cloudfront.tf`](../terraform/cloudfront.tf) |
-| IAM OIDC provider | Short-lived AWS sessions, exact repository/environment trust | [`github.tf`](../terraform/github.tf) |
-| Role separation | Site publisher versus privileged reviewed Terraform operator | [`github.tf`](../terraform/github.tf) |
+| Region | `us-east-2` for everything except CloudFront, ACM, WAF-for-CloudFront, KMS, IAM, and Bedrock cross-region routing; the organization's guardrails deny other regions | [`main.tf`](../terraform/main.tf) |
+| S3 origin | Private regional S3 endpoint; not S3 public website hosting | [`cloudfront.tf`](../terraform/cloudfront.tf) |
+| CloudFront | HTTPS delivery for pages and `/api`, compression, HTTP/2 and HTTP/3, IPv6; prod only | [`cloudfront.tf`](../terraform/cloudfront.tf) |
+| CloudFront VPC origin | The API box has no public listener; only the CloudFront service security group can reach port 80 | [`cloudfront.tf`](../terraform/cloudfront.tf), [`network.tf`](../terraform/network.tf) |
+| Origin Access Control | CloudFront signs origin requests to S3 with SigV4 | [`cloudfront.tf`](../terraform/cloudfront.tf) |
+| WAF | AWS managed Common and Known Bad Inputs rule groups plus an IP rate rule on the prod distribution | [`cloudfront.tf`](../terraform/cloudfront.tf) |
+| Response headers | Custom policy: HSTS, nosniff, frame deny, referrer policy, CSP | [`cloudfront.tf`](../terraform/cloudfront.tf) |
+| IAM OIDC provider | Short-lived AWS sessions, exact repository/environment trust; created once per account by `scripts/bootstrap-account.sh` | [`github.tf`](../terraform/github.tf) |
+| Role separation | Site and image publisher versus privileged reviewed Terraform operator | [`github.tf`](../terraform/github.tf) |
 | S3 state locking | Terraform 1.10+ S3 lockfile; no DynamoDB table | [`main.tf`](../terraform/main.tf) |
-| SSE-S3 and versioning | Encryption at rest and recoverable replaced objects | [`main.tf`](../terraform/main.tf) |
-| Lifecycle | Noncurrent history expiration, multipart cleanup, delete-marker cleanup | [`main.tf`](../terraform/main.tf) |
+| Customer-managed KMS key | One key per environment for client-data stores: EBS data volume, catalog, backups, secrets | [`security.tf`](../terraform/security.tf) |
+| Lifecycle | Noncurrent history expiration, multipart cleanup, delete-marker cleanup | [`storage.tf`](../terraform/storage.tf) |
 | AWS Budgets | Email notices for tagged actual and forecast spend | [`budget.tf`](../terraform/budget.tf) |
 
-No VPC, NAT gateway, EC2, ECS, Lambda application backend, database, WAF, or customer-managed KMS key exists in this stack. A static public site does not need an always-on server.
+Each environment has a dedicated VPC, one EC2 instance, a data volume with `prevent_destroy`, and no NAT gateway. Section 14 lists what that leaves exposed.
 
-## 7. Browsers receive a static website, not a Node server
+## 7. Browsers receive static pages from S3 and the API from the app box
 
 ```mermaid
 flowchart TD
-  B["Browser requests site URL"] --> DNS["DNS resolves distribution.cloudfront.net"]
-  DNS --> PROTO{"HTTP request?"}
-  PROTO -->|Yes| HTTPS["Redirect to HTTPS"]
-  PROTO -->|No| TLS["CloudFront default TLS certificate"]
-  HTTPS --> TLS
-  TLS --> METHOD{"GET or HEAD?"}
-  METHOD -->|No| REJECT["Request method rejected"]
-  METHOD -->|Yes| FN["Viewer-request routing function"]
+  B["Browser requests site URL"] --> TLS["HTTPS, HTTP redirects"]
+  TLS --> WAF{"WAF allows?"}
+  WAF -->|No| BLOCK["Block"]
+  WAF -->|Yes| PATH{"Path starts with /api/?"}
+  PATH -->|No| FN["Viewer-request function: assets pass through, client routes map to index.html"]
   FN --> CACHE{"Edge cache hit?"}
-  CACHE -->|Yes| RES["Return HTML, JS, CSS, or public assets"]
-  CACHE -->|No| OAC["Sign S3 request with OAC"]
-  OAC --> S3["Private regional S3 origin"]
-  S3 -->|Object found| CACHEFILL["Cache response; compress eligible content"]
-  CACHEFILL --> RES
-  S3 -->|403 or 404| ERR["Return exported /404.html as HTTP 404"]
-  RES --> JS["Browser executes client-side JavaScript"]
+  CACHE -->|Yes| RES["Return page or asset"]
+  CACHE -->|No| OAC["Sign S3 request with OAC"] --> S3["Private S3 site bucket"] --> RES
+  PATH -->|Yes| VO["CloudFront VPC origin, no caching, all headers except Host"]
+  VO --> BOX["Box: FastAPI container on port 80"]
+  BOX --> AUTH{"Valid session or public route?"}
+  AUTH -->|No| DENY["401 or 403"]
+  AUTH -->|Yes| APIRES["JSON response, Cache-Control no-store"]
 ```
 
-Node runs during CI builds, not in AWS at request time. The application must support Next.js `output: 'export'` downstream. Server-side rendering, API routes, server actions, and server-side sessions have no host here.
+Node runs during CI builds, not in AWS at request time. The frontend is a Vite single-page application: the build output is `frontend/dist`, published to S3. Client-side routes resolve to `index.html`; hashed files under `assets/` pass through unchanged. There is no server-side rendering. Sessions, authorization, and all data access live in the API behind `/api/*`, which CloudFront never caches.
 
-| Request path | Origin path |
+| Request path | Served from |
 |---|---|
-| `/` | `/index.html` |
-| `/about` | `/about.html` |
-| `/docs/` | `/docs/index.html` |
-| `/_next/static/file.js` | Unchanged |
-| Unknown key | Custom 404 response; requires an exported `404.html` |
+| `/` and any client route | `index.html` from S3 |
+| `/assets/file.js` | Unchanged object from S3 |
+| `/api/*` | The app box through the CloudFront VPC origin |
 
-The route function distinguishes paths using a trailing slash or a dot in the last path segment. Application route design must fit that rule. It does not implement authorization or API routing.
+The function treats a path with a dot in its last segment as a file and everything else as a client route; `/api/*` never reaches it. Public pages stay up when the box is stopped; `/api/*` then returns a gateway error and the login page must show that the tools are offline.
 
 CloudFront uses `PriceClass_100` to limit edge-location cost exposure. This is a geography/performance tradeoff, not a monthly cost cap. No geographic access restriction is configured.
 
@@ -430,8 +450,13 @@ A private origin does not make delivered content private. Anything bundled into 
 | Site S3 current objects | Public static export | OAC reads through CloudFront; deploy role writes; no current-object expiry |
 | Site S3 noncurrent objects | Replaced or deleted revisions | Versioning; eligible for expiration after 30 noncurrent days |
 | CloudFront/browser caches | Previously delivered public bytes | Cache controls and invalidation; client copies cannot be recalled |
-| Separate state S3 bucket | Terraform state, plan binaries/JSON, manifests, diagnostics | Private bootstrap-managed bucket; retention not configured by this stack |
-| Client application data | No supported store | Not implemented; do not upload confidential data here |
+| Separate state S3 bucket | Terraform state, plan binaries/JSON, manifests, diagnostics | Private encrypted bucket created by `scripts/bootstrap-account.sh`; saved plans and diagnostics expire after 30 days, noncurrent state versions after 90 days |
+| Catalog S3 bucket | Client contacts, exports, discovery data | KMS customer-managed key, versioned, TLS-only, object access only through the VPC's S3 endpoint; noncurrent versions expire after 30 days |
+| Documents S3 bucket | Member documents uploaded and downloaded by browsers through presigned URLs | Same key, versioning, and lifecycle; browsers cannot use the VPC endpoint, so object access is limited to the box role (the signer of every presigned URL) and listed operator roles instead; CORS admits only the site origin |
+| SQLite data volume | The club database, `DATABASE_URL=sqlite:////data/clientreach.db` | Encrypted EBS with the environment key, `prevent_destroy`, daily snapshots (7 retained) |
+| Backups S3 bucket | SQLite `.backup` snapshots written before each deploy and daily | KMS key, versioned; never a raw copy of a live `.db` file |
+| Secrets Manager secret | `JWT_SECRET`, OAuth client secrets, API tokens | Values seeded by `scripts/seed-secrets.sh`, never in Terraform state or Git |
+| Audit trail | CloudTrail management events, multi-region, log-file validation | Private log bucket, 400-day expiry |
 
 ### S3 protections preserve history without making deletion immediate
 
@@ -490,7 +515,7 @@ This recovery diagram is an operator procedure, not an automated rollback workfl
 | AWS static export or Terraform check fails | Integration does not advance to dev | Add compatibility changes through Intake |
 | Review/hold/current-base rule blocks | No eligible promotion | Resolve the brake; synchronize source with destination; rerun checks |
 | AWS variable missing | Deployment fails before AWS calls | Configure the exact environment |
-| Backend runtime changed | Deployment fails: backend host absent | Implement backend hosting before releasing backend changes |
+| Backend runtime changed | Ship fails if the image push, SSM command, or box health check fails; the box restarts the previous image digest | Read the SSM command output, fix forward on a `feature/<user>` branch, and redeploy |
 | Upload or invalidation fails | Publication may be partial | Inspect S3 and CloudFront before retry or restoration |
 | Index differs | Deployment fails despite HTTP availability | Inspect caching and content; do not record a successful release |
 | Dev deployment evidence missing | Production promotion stops | Deploy that exact dev commit or prove the complete diff is documentation-only |
@@ -500,7 +525,7 @@ No uptime alarm, synthetic monitor, CloudFront access-log destination, central a
 
 Branches can diverge after merge commits. A maintainer can create `feature/sync` from `integration` and merge the destination history into it. That branch follows Intake and the normal reviewed sequence. Do not open a direct `prod → integration` PR: Intake rejects that source. No controller bypass exists.
 
-## 12. Cost controls avoid an always-on application server
+## 12. Cost controls bound the always-on application server
 
 ```mermaid
 flowchart TD
@@ -517,10 +542,10 @@ Budget notices are not spending limits. Billing data and notices can lag. The ta
 
 | Choice | Benefit | Cost or limitation |
 |---|---|---|
-| Static S3 + CloudFront | No idle application instance or NAT gateway | Storage, requests, transfer, invalidations, and edge function usage still cost money |
+| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared, always-on API | The instance and its public IPv4 bill continuously; stop the instance (host-control Lambda) when unused |
 | Separate accounts | Clear deployment and data boundaries | Two resource sets and operational setup |
-| No WAF yet | Avoid fixed web ACL/rule overhead for static-only content | Reassess before adding forms, APIs, or application attack surfaces |
-| SSE-S3 rather than a customer key | No dedicated KMS key for public content | Not a client-data key-isolation design |
+| WAF on the prod edge | Blocks common attacks before they reach the API | Fixed web ACL and rule charges |
+| Customer-managed KMS key per environment | Key isolation for EBS, catalog, backups, and secrets | About $1 per key per month; the public site bucket stays on SSE-S3 |
 | `PriceClass_100` | Limit edge locations | Some users can see higher latency |
 | Cheap Intake | No Docker, Terraform, or Playwright | Cloud incompatibility can surface later, intentionally |
 | Strict downstream checks | Test the deployment contract before release | Repeated builds and scans consume runner minutes |
@@ -539,26 +564,29 @@ Every job has a bounded timeout. Documentation changes skip costly lanes. CloudF
 6. Create each proposed environment and its matching branch policy through the repository environment APIs.
 7. Add the current maintainers as required reviewers on `prod` and both `infrastructure-*-apply` environments.
 8. Verify a write-role contributor cannot create or update a branch outside `feature/*`.
-9. Verify maintainers still need checks and one approval to merge into shared branches.
-10. Create the dev and prod AWS accounts and private, encrypted, versioned state buckets.
-11. Define retention, access controls, and recovery procedures for those state buckets.
+9. Verify maintainers still need passing checks to merge into all three shared branches, plus one team approval for `dev` and `prod`.
+10. Create the dev and prod AWS accounts in the organization. Only the organization's management account can do this; run the **Organization** workflow (section 15) from it, or have the organization owner run the same Terraform by hand.
+11. Run `scripts/bootstrap-account.sh <region>` once per account with operator credentials: it creates the private state bucket with retention, the GitHub OIDC provider, a multi-region CloudTrail trail with its log bucket, and a GuardDuty detector.
 12. Run initial Terraform provisioning with operator credentials, separately for each account.
 13. Configure GitHub environment variables from verified account IDs and Terraform outputs.
 14. Activate billing tags and confirm budget email delivery.
 15. Integrate the real frontend through `feature/<user>`; complete the dev and prod deployment drills.
 
-These are activation steps, not actions already performed. This PR does not create AWS accounts, change the default branch, install rules, or merge itself.
+Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default branch `prod`, four repository rulesets, six environments with branch policies, team reviewers. Steps 8–9 need a write-role contributor to test. Step 11 was run on 2026-10-05 for the builder account `073813807852` in `us-east-2` (state bucket, OIDC provider, CloudTrail trail, GuardDuty detector). Steps 10 and 12–15 are not done: the dev and prod accounts do not exist yet and nothing has been applied by Terraform.
 
 ### Environment bindings
 
 | Environment | Allowed ref | Required variables |
 |---|---|---|
-| `dev` | `dev` | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN`, `SITE_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `SITE_URL` |
-| `prod` | `prod` | Same variable names, distinct prod values |
+| `dev` | `dev` | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY`, `BOX_INSTANCE_ID` |
+| `prod` | `prod` | The same variables plus `SITE_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `SITE_URL` |
 | `infrastructure-dev-plan`, `infrastructure-dev-apply` | `prod` | `AWS_TERRAFORM_ROLE_ARN`, `TF_REGION`, `TF_ACCOUNT_ID`, `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_BUDGET_EMAIL`, `TF_MONTHLY_BUDGET_USD` |
 | `infrastructure-prod-plan`, `infrastructure-prod-apply` | `prod` | Same variable names, distinct prod values |
+| `organization-plan`, `organization-apply` | `prod` | `ORG_ACCOUNT_ID`, `AWS_ORGANIZATION_ROLE_ARN`, `ORG_DEV_EMAIL`, `ORG_PROD_EMAIL`, `ORG_STATE_BUCKET`, `ORG_STATE_KEY` |
 
-`TF_MANAGE_GITHUB_OIDC_PROVIDER` is optional. Set it to `false` when the account already has the GitHub OIDC provider. Plan and apply bindings must match exactly.
+Set `TF_MANAGE_GITHUB_OIDC_PROVIDER` to `false`: `scripts/bootstrap-account.sh` already created the provider. Plan and apply bindings must match exactly.
+
+Optional `infrastructure-*` variables, each unset by default: `TF_INSTANCE_TYPE`, `TF_DATA_VOLUME_GB`, `TF_ENABLE_EDGE`, `TF_ENABLE_WAF`, `TF_ORIGIN_READ_TIMEOUT`, `TF_OFFICE_HOURS_ENABLED`, and `TF_CATALOG_OPERATOR_PRINCIPAL_ARNS` (a JSON list of role ARNs that may read catalog, documents, and backups from outside the VPC, such as a restore role). A value changed locally but not set here is reverted by the next reviewed plan.
 
 Run Terraform with `environment=dev` or `environment=prod`. The [Terraform outputs](../terraform/outputs.tf) supply bucket, distribution, URL, and role identifiers. Use distinct state keys and accounts.
 
@@ -568,17 +596,59 @@ Environment reviewers are not stored in this repository: GitHub requires user or
 
 After installing a ruleset, check that its bypass list shows **Repository admin**. The proposal uses `RepositoryRole` ID 5 for that role.
 
-### Features not implemented by this static stack
+### Feature status and prerequisites
 
 | Capability | Status and prerequisite |
 |---|---|
-| Application frontend | Not included in this repository yet; downstream gates deliberately reject missing executable delivery |
-| Backend hosting | Not implemented; backend changes cannot ship |
-| Login, sessions, member roles | Not implemented; a public static URL is not authentication |
-| NDA/client isolation and uploads | Not implemented; requires an authenticated data service and authorization tests |
-| Database and client-data retention | Not implemented; requires explicit stores, deletion behavior, backup policy, and deletion evidence |
-| Bedrock/model integration | Not implemented; enterprise model-data policy is separate from this delivery design |
+| Application frontend and backend | In this repository; deployed by the gates above once the environments exist |
+| Login, sessions, member roles | Implemented by the application (Google sign-in limited to `@yale.edu` plus an invitation); needs the Google OAuth client for each environment's URL |
+| NDA/client isolation and uploads | Row-level and workspace isolation exist in the application; storage encrypted per environment; no external authorization test suite yet |
+| Database and client-data retention | SQLite on an encrypted volume with snapshots and `.backup` copies; a deletion-evidence procedure and a restore drill are not done |
+| Bedrock/model integration | Code and IAM exist; the account's Bedrock quotas are zero and the Anthropic use-case form is blocked by organization policy until the organization owner allows it |
 | Custom domain | Planned extension only; requires DNS and ACM configuration |
-| Automated rollback and continuous monitoring | Not implemented; exercise operator recovery before production use |
+| Automated rollback and continuous monitoring | Image rollback on a failed health check only; no uptime alarm or synthetic monitor |
 
-Do not interpret these gaps as permission to send confidential data through the public site. No placeholder service or mock deployment fills these roles.
+Do not interpret these gaps as permission to send confidential data through the public site.
+
+## 14. Application runtime and confidentiality limits
+
+```mermaid
+flowchart LR
+  CF["CloudFront, prod only"] -->|VPC origin :80| BOX
+  DEV["Developer"] -->|"SSM port-forward"| BOX
+  subgraph VPC["Environment VPC"]
+    BOX["EC2: container, data volume"]
+    S3E["S3 gateway endpoint with policy"]
+    DNSFW["DNS Firewall: malware and botnet lists"]
+  end
+  BOX --> S3E --> BUCKETS["Catalog and backups buckets"]
+  BOX -->|"443 and 80 only"| NET["Internet: Google, Slack, Bedrock, crawl targets"]
+  BOX -.-> LOGS["CloudWatch: DNS queries, flow logs, app logs"]
+```
+
+Controls that exist: no SSH and no inbound listener except the CloudFront service security group in prod; IMDSv2 required; security-group egress limited to ports 80, 443, 53, and 123; an S3 gateway endpoint whose policy admits only this environment's buckets; bucket policies that deny requests not arriving through that endpoint; DNS Firewall blocking AWS-managed malware and botnet domains; DNS query logs, VPC flow logs, CloudTrail, and GuardDuty; per-environment KMS keys; and no long-lived AWS credentials anywhere.
+
+**Known limit: data can still leave over ports 80 and 443.** The application must crawl arbitrary company websites and resolve MX records for arbitrary recipient domains, so an egress domain allowlist would break the product. An attacker who controls the container can therefore reach arbitrary internet hosts. The mitigations are detection (DNS and flow logs, GuardDuty), minimal IAM, and the S3 endpoint policy, which stops uploads to buckets outside this environment. Revisit this with a filtering proxy if the crawl moves to a separate worker.
+
+**Known limit: one instance, one disk.** A stopped or failed instance is a full outage of the API, and SQLite allows one writer. Recovery is the latest EBS snapshot or `.backup` copy; no restore drill has been performed yet. To scale, move to a larger instance type through a reviewed Terraform plan before considering another database.
+
+## 15. Organization and account vending
+
+```mermaid
+flowchart LR
+  M["Management account, one-time human setup"] --> R["OIDC role: organization-plan and organization-apply only"]
+  R --> P["Organization workflow: plan, review SHA256, apply"]
+  P --> T["organization/ Terraform: YUCG OU, YUCG_Dev, YUCG_Prod, guardrail SCP"]
+  T --> B["vend-bootstrap.sh: assume OrganizationAccountAccessRole, run bootstrap-account.sh"]
+  B --> V["Per account: state bucket, OIDC provider, CloudTrail, GuardDuty"]
+  V --> E["Operator: first Terraform apply, then GitHub environment variables"]
+```
+
+`organization/` is organization-agnostic: it names no organization, so moving to an organization the club controls is a new plan and apply with that organization's management account, not a rewrite. It runs through the same reviewed saved-plan runner as `terraform/` (section 9), with the same identity manifest, 24-hour age limit, and SHA256 match, under the environments `organization-plan` and `organization-apply`.
+
+Limits to know:
+
+- A member account cannot create accounts, so the one-time prerequisites in [organization/README.md](../organization/README.md) need a person with management-account administrator access.
+- Terraform never closes an account (`close_on_deletion = false`, `prevent_destroy`); closing one is a manual action by the organization owner.
+- The workflow bootstraps each new account but does not set the GitHub environment variables: it prints them, and a maintainer adds them (the Actions token cannot write repository settings).
+- The guardrail SCP is attached to the `YUCG` OU only. Policies attached higher in the host organization still apply and may deny actions this design needs; the owner of that organization controls them.

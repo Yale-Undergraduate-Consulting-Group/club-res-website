@@ -1,0 +1,54 @@
+#!/bin/bash
+# First boot of the ${name} box (cloud-init runs this once per instance;
+# Terraform ignores later edits, so changing it never replaces the box).
+# It prepares the host and does not start the app: the first container starts
+# through the CI ship path (ops/restart-yucg.sh over SSM), which also installs
+# the daily backup timer and refreshes /etc/yucg/config.json from the SSM
+# parameter named by its config_parameter key on every deploy.
+#
+# /etc/yucg/config.json (root, 0600), one JSON object, every key required:
+#   env                     "dev" | "prod"
+#   region                  AWS region of every regional call ("us-east-2")
+#   secret_arn              Secrets Manager secret holding the container secrets
+#   catalog_bucket          S3 bucket for workbooks, discovery and export files
+#   backups_bucket          S3 bucket for daily SQLite .backup snapshot sets
+#   documents_bucket        S3 bucket for workspace documents (browser presigned URLs)
+#   log_group               CloudWatch log group of the container (docker awslogs)
+#   public_url              https://<cloudfront domain> (edge) or http://localhost:8000;
+#                           "" in this first-boot copy on the edge, because the
+#                           distribution is created after the box; the SSM copy has it
+#   bedrock_model_id        Bedrock inference profile the app invokes
+#   email_delivery_enabled  JSON bool; true only in prod
+#   edge                    JSON bool; true: publish 0.0.0.0:80->8000 for the VPC
+#                           origin; false: 127.0.0.1:8000 for SSM port forwarding
+#   config_parameter        SSM String parameter holding the current copy of this JSON
+set -euo pipefail
+
+dnf install -y docker jq xfsprogs python3 amazon-ecr-credential-helper
+systemctl enable --now docker
+
+# The retained SQLite volume, addressed by its EBS volume ID so the root disk
+# can never be formatted by mistake. It attaches after the instance exists.
+DATA_DEV=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_serial}
+for _ in $(seq 1 120); do
+  [ -b "$DATA_DEV" ] && break
+  sleep 5
+done
+[ -b "$DATA_DEV" ] || { echo "Retained data volume $DATA_DEV missing; refusing root-volume fallback" >&2; exit 1; }
+# Format only a volume that has never held a filesystem.
+blkid "$DATA_DEV" >/dev/null 2>&1 || mkfs.xfs "$DATA_DEV"
+DATA_UUID="$(blkid -s UUID -o value "$DATA_DEV")"
+install -d -m 0755 /data
+grep -q " /data " /etc/fstab || echo "UUID=$DATA_UUID /data xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+mountpoint -q /data || { echo "Retained data mount failed" >&2; exit 1; }
+# The application image runs as 10001:10001.
+chown 10001:10001 /data
+chmod 0750 /data
+
+install -d -m 0755 /etc/yucg
+umask 0077
+cat > /etc/yucg/config.json <<'JSON'
+${config_json}
+JSON
+chmod 0600 /etc/yucg/config.json
