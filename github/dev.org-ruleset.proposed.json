@@ -24,9 +24,26 @@
       "parameters": {
         "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
+        "required_reviewers": [
+          {
+            "minimum_approvals": 1,
+            "file_patterns": [
+              "*"
+            ],
+            "reviewer": {
+              "id": 19868239,
+              "type": "Team"
+            }
+          }
+        ],
         "require_code_owner_review": false,
+        "dismissal_restriction": {
+          "enabled": false,
+          "allowed_actors": []
+        },
         "require_last_push_approval": false,
         "required_review_thread_resolution": true,
+        "require_extra_approval_for_unattributed_changes": false,
         "allowed_merge_methods": [
           "merge"
         ]
