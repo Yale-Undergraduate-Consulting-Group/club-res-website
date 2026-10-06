@@ -71,7 +71,7 @@ A branch named `feature` cannot coexist with `feature/user` in Git.
 - A maintainer is anyone with the repository admin role; organization owners also qualify.
 - Name roles, not individuals, in rules, docs, and configuration. Membership changes belong in GitHub settings.
 - Organization ownership, repository administration, code review, merge permission, and AWS access are different permissions.
-- Shared-branch merges need one approval and a maintainer; low-risk auto-merge remains a recommendation until configured.
+- Only maintainers merge into shared branches. `integration` needs passing checks; `dev` and `prod` also need one maintainer-team approval. GitHub shows these PRs as blocked; maintainers merge with the rules bypass.
 - Ask a second maintainer to review IAM, client access, deletion, workflow permissions, and protection changes when one is available.
 - Keep automation credentials narrow; do not grant every candidate workflow a shared-branch bypass.
 - An empty environment list does not prove missing permission. Report the actual API result and operation.

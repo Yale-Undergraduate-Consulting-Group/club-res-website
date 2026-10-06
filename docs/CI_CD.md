@@ -74,7 +74,7 @@ flowchart TD
   O -->|Yes| S{"integration, dev, or prod?"}
   S -->|No| ADMIN["Maintainer administrative operation"]
   S -->|Yes| Q["Separate quality rules still apply"]
-  Q --> R["PR, one approval, required checks, current base"]
+  Q --> R["PR, required checks, current base;<br/>dev and prod also need one team approval"]
   R --> M["Maintainer merges; no force push or branch deletion"]
 ```
 
@@ -83,14 +83,18 @@ This diagram describes the installed rules. They are repository rulesets on `clu
 | Setting | Purpose | Bypass |
 |---|---|---|
 | `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners |
-| `integration.org-ruleset.proposed.json` | Require Intake, PR review, and current base | None |
-| `dev.org-ruleset.proposed.json` | Require Dev checks, PR review, and current base | None |
-| `prod.org-ruleset.proposed.json` | Require Production checks, PR review, and current base | None |
+| `integration.org-ruleset.proposed.json` | Require Intake and current base; no approval | None |
+| `dev.org-ruleset.proposed.json` | Require Dev checks, one maintainer-team approval, and current base | None |
+| `prod.org-ruleset.proposed.json` | Require Production checks, one maintainer-team approval, and current base | None |
 | Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
 A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
 
-One approval from a member of `club-res-website-maintainers` is required; no code owner is required. A team approval also stops a contributor workflow from approving its own PR as `github-actions[bot]`. Contributors cannot merge an approved PR, because merging updates a restricted ref.
+PRs into `integration` need no approval: only maintainers can merge there, so the maintainer's merge is the review, and a single maintainer can merge their own PR. PRs into `dev` and `prod` need one approval from `club-res-website-maintainers`. The controller opens those promotion PRs as `github-actions[bot]`, so one maintainer can approve them. No code owner is required.
+
+Because only bypass actors may update `integration`, `dev`, and `prod`, GitHub shows every PR into them as **blocked**, even when every check passes. That is expected. A maintainer merges with **Merge without waiting for requirements to be met (bypass rules)**, or `gh pr merge <n> --merge --admin`. The quality rulesets have no bypass actors, so their checks and approvals are still required.
+
+Keep `require_extra_approval_for_unattributed_changes: false` in every `pull_request` rule. GitHub sets it to `true` when a payload omits it. It then demands a human approval for agent-authored commits even when no approval is required, which blocked PR #8.
 
 The namespace rule permits contributors to use any allowed `feature/*` branch. It does **not** prove that `feature/alice` belongs to Alice or prevent another writer from updating it. Personal branch isolation would require per-user rules or separate forks.
 
@@ -560,7 +564,7 @@ Every job has a bounded timeout. Documentation changes skip costly lanes. CloudF
 6. Create each proposed environment and its matching branch policy through the repository environment APIs.
 7. Add the current maintainers as required reviewers on `prod` and both `infrastructure-*-apply` environments.
 8. Verify a write-role contributor cannot create or update a branch outside `feature/*`.
-9. Verify maintainers still need checks and one approval to merge into shared branches.
+9. Verify maintainers still need passing checks to merge into all three shared branches, plus one team approval for `dev` and `prod`.
 10. Create the dev and prod AWS accounts in the organization. Only the organization's management account can do this; run the **Organization** workflow (section 15) from it, or have the organization owner run the same Terraform by hand.
 11. Run `scripts/bootstrap-account.sh <region>` once per account with operator credentials: it creates the private state bucket with retention, the GitHub OIDC provider, a multi-region CloudTrail trail with its log bucket, and a GuardDuty detector.
 12. Run initial Terraform provisioning with operator credentials, separately for each account.
