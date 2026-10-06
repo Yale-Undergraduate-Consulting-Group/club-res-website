@@ -25,7 +25,6 @@ jobs:
       image: ${{ steps.classify.outputs.image }}
       security: ${{ steps.classify.outputs.security }}
       deploy: ${{ steps.classify.outputs.deploy }}
-      backend_runtime: ${{ steps.classify.outputs.backend_runtime }}
     steps:
     - id: route
       name: Select the stage operation

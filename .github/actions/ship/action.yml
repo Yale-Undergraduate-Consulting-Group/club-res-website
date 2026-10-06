@@ -1,5 +1,5 @@
-name: Ship the verified static site
-description: Publish the verified static export to its S3 bucket, invalidate CloudFront and check the live site.
+name: Ship the verified revision
+description: Push the verified image, restart the box through SSM, then (prod) publish the SPA behind CloudFront and check the live site.
 inputs:
   role:
     description: Deploy role supplied by the stage workflow.
@@ -12,68 +12,158 @@ runs:
       env:
         ROLE: ${{ inputs.role }}
       run: |
+        set -euo pipefail
         [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
         [[ "$ROLE" == "arn:aws:iam::${AWS_ACCOUNT_ID}:role/"?* ]]
-        test -n "$AWS_REGION"
-        [[ "$SITE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
-        [[ "$CLOUDFRONT_DISTRIBUTION_ID" =~ ^[A-Z0-9]+$ ]]
-        [[ "$SITE_URL" == https://* ]]
-        [[ "$EXPECTED_SITE_SHA256" =~ ^[a-f0-9]{64}$ ]]
+        [[ "$AWS_REGION" =~ ^[a-z]{2}(-[a-z]+)+-[0-9]$ ]]
+        test "$ECR_REPOSITORY" = "club-res-website-${DEPLOYMENT_ENV}"
+        [[ "$BOX_INSTANCE_ID" =~ ^i-[0-9a-f]{8,17}$ ]]
+        [[ "$EXPECTED_IMAGE_SHA256" =~ ^[a-f0-9]{64}$ ]]
         case "$DEPLOYMENT_ENV:$GITHUB_REF" in
           dev:refs/heads/dev|prod:refs/heads/prod) ;;
           *) exit 1 ;;
         esac
+        # Only prod has the CloudFront edge; dev is reached through SSM port forwarding.
+        if [ "$DEPLOYMENT_ENV" = prod ]; then
+          [[ "$SITE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
+          [[ "$CLOUDFRONT_DISTRIBUTION_ID" =~ ^[A-Z0-9]+$ ]]
+          [[ "$SITE_URL" == https://* ]]
+          [[ "$EXPECTED_SITE_SHA256" =~ ^[a-f0-9]{64}$ ]]
+        fi
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: club-image-${{ github.sha }}
+        path: /tmp/club-image
+    - name: Verify and load the exact verified image
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "${EXPECTED_IMAGE_SHA256}  /tmp/club-image/image.tar" | sha256sum -c -
+        docker load -i /tmp/club-image/image.tar
+        docker image inspect "club-app:${GITHUB_SHA}" > /dev/null
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      if: env.DEPLOYMENT_ENV == 'prod'
       with:
         name: club-site-${{ github.sha }}
         path: /tmp/club-site
-    - name: Verify and unpack the exact verified export
+    - name: Verify and unpack the exact verified frontend
+      if: env.DEPLOYMENT_ENV == 'prod'
       shell: bash
       run: |
         set -euo pipefail
         cd /tmp/club-site
         echo "${EXPECTED_SITE_SHA256}  site.tar.gz" | sha256sum -c -
         sha256sum -c SHA256SUMS
-        mkdir out
-        tar -xzf site.tar.gz -C out
-        test -s out/index.html
+        mkdir dist
+        tar -xzf site.tar.gz -C dist
+        test -s dist/index.html
     - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
       with:
         role-to-assume: ${{ inputs.role }}
         aws-region: ${{ env.AWS_REGION }}
         allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
         retry-max-attempts: 3
-    - name: Publish hashed assets, then pages
+    - name: Verify the target box before deployment
+      shell: bash
+      run: python3 ops/check_deployment.py
+    - id: push
+      name: Push the image to ECR and resolve its digest
       shell: bash
       run: |
         set -euo pipefail
-        cd /tmp/club-site/out
-        # Content-hashed Next.js assets are immutable and stay available for
-        # pages still open in browsers; they are uploaded before any page
-        # that references them.
-        if [ -d _next/static ]; then
-          aws s3 sync _next/static "s3://${SITE_BUCKET}/_next/static" \
+        ECR_HOST="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        # Tags are immutable; the attempt suffix lets a rerun push again.
+        TAG="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        export DOCKER_CONFIG="$RUNNER_TEMP/club-ecr-login"
+        trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+        aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR_HOST" > /dev/null
+        docker tag "club-app:${GITHUB_SHA}" "${ECR_HOST}/${ECR_REPOSITORY}:${TAG}"
+        docker push --quiet "${ECR_HOST}/${ECR_REPOSITORY}:${TAG}"
+        DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" \
+          --query 'imageDetails[0].imageDigest' --output text)"
+        [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+        {
+          echo "ecr_host=$ECR_HOST"
+          echo "image=${ECR_HOST}/${ECR_REPOSITORY}@${DIGEST}"
+        } >> "$GITHUB_OUTPUT"
+    - name: Restart the box on the new image through SSM
+      shell: bash
+      env:
+        IMAGE: ${{ steps.push.outputs.image }}
+        ECR_HOST: ${{ steps.push.outputs.ecr_host }}
+      run: |
+        set -euo pipefail
+        OPS_BUNDLE="$(tar -czf - -C ops backup_sqlite.py backup-to-s3.sh yucg-backup.service yucg-backup.timer | base64 -w0)"
+        export OPS_BUNDLE
+        # envsubst must receive the variable names, not their values.
+        # shellcheck disable=SC2016
+        envsubst '$IMAGE $ECR_HOST $DEPLOYMENT_ENV $OPS_BUNDLE' < ops/restart-yucg.sh > "$RUNNER_TEMP/restart-yucg.sh"
+        jq -n --rawfile script "$RUNNER_TEMP/restart-yucg.sh" --arg id "$BOX_INSTANCE_ID" \
+          --arg comment "club-res-website ${DEPLOYMENT_ENV} ${GITHUB_SHA:0:12} run ${GITHUB_RUN_ID}" '{
+            InstanceIds: [$id],
+            DocumentName: "AWS-RunShellScript",
+            Comment: $comment,
+            TimeoutSeconds: 60,
+            Parameters: { commands: [$script], executionTimeout: ["540"] }
+          }' > "$RUNNER_TEMP/ssm-send.json"
+        COMMAND_ID="$(aws ssm send-command --cli-input-json "file://$RUNNER_TEMP/ssm-send.json" \
+          --query Command.CommandId --output text)"
+        STATUS=Pending
+        for _ in $(seq 1 120); do
+          sleep 5
+          STATUS="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$BOX_INSTANCE_ID" \
+            --query Status --output text 2>/dev/null || echo Pending)"
+          case "$STATUS" in
+            Pending|InProgress|Delayed|Cancelling) ;;
+            *) break ;;
+          esac
+        done
+        # The box script prints no secret values; show its output for diagnosis.
+        echo "::group::Box output ($STATUS)"
+        aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$BOX_INSTANCE_ID" \
+          --query '[StandardOutputContent, StandardErrorContent]' --output text || true
+        echo '::endgroup::'
+        if [ "$STATUS" != Success ]; then
+          echo "::error::Box deployment ended with status $STATUS (SSM command $COMMAND_ID)"
+          exit 1
+        fi
+        echo "Box: $BOX_INSTANCE_ID ($DEPLOYMENT_ENV) runs $IMAGE." >> "$GITHUB_STEP_SUMMARY"
+    - name: Publish hashed assets, then pages
+      if: env.DEPLOYMENT_ENV == 'prod'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd /tmp/club-site/dist
+        # Content-hashed Vite assets are immutable and stay available for pages
+        # still open in browsers; they are uploaded before any page that
+        # references them.
+        if [ -d assets ]; then
+          aws s3 sync assets "s3://${SITE_BUCKET}/assets" \
             --cache-control 'public,max-age=31536000,immutable' --only-show-errors
         fi
         # Pages: browsers revalidate every load; the edge keeps them until the
-        # invalidation below. --delete removes pages this revision no longer has.
-        aws s3 sync . "s3://${SITE_BUCKET}" --delete --exclude '_next/static/*' \
+        # invalidation below. --delete removes files this revision no longer has.
+        aws s3 sync . "s3://${SITE_BUCKET}" --delete --exclude 'assets/*' \
           --cache-control 'public,max-age=0,s-maxage=31536000,must-revalidate' --only-show-errors
     - name: Invalidate CloudFront and wait for completion
+      if: env.DEPLOYMENT_ENV == 'prod'
       shell: bash
       run: |
         set -euo pipefail
         INVALIDATION="$(aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
           --paths '/*' --query Invalidation.Id --output text)"
         aws cloudfront wait invalidation-completed --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --id "$INVALIDATION"
-    - name: Verify the public site serves this revision
+    - name: Verify the public site and API serve this revision
+      if: env.DEPLOYMENT_ENV == 'prod'
       shell: bash
       run: |
         set -euo pipefail
         curl --fail --silent --show-error --location --max-time 20 --retry 3 --retry-all-errors \
           "$SITE_URL" -o /tmp/club-site/live-index.html
-        if ! cmp -s /tmp/club-site/live-index.html /tmp/club-site/out/index.html; then
+        if ! cmp -s /tmp/club-site/live-index.html /tmp/club-site/dist/index.html; then
           echo "::error::$SITE_URL answered, but not with this revision's index.html"
           exit 1
         fi
-        echo "Live: $SITE_URL serves the index.html of ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+        curl --fail --silent --show-error --max-time 20 --retry 3 --retry-all-errors \
+          "${SITE_URL%/}/api/health" | jq -e '.status == "ok"' > /dev/null
+        echo "Live: $SITE_URL serves the index.html of ${GITHUB_SHA} and a healthy API." >> "$GITHUB_STEP_SUMMARY"

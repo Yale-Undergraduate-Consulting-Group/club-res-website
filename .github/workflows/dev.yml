@@ -26,7 +26,6 @@ jobs:
       image: ${{ steps.classify.outputs.image }}
       security: ${{ steps.classify.outputs.security }}
       deploy: ${{ steps.classify.outputs.deploy }}
-      backend_runtime: ${{ steps.classify.outputs.backend_runtime }}
     steps:
     - id: route
       name: Select the stage operation
@@ -89,9 +88,6 @@ jobs:
       with:
         stage: dev
         phase: ${{ needs.scope.outputs.phase }}
-      id: build
-    outputs:
-      site_sha256: ${{ steps.build.outputs.site_sha256 }}
   infra:
     needs: scope
     if: needs.scope.outputs.infra == 'true'
@@ -108,12 +104,17 @@ jobs:
     needs: scope
     if: needs.scope.outputs.image == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
     - uses: ./.github/actions/image
+      with:
+        phase: ${{ needs.scope.outputs.phase }}
+      id: build
+    outputs:
+      image_sha256: ${{ steps.build.outputs.image_sha256 }}
   required-checks:
     name: dev-required-checks
     needs:
@@ -140,38 +141,31 @@ jobs:
   deploy:
     needs:
     - scope
-    - frontend
+    - image
     - required-checks
     if: ${{ always() && !cancelled() && needs.required-checks.result == 'success' && needs.scope.outputs.phase == 'ship' &&
-      needs.scope.outputs.deploy == 'true' && needs.frontend.result == 'success' }}
+      needs.scope.outputs.deploy == 'true' && needs.image.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: dev
     permissions:
       contents: read
       id-token: write
-    outputs:
-      configured: ${{ steps.binding.outputs.configured }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
       AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-      SITE_BUCKET: ${{ vars.SITE_BUCKET }}
-      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
-      SITE_URL: ${{ vars.SITE_URL }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      BOX_INSTANCE_ID: ${{ vars.BOX_INSTANCE_ID }}
       DEPLOYMENT_ENV: dev
-      EXPECTED_SITE_SHA256: ${{ needs.frontend.outputs.site_sha256 }}
-      BACKEND_CHANGED: ${{ needs.scope.outputs.backend_runtime }}
+      EXPECTED_IMAGE_SHA256: ${{ needs.image.outputs.image_sha256 }}
     steps:
-    - id: binding
-      name: Require a complete deploy target
+    - name: Require a complete deploy target
       run: |
         set -euo pipefail
-        for name in AWS_REGION AWS_ACCOUNT_ID AWS_DEPLOY_ROLE_ARN SITE_BUCKET CLOUDFRONT_DISTRIBUTION_ID SITE_URL; do
+        for name in AWS_REGION AWS_ACCOUNT_ID AWS_DEPLOY_ROLE_ARN ECR_REPOSITORY BOX_INSTANCE_ID; do
           if [ -z "${!name}" ]; then echo "::error::Missing environment binding: $name"; exit 1; fi
         done
-        test "$BACKEND_CHANGED" != true || { echo "::error::Backend delivery is unavailable; configure a real backend host before release."; exit 1; }
-        echo configured=true >> "$GITHUB_OUTPUT"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false

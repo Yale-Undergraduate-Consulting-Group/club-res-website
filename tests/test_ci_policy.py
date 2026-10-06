@@ -23,18 +23,44 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(scope['image'])
         self.assertFalse(scope['deploy'])
 
+    def test_unit_test_lanes_run_at_every_stage(self):
+        every = ('backend', 'frontend', 'infra')
+        cases = {
+            'backend/app/main.py': ('backend',),
+            'frontend/src/lib/richText.ts': ('frontend',),
+            'frontend/package.json': ('frontend',),
+            '.github/workflows/intake.yml': every,
+            '.github/actions/frontend/action.yml': every,
+            'scripts/ci_policy.py': every,
+            'tests/test_ci_policy.py': every,
+            'docker/app.Dockerfile': every,
+            '.dockerignore': every,
+        }
+        for path, lanes in cases.items():
+            for stage, phase in (('intake', 'verify'), ('dev', 'verify'), ('dev', 'ship'),
+                                 ('production', 'verify'), ('production', 'ship')):
+                with self.subTest(path=path, stage=stage, phase=phase):
+                    scope = classify([path], stage, phase)
+                    self.assertTrue(all(scope[lane] for lane in lanes))
+
     def test_downstream_ship_cannot_erase_verification(self):
         for stage in ('dev', 'production'):
             with self.subTest(stage=stage):
-                scope = classify(['frontend/app/page.tsx'], stage, 'ship')
-                self.assertTrue(all(scope[lane] for lane in ('frontend', 'backend', 'infra', 'security', 'deploy')))
-                self.assertFalse(scope['image'])
+                scope = classify(['frontend/src/App.tsx'], stage, 'ship')
+                self.assertTrue(all(scope[lane] for lane in (*LANES, 'security', 'deploy')))
 
-    def test_backend_runtime_keeps_release_blocking_information(self):
-        scope = classify(['backend/main.py'], 'dev', 'ship')
-        self.assertTrue(scope['backend_runtime'])
-        self.assertTrue(scope['image'])
-        self.assertTrue(scope['deploy'])
+    def test_image_contents_require_the_image_lane_downstream(self):
+        for path in ('backend/main.py', 'frontend/src/App.tsx', 'docker/app.Dockerfile', 'ops/restart-yucg.sh', '.dockerignore'):
+            with self.subTest(path=path):
+                self.assertTrue(classify([path], 'dev')['image'])
+                self.assertFalse(classify([path], 'intake')['image'])
+
+    def test_terraform_only_verification_does_not_build_the_image(self):
+        scope = classify(['terraform/main.tf'], 'dev')
+        self.assertFalse(scope['image'])
+        self.assertTrue(scope['infra'])
+        # A deployment still ships the image so its success proves the box revision.
+        self.assertTrue(classify(['terraform/main.tf'], 'dev', 'ship')['image'])
 
     def test_documentation_does_not_deploy(self):
         scope = classify(['docs/CI_CD.md', 'README.md'], 'production', 'ship')
@@ -92,7 +118,7 @@ class PolicyTests(unittest.TestCase):
                            cwd=tmp, env=env, check=True)
             scope = json.loads(next(line[6:] for line in output.read_text().splitlines() if line.startswith('scope=')))
             self.assertTrue(scope['deploy'])
-            self.assertTrue(scope['backend_runtime'])
+            self.assertTrue(scope['image'])
 
 
 if __name__ == '__main__':
