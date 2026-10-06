@@ -32,3 +32,15 @@ frontend/out/
 backend.hcl
 crash.log
 crash.*.log
+
+# Ported app (Vite SPA + FastAPI)
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+backend/venv/
+backend/.venv/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.xlsx

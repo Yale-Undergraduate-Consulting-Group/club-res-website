@@ -1,0 +1,2898 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap');
+
+@import "tailwindcss";
+
+/* Only treat as dark when <html class="dark"> — not OS prefers-color-scheme (fixes grey tabs/cards in app light mode). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-deep-navy: #1a2f5a;
+  --color-mid-navy: #1e3a6e;
+  --color-slate-blue: #3d5c82;
+  --color-steel-blue: #5b7fa6;
+  --color-light-steel: #8aaabf;
+  --color-pale-sky: #c8dced;
+}
+
+:root {
+  /* Canonical product tokens. Legacy aliases below remain during component migration. */
+  --canvas: #f5f7fa;
+  --surface: #ffffff;
+  --surface-subtle: #eef2f6;
+  --surface-raised: #ffffff;
+  --ink: #102442;
+  --ink-muted: #52647a;
+  --focus: #286dc0;
+  --danger: #b42318;
+  --danger-soft: #fff1f0;
+  --success-soft: #ecfdf3;
+  --warning-soft: #fffaeb;
+  --info-soft: #eff8ff;
+  --radius-control: 0.5rem;
+  --radius-panel: 0.5rem;
+  --control-height: 2.75rem;
+  --yale-blue: #00356b;
+  --yale-blue-light: #286dc0;
+  --yale-blue-dark: #002244;
+  --deep-navy: #1a2f5a;
+  --mid-navy: #1e3a6e;
+  --slate-blue: #3d5c82;
+  --steel-blue: #42658a;
+  --light-steel: #8aaabf;
+  --pale-sky: #c8dced;
+  --bg-primary: var(--canvas);
+  --bg-secondary: var(--surface);
+  --bg-card: var(--surface);
+  --text-primary: var(--ink);
+  --text-muted: var(--ink-muted);
+  --accent: var(--yale-blue);
+  --accent-hover: var(--yale-blue-dark);
+  --border: #cbd5df;
+  /* Chart ramp: the club's own blue ladder, dark to pale, so a chart reads as
+     part of the product rather than a stock palette dropped in. Danger stays
+     the product's danger red because a bounce is the one bad outcome. */
+  /* Blues and greys only, separated by lightness rather than hue so adjacent
+     slices stay legible without leaving the club's palette. */
+  --chart-1: #00356b;
+  --chart-2: #2f5585;
+  --chart-3: #5b7fa6;
+  --chart-4: #8aaabf;
+  --chart-5: #a9b8c6;
+  --chart-6: #c8dced;
+  /* A reply is the outcome that matters, so it takes the strongest blue; a
+     bounce is inert grey; queued is barely there. */
+  --chart-good: #00356b;
+  --chart-bad: #5a6675;
+  --chart-idle: #d7dee7;
+  --success: #16794b;
+  --warning: #9a5b00;
+  /* Primary CTAs: same hue family as headings and links (--accent from :root or user prefs) */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-text: #ffffff;
+  /* Elevation: bright highlight + pale-sky tint — no heavy black drop shadow */
+  --shadow-sm: 0 1px 2px rgba(255, 255, 255, 0.92), 0 2px 8px rgba(200, 220, 237, 0.42);
+  --shadow-md: 0 2px 4px rgba(255, 255, 255, 0.88), 0 6px 16px rgba(200, 220, 237, 0.36);
+  --shadow-lg: 0 4px 8px rgba(255, 255, 255, 0.82), 0 10px 28px rgba(200, 220, 237, 0.32);
+  --shadow-xl: 0 8px 16px rgba(255, 255, 255, 0.78), 0 14px 40px rgba(200, 220, 237, 0.28);
+  --shadow-2xl: 0 12px 24px rgba(255, 255, 255, 0.72), 0 22px 56px rgba(200, 220, 237, 0.22);
+}
+
+/* Dark mode (YUCG palette adapted) */
+.dark {
+  --canvas: #0f172a;
+  --surface: #1e293b;
+  --surface-subtle: #273449;
+  --surface-raised: #243247;
+  --ink: #f1f5f9;
+  --ink-muted: #cbd5e1;
+  --focus: #8ab4e6;
+  --danger: #fda29b;
+  --danger-soft: #4a1d22;
+  --success-soft: #123a2d;
+  --warning-soft: #493616;
+  --info-soft: #173455;
+  --bg-primary: var(--canvas);
+  --bg-secondary: var(--surface);
+  --bg-card: var(--surface);
+  --text-primary: var(--ink);
+  --text-muted: var(--ink-muted);
+  --accent: #5b7fa6;
+  --accent-hover: #8aaabf;
+  --border: #334155;
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-text: #ffffff;
+  /* Dark: soft white rim + airy lift (not black blobs) */
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 2px 10px rgba(255, 255, 255, 0.05);
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 4px 16px rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.11), 0 8px 28px rgba(255, 255, 255, 0.07);
+  --shadow-xl: 0 0 0 1px rgba(255, 255, 255, 0.13), 0 12px 36px rgba(255, 255, 255, 0.08);
+  --shadow-2xl: 0 0 0 1px rgba(255, 255, 255, 0.15), 0 20px 50px rgba(255, 255, 255, 0.09);
+}
+
+.dark body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Dark: field text matches --text-primary (same as rest of UI) */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+.dark select,
+.dark textarea {
+  background-color: #334155;
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+  border-color: #475569;
+}
+
+.dark .bg-white { background-color: var(--bg-card); }
+.dark .bg-slate-50 { background-color: #334155; }
+.dark .bg-pale-sky\/50 { background-color: rgba(91, 127, 166, 0.2); }
+.dark .bg-pale-sky\/20 { background-color: rgba(91, 127, 166, 0.15); }
+.dark .bg-pale-sky\/30 { background-color: rgba(91, 127, 166, 0.2); }
+.dark .border-pale-sky,
+.dark .border-slate-200,
+.dark .border-slate-300 { border-color: #475569; }
+.dark .text-deep-navy { color: var(--text-primary); }
+.dark nav.border-b { border-color: #334155; }
+.dark .hover\:bg-slate-50:hover { background-color: #334155; }
+.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(91, 127, 166, 0.2); }
+.dark .bg-red-50 { background-color: rgba(185, 28, 28, 0.15); }
+.dark .bg-green-50 { background-color: rgba(5, 150, 105, 0.15); }
+.dark .bg-amber-50 { background-color: rgba(180, 83, 9, 0.15); }
+.dark .bg-slate-50 { background-color: #334155; }
+.dark code { background-color: #475569; color: #e2e8f0; }
+
+html {
+  font-family: 'Lato', system-ui, sans-serif;
+}
+
+/* Form controls and tables do not inherit the page font by default, which is
+   why buttons and selects were rendering in the system face. */
+button,
+input,
+select,
+textarea,
+table {
+  font-family: inherit;
+}
+
+/* ——— YUCG brand: Lato + photo banners (not full-page overlay) ——— */
+html.yucg-brand-redesign {
+  --yucg-tint: rgba(0, 53, 107, 0.58);
+  --yucg-tint-strong: rgba(26, 47, 90, 0.72);
+  --banner-ink: #ffffff;
+  --banner-ink-muted: rgba(255, 255, 255, 0.88);
+}
+
+html.yucg-brand-redesign.dark {
+  --yucg-tint: rgba(0, 34, 68, 0.68);
+  --yucg-tint-strong: rgba(8, 15, 28, 0.78);
+  --banner-ink: #f1f5f9;
+  --banner-ink-muted: rgba(226, 232, 240, 0.85);
+}
+
+html.yucg-brand-redesign body {
+  background-color: var(--bg-primary);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+html.yucg-brand-redesign .app-shell,
+html.yucg-brand-redesign .app-shell-main {
+  background: var(--bg-primary);
+}
+
+/* Photo banner blocks (login, outreach landing, etc.) */
+.yucg-photo-banner {
+  position: relative;
+  overflow: hidden;
+  background-image:
+    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    var(--yucg-banner-image, url('/yucg-bg/pauli-murray-tower.jpg'));
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: multiply, normal;
+  border: 2px solid var(--deep-navy);
+}
+
+html.yucg-brand-redesign.dark .yucg-photo-banner {
+  border-color: var(--border);
+  background-blend-mode: soft-light, normal;
+}
+
+.yucg-photo-banner--hero {
+  min-height: 11rem;
+}
+
+@media (min-width: 768px) {
+  .yucg-photo-banner--hero {
+    min-height: 14rem;
+  }
+}
+
+.yucg-photo-banner--strip {
+  min-height: 7rem;
+}
+
+.yucg-photo-banner__content {
+  position: relative;
+  z-index: 1;
+  padding: 1.25rem 1.5rem;
+  max-width: min(42rem, 100%);
+  min-width: 0;
+}
+
+.yucg-photo-banner__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--banner-ink);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .yucg-photo-banner__title {
+    font-size: 1.65rem;
+  }
+}
+
+.yucg-photo-banner__subtitle {
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--banner-ink-muted);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+/* Login — full-viewport campus photo + Yale blue tint, centered frosted card */
+html.yucg-brand-redesign .app-auth-shell {
+  background-color: var(--deep-navy);
+  background-image:
+    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    url('/yucg-bg/pauli-murray-tower.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-blend-mode: multiply, normal;
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell {
+  background-color: #0f172a;
+  background-blend-mode: soft-light, normal;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+body {
+  margin: 0;
+  font-family: 'Lato', system-ui, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+#root {
+  min-height: 100vh;
+  font-family: 'Lato', system-ui, sans-serif;
+}
+
+/*
+ * Light mode fields: same ink as body; background from theme.
+ * Excludes checkbox/radio/color/file/etc. so native controls stay usable.
+ */
+html:not(.dark) input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+html:not(.dark) select,
+html:not(.dark) textarea {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+}
+
+.email-studio-input,
+.email-studio-body {
+  background-color: #ffffff;
+  color: var(--text-primary);
+  font-family: 'Lato', system-ui, sans-serif;
+}
+.dark .email-studio-input,
+.dark .email-studio-body {
+  background-color: #334155;
+  color: var(--text-primary);
+}
+
+/* Plain contenteditable (e.g. rich text): default typing uses theme ink */
+[contenteditable="true"] {
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+}
+
+/* Autofill should keep readable ink in both themes */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+}
+
+/* Email Studio: attachments + editor blocks white in light mode */
+.email-studio-block {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  border-width: 1px;
+}
+.dark .email-studio-block {
+  background-color: rgba(51, 65, 85, 0.3);
+  border-color: #475569;
+}
+
+/* Email Studio: generator header white in light mode (no gray) */
+.email-generator-header {
+  background-color: #ffffff;
+}
+.dark .email-generator-header {
+  background-color: var(--bg-card);
+}
+
+/* Email Studio: editor column matches theme surfaces */
+.email-studio-editor-column {
+  background-color: var(--bg-card);
+}
+
+/* Email Studio page: Lato everywhere (native <select> often defaults to system font) */
+.email-studio,
+.email-studio input,
+.email-studio select,
+.email-studio textarea,
+.email-studio button {
+  font-family: 'Lato', system-ui, sans-serif;
+}
+.email-studio option {
+  font-family: 'Lato', system-ui, sans-serif;
+}
+
+/* Shared panels use one restrained frame and radius. */
+html:not(.dark) .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+.dark .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+/* ——— Top navigation ——— */
+.app-top-nav {
+  background: var(--bg-card);
+  border-bottom: 3px solid var(--deep-navy);
+  box-shadow: none;
+}
+
+.app-nav-menu {
+  flex-wrap: nowrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  display: none;
+}
+
+.app-shell-desktop-nav {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-desktop-nav {
+    display: flex;
+  }
+}
+
+.app-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--deep-navy);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.app-nav-link:last-child {
+  border-right: none;
+}
+
+.app-nav-link:hover {
+  background: var(--pale-sky);
+  color: var(--deep-navy);
+}
+
+.app-nav-link--active,
+.app-nav-link.active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-nav-link {
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border-right-color: var(--border);
+}
+
+.dark .app-nav-link:hover {
+  background: #334155;
+}
+
+.dark .app-nav-link--active,
+.dark .app-nav-link.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.app-nav-util-btn {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.app-nav-util-btn:hover {
+  background: var(--pale-sky);
+  border-color: var(--deep-navy);
+}
+
+.dark .app-nav-util-btn {
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+.dark .app-nav-util-btn:hover {
+  background: #334155;
+}
+
+.app-avatar {
+  width: 2rem;
+  height: 2rem;
+  object-fit: cover;
+  border: 2px solid var(--deep-navy);
+  border-radius: 999px !important;
+}
+
+/* ——— App shell (desktop + mobile) ——— */
+.app-shell {
+  background: var(--bg-primary);
+}
+
+.app-shell-header-inner {
+  max-width: 1920px;
+  margin: 0 auto;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .app-shell-header-inner {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+.app-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.app-shell-logo {
+  height: 1.75rem;
+  width: auto;
+  flex-shrink: 0;
+  display: block;
+  outline: none;
+  user-select: none;
+}
+
+.app-shell-title {
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--deep-navy);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.dark .app-shell-title {
+  color: var(--text-primary);
+}
+
+.app-shell-subtitle {
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 0.125rem;
+}
+
+.app-shell-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding-left: 0.5rem;
+  margin-left: 0.25rem;
+  border-left: 2px solid var(--border);
+}
+
+.app-shell-header-avatar,
+.app-shell-header-profile,
+.app-shell-header-logout {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .app-shell-header-avatar {
+    display: block;
+  }
+
+  .app-shell-header-profile {
+    display: inline;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell-header-logout {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1023px) {
+  .app-shell-header-actions {
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+  }
+}
+
+.app-shell-profile-link {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--deep-navy);
+  text-decoration: none;
+}
+
+.app-shell-profile-link:hover {
+  text-decoration: underline;
+}
+
+.dark .app-shell-profile-link {
+  color: var(--text-primary);
+}
+
+.app-shell-main {
+  padding: 1rem;
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .app-shell-main {
+    padding: 1.5rem;
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell-main {
+    padding: 2rem;
+    padding-bottom: 2rem;
+  }
+}
+
+.app-shell-aside {
+  min-height: calc(100vh - 3.5rem);
+}
+
+/* ——— Mobile shell (< lg) ——— */
+.app-mobile-shell {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .app-mobile-shell {
+    display: none;
+  }
+}
+
+.app-mobile-nav {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  background: var(--bg-card);
+  border-top: 3px solid var(--deep-navy);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.app-mobile-nav-menu-btn {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 3.75rem;
+  padding: 0.625rem 0.5rem;
+  border: none;
+  border-right: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.app-mobile-nav-menu-btn:hover {
+  background: var(--pale-sky);
+}
+
+.dark .app-mobile-nav-menu-btn {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.dark .app-mobile-nav-menu-btn:hover {
+  background: #334155;
+}
+
+.app-mobile-nav-menu-glyph {
+  display: block;
+  width: 1rem;
+  height: 0.125rem;
+  background: currentColor;
+  box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor;
+}
+
+.app-mobile-nav-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.app-mobile-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.app-mobile-nav-item {
+  flex: 1 0 auto;
+  min-width: max-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 0.75rem;
+  text-decoration: none;
+  color: var(--deep-navy);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+
+.app-mobile-nav-item:last-child {
+  border-right: none;
+}
+
+.app-mobile-nav-item:hover {
+  background: var(--pale-sky);
+}
+
+.app-mobile-nav-item--active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-mobile-nav-item {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-right-color: var(--border);
+}
+
+.dark .app-mobile-nav-item--active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.app-mobile-nav-label {
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mobile drawer (< lg only) */
+.app-shell-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-drawer-root {
+    display: none !important;
+  }
+}
+
+.app-shell-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  border: none;
+  cursor: pointer;
+}
+
+.app-shell-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(100%, 20rem);
+  background: var(--bg-card);
+  border-left: 3px solid var(--deep-navy);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.app-shell-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+/* Auth shell (login) */
+.app-auth-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-primary);
+}
+
+/* Responsive page menus — scroll on narrow viewports */
+@media (max-width: 1023px) {
+  .app-tab-menu {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-tab-menu-item {
+    flex: 0 0 auto;
+  }
+
+  .app-subnav {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* ——— Page tab menus (Outreach, Admin, Profile) ——— */
+.app-tab-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 2px solid var(--deep-navy);
+  border-bottom: none;
+  background: var(--bg-secondary);
+}
+
+.app-tab-menu-item {
+  flex: 1 1 auto;
+  min-width: max-content;
+  padding: 0.625rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.app-tab-menu-item:last-child {
+  border-right: none;
+}
+
+.app-tab-menu-item:hover {
+  background: var(--pale-sky);
+}
+
+.app-tab-menu-item--active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-tab-menu-item {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-right-color: var(--border);
+}
+
+.dark .app-tab-menu-item--active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.app-tab-panel {
+  border: 2px solid var(--deep-navy);
+  border-top: none;
+  background: var(--bg-secondary);
+  padding: 0.75rem 1rem;
+}
+
+.dark .app-tab-panel {
+  background: var(--bg-card);
+}
+
+/* ——— Segmented subnav (Scraper, Profile settings) ——— */
+.app-subnav {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+}
+
+.app-subnav-item {
+  padding: 0.55rem 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.app-subnav-item:last-child {
+  border-right: none;
+}
+
+.app-subnav-item:hover {
+  background: var(--pale-sky);
+}
+
+.app-subnav-item--active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-subnav-item {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.dark .app-subnav-item--active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* ——— Community sidebar ——— */
+.app-sidebar {
+  border-left: 3px solid var(--deep-navy);
+  background: var(--bg-card);
+}
+
+.app-sidebar-section-title {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--deep-navy);
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.app-sidebar-link {
+  display: block;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.app-sidebar-link:hover {
+  background: var(--pale-sky);
+  border-left-color: var(--steel-blue);
+}
+
+.app-sidebar-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.dark .app-sidebar-section-title {
+  color: var(--text-primary);
+}
+
+.app-subnav--stretch {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+/* A stretched subnav sits in narrow columns (the Studio sidebar). Wrapping
+   there stacked the two pills and stretched every control beside them. */
+.app-subnav--stretch {
+  flex-wrap: nowrap;
+}
+
+.app-subnav--stretch .app-subnav-item {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.app-sidebar-integration {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.app-sidebar-integration + .app-sidebar-integration {
+  margin-top: 0.5rem;
+}
+
+.app-fab {
+  position: fixed;
+  z-index: 40;
+  width: 3rem;
+  height: 3rem;
+  border: 2px solid var(--deep-navy);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.app-fab:hover {
+  background: var(--btn-primary-hover);
+}
+
+.app-fab--above-mobile-nav {
+  bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  right: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .app-fab--above-mobile-nav {
+    bottom: 1.5rem;
+    right: 1.5rem;
+  }
+}
+
+.app-fab-badge {
+  position: absolute;
+  top: -0.125rem;
+  right: -0.125rem;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  border: 2px solid var(--deep-navy);
+  background: #f59e0b;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* Checklist overlay — fits viewport, clears mobile bottom nav */
+.checklist-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 1rem;
+  padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+  .checklist-overlay {
+    padding: 1.5rem;
+    padding-bottom: 1.5rem;
+  }
+}
+
+.checklist-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.dark .checklist-overlay-backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.checklist-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 22rem);
+  max-height: min(32rem, calc(100dvh - 6.5rem - env(safe-area-inset-bottom, 0px)));
+  overflow: hidden;
+  pointer-events: auto;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-card);
+}
+
+@media (min-width: 1024px) {
+  .checklist-panel {
+    max-height: min(36rem, calc(100dvh - 3rem));
+  }
+}
+
+.checklist-panel-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+}
+
+.checklist-panel-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--deep-navy);
+}
+
+.dark .checklist-panel-title {
+  color: var(--text-primary);
+}
+
+.checklist-panel-close {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.checklist-panel-close:hover {
+  background: var(--pale-sky);
+}
+
+.checklist-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+.checklist-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.checklist-add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.checklist-add-btn {
+  flex-shrink: 0;
+  padding: 0.5rem 0.875rem;
+  border: 2px solid var(--deep-navy);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checklist-add-btn:hover {
+  background: var(--btn-primary-hover);
+}
+
+.checklist-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checklist-empty {
+  padding: 1rem 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  min-width: 0;
+}
+
+.checklist-item--done {
+  background: var(--bg-primary);
+  opacity: 0.85;
+}
+
+.checklist-item-check {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.checklist-item-check--done {
+  background: var(--success);
+  border-color: var(--success);
+  color: #ffffff;
+}
+
+.checklist-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.checklist-item--done .checklist-item-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.checklist-item-remove {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.checklist-item-remove:hover {
+  color: #dc2626;
+}
+
+.checklist-panel-footer {
+  flex-shrink: 0;
+  padding: 0.5rem 1rem;
+  border-top: 2px solid var(--border);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+}
+
+.app-toast {
+  border: 2px solid var(--border);
+  box-shadow: none;
+  border-radius: var(--radius-panel);
+}
+
+.dark .app-sidebar-link:hover {
+  background: #334155;
+}
+
+/* Inputs & buttons share the same control radius as everything else. */
+html:not(.dark) input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
+html:not(.dark) select,
+html:not(.dark) textarea,
+.dark input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
+.dark select,
+.dark textarea {
+  border-radius: var(--radius-control) !important;
+}
+
+/* Single-line text inputs and selects get a height floor so a field on one
+   page matches a field on another - a textarea is naturally multi-line and
+   is excluded, and this is a floor (min-height), not a forced height, so an
+   input that already needs more room for its own content is unaffected. */
+input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
+select {
+  min-height: var(--control-height);
+}
+
+.btn-danger-solid {
+  border-radius: var(--radius-control);
+}
+
+
+/*
+ * Email Studio — Gmail preview: explicit colors so .dark .bg-slate-* hacks don't flatten contrast.
+ */
+.email-studio-gmail-rail {
+  background-color: #cbd5e1; /* slate-300: clearly grey vs white card */
+}
+.dark .email-studio-gmail-rail {
+  background-color: #3f4f63; /* between slate-700–800, lighter than page #0f172a */
+}
+.email-studio-gmail-card {
+  background-color: #ffffff;
+  border: 1px solid #94a3b8;
+  box-shadow: var(--shadow-md);
+}
+.dark .email-studio-gmail-card {
+  background-color: #f8fafc;
+  border-color: #64748b;
+  box-shadow: var(--shadow-lg);
+}
+.email-studio-gmail-body {
+  background-color: #ffffff;
+}
+.dark .email-studio-gmail-body {
+  background-color: #f8fafc;
+}
+.email-studio-gmail-toolbar {
+  background-color: #e2e8f0; /* slate-200 */
+  border-bottom: 1px solid #cbd5e1;
+}
+.dark .email-studio-gmail-toolbar {
+  background-color: #4b556a;
+  border-bottom-color: #64748b;
+}
+.email-studio-gmail-toolbar button,
+.email-studio-gmail-toolbar span {
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+.dark .email-studio-gmail-toolbar span {
+  color: var(--text-primary);
+}
+/* Raw ad hoc buttons across pages repeat the same primary/danger color
+   utilities without the shared .ui-button/.btn-danger-solid classes. Target
+   them by the color marker so every button reading as "primary" or
+   "danger" gets the same height and radius tier as componentized buttons,
+   without having to touch every call site's className string. Padding is
+   pinned too - a min-height alone is a floor, not a ceiling, and several
+   of these buttons use larger py- utilities that would still render taller.
+   Small/inline buttons (text-xs, text-[12px]) keep a smaller, still-
+   consistent tier rather than being forced to full CTA height - a tiny
+   inline suggestion action next to compact text should not suddenly
+   dominate its own card. */
+button[class*="btn-primary-bg"],
+button[class*="btn-primary-hover"] {
+  min-height: var(--control-height);
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-control);
+}
+button[class*="btn-primary-bg"][class*="text-xs"],
+button[class*="btn-primary-hover"][class*="text-xs"],
+button[class*="btn-primary-bg"][class*="text-[12px]"],
+button[class*="btn-primary-hover"][class*="text-[12px]"] {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.75rem;
+}
+
+/* Secondary/neutral action buttons and link-styled actions share the same
+   border-pale-sky marker but drift between compact (py-1.5) and standard
+   (py-2) heights depending on who wrote that page. Give them the same
+   floor as everything else so a toolbar button next to a text input on the
+   same row does not look mismatched. */
+button[class*="border-pale-sky"],
+a[class*="border-pale-sky"][class*="rounded-lg"] {
+  min-height: 2.75rem;
+}
+
+
+/* Destructive actions — solid fill, never washed out by theme utilities */
+.btn-danger-solid {
+  background-color: #991b1b;
+  color: #ffffff;
+  font-weight: 600;
+  border: 1px solid #7f1d1d;
+  border-radius: var(--radius-control);
+}
+.btn-danger-solid:hover:not(:disabled) {
+  background-color: #7f1d1d;
+  color: #ffffff;
+}
+.btn-danger-solid:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.dark .btn-danger-solid {
+  background-color: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+.dark .btn-danger-solid:hover:not(:disabled) {
+  background-color: #b91c1c;
+  color: #ffffff;
+}
+
+/* Primary CTA: use with padding/radius utilities (bg/hover from CSS vars) */
+.btn-primary {
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--btn-primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * Site-wide primary button — solid fill, no drop shadow (elevation only on cards).
+ * Pair with text-xs / text-sm and px/py via utility classes as needed.
+ */
+.btn-primary-solid {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  border-radius: 0;
+  border: none;
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+}
+.btn-primary-solid:hover:not(:disabled) {
+  background-color: var(--btn-primary-hover);
+}
+.btn-primary-solid:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn-primary-solid:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Standardized button press animation site-wide */
+button:not([disabled]) {
+  transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.15s ease;
+}
+button:not([disabled]):active {
+  transform: scale(0.98);
+}
+.btn-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.btn-press:active {
+  transform: scale(0.98);
+}
+
+/* Pillbox toggle animation */
+@keyframes pillbox-pop {
+  0% { transform: scale(0.96); opacity: 0.9; }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.pillbox-pill {
+  transition: background-color 0.25s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.pillbox-pill:active {
+  animation: pillbox-pop 0.35s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-enter {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* User preferences: compact mode */
+body.yucg-compact main {
+  padding: 0.5rem 0.75rem;
+}
+body.yucg-compact {
+  font-size: 14px;
+}
+
+/* User preferences: UI font size */
+body[data-ui-font="small"] {
+  font-size: 14px;
+}
+body[data-ui-font="large"] {
+  font-size: 17px;
+}
+
+/*
+ * Unified foreground: neutral Tailwind text-* utilities map to --text-primary.
+ * Semantic colors (red/green/amber/blue links, text-white on buttons, etc.) unchanged.
+ */
+html:not(.dark) .text-slate-50,
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-slate-200,
+html:not(.dark) .text-slate-300,
+html:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-500,
+html:not(.dark) .text-slate-600,
+html:not(.dark) .text-slate-700,
+html:not(.dark) .text-slate-800,
+html:not(.dark) .text-slate-900,
+html:not(.dark) .text-slate-950,
+html:not(.dark) .text-gray-50,
+html:not(.dark) .text-gray-100,
+html:not(.dark) .text-gray-200,
+html:not(.dark) .text-gray-300,
+html:not(.dark) .text-gray-400,
+html:not(.dark) .text-gray-500,
+html:not(.dark) .text-gray-600,
+html:not(.dark) .text-gray-700,
+html:not(.dark) .text-gray-800,
+html:not(.dark) .text-gray-900,
+html:not(.dark) .text-gray-950,
+html:not(.dark) .text-zinc-500,
+html:not(.dark) .text-zinc-600,
+html:not(.dark) .text-zinc-700,
+html:not(.dark) .text-zinc-800,
+html:not(.dark) .text-zinc-900,
+html:not(.dark) .text-steel-blue,
+html:not(.dark) .text-slate-blue,
+html:not(.dark) .text-mid-navy,
+html:not(.dark) .text-light-steel {
+  color: var(--text-primary);
+}
+
+html.dark .text-slate-50,
+html.dark .text-slate-100,
+html.dark .text-slate-200,
+html.dark .text-slate-300,
+html.dark .text-slate-400,
+html.dark .text-slate-500,
+html.dark .text-slate-600,
+html.dark .text-slate-700,
+html.dark .text-slate-800,
+html.dark .text-slate-900,
+html.dark .text-slate-950,
+html.dark .text-gray-50,
+html.dark .text-gray-100,
+html.dark .text-gray-200,
+html.dark .text-gray-300,
+html.dark .text-gray-400,
+html.dark .text-gray-500,
+html.dark .text-gray-600,
+html.dark .text-gray-700,
+html.dark .text-gray-800,
+html.dark .text-gray-900,
+html.dark .text-gray-950,
+html.dark .text-zinc-400,
+html.dark .text-zinc-500,
+html.dark .text-zinc-600,
+html.dark .text-zinc-700,
+html.dark .text-zinc-800,
+html.dark .text-zinc-900,
+html.dark .text-steel-blue,
+html.dark .text-slate-blue,
+html.dark .text-mid-navy,
+html.dark .text-light-steel {
+  color: var(--text-primary);
+}
+
+/* dark:* text utilities (same specificity as Tailwind; !important wins tie) */
+html.dark .dark\:text-slate-100,
+html.dark .dark\:text-slate-200,
+html.dark .dark\:text-slate-300,
+html.dark .dark\:text-slate-400,
+html.dark .dark\:text-slate-500,
+html.dark .dark\:text-slate-600,
+html.dark .dark\:text-slate-700,
+html.dark .dark\:text-slate-800,
+html.dark .dark\:text-gray-100,
+html.dark .dark\:text-gray-200,
+html.dark .dark\:text-gray-300,
+html.dark .dark\:text-gray-400,
+html.dark .dark\:text-gray-500,
+html.dark .dark\:text-gray-600,
+html.dark .dark\:text-gray-700,
+html.dark .dark\:text-zinc-100,
+html.dark .dark\:text-zinc-200,
+html.dark .dark\:text-zinc-300,
+html.dark .dark\:text-zinc-400,
+html.dark .dark\:text-zinc-500 {
+  color: var(--text-primary) !important;
+}
+
+/*
+ * Fields: placeholders same ink family as typed text (lighter via mix; beats Tailwind placeholder:*).
+ */
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-primary) 58%, transparent) !important;
+  opacity: 1 !important;
+}
+
+/* Native select menus (best-effort; OS may still theme the dropdown) */
+select option,
+select optgroup {
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+}
+
+html.dark select option,
+html.dark select optgroup {
+  color: var(--text-primary);
+  background-color: #334155;
+}
+
+/*
+ * Elevation: map Tailwind shadow-* to theme tokens site-wide (light + dark).
+ * Unlayered so these win over default Tailwind shadows.
+ */
+.shadow-sm {
+  box-shadow: var(--shadow-sm);
+}
+.shadow {
+  box-shadow: var(--shadow-md);
+}
+.shadow-md {
+  box-shadow: var(--shadow-md);
+}
+.shadow-lg {
+  box-shadow: var(--shadow-lg);
+}
+.shadow-xl {
+  box-shadow: var(--shadow-xl);
+}
+.shadow-2xl {
+  box-shadow: var(--shadow-2xl);
+}
+
+/* User preferences: reduce motion */
+body.yucg-reduce-motion *,
+body.yucg-reduce-motion *::before,
+body.yucg-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* YUCG redesign — must follow base .surface-card rules (cascade fix) */
+html.yucg-brand-redesign:not(.dark) .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+html.yucg-brand-redesign.dark .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+html.yucg-brand-redesign:not(.dark) .app-auth-shell .surface-card {
+  background-color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(15, 32, 58, 0.22);
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell .surface-card {
+  background-color: rgba(30, 41, 59, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell .bg-slate-50 {
+  background-color: rgba(51, 65, 85, 0.65);
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell .text-deep-navy,
+html.yucg-brand-redesign.dark .app-auth-shell h1 {
+  color: var(--text-primary);
+}
+
+html.yucg-brand-redesign.dark .text-slate-600,
+html.yucg-brand-redesign.dark .text-slate-500,
+html.yucg-brand-redesign.dark .text-slate-700 {
+  color: var(--text-primary);
+  opacity: 0.88;
+}
+
+html.yucg-brand-redesign:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
+html.yucg-brand-redesign:not(.dark) select,
+html.yucg-brand-redesign:not(.dark) textarea {
+  background-color: #ffffff;
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+html.yucg-brand-redesign.dark input:not([type="checkbox"]):not([type="radio"]),
+html.yucg-brand-redesign.dark select,
+html.yucg-brand-redesign.dark textarea {
+  background-color: #334155;
+  color: var(--text-primary);
+  border-color: #475569;
+}
+
+html.yucg-brand-redesign .yucg-photo-banner table thead th,
+html.yucg-brand-redesign .yucg-coordinator-table thead th {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+html.yucg-brand-redesign.dark .bg-slate-50 {
+  background-color: #334155;
+}
+
+html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
+  border-color: var(--border);
+}
+
+/* Page chrome — photo banner + optional actions */
+.app-page-header {
+  margin: 0 0 1.5rem;
+}
+
+.app-page-header .yucg-photo-banner {
+  margin: 0;
+}
+
+.app-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.app-week-guide__title {
+  margin: 0 0 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--steel-blue);
+}
+
+.app-week-guide__list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-card);
+}
+
+@media (min-width: 900px) {
+  .app-week-guide__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.app-week-guide__item {
+  min-width: 0;
+}
+
+.app-week-guide__item + .app-week-guide__item {
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 900px) {
+  .app-week-guide__item:nth-child(2) {
+    border-top: none;
+    border-left: 1px solid var(--border);
+  }
+
+  .app-week-guide__item:nth-child(3) {
+    border-top: 1px solid var(--border);
+  }
+
+  .app-week-guide__item:nth-child(4) {
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+}
+
+.app-week-guide__link {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  text-decoration: none;
+  color: var(--deep-navy);
+}
+
+.app-week-guide__link:hover {
+  background: var(--pale-sky);
+}
+
+.app-week-guide__n {
+  flex: 0 0 1.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--deep-navy);
+  font-size: 0.8rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.app-week-guide__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.app-week-guide__door {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--steel-blue);
+}
+
+.app-week-guide__name {
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.app-week-guide__how {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.app-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.app-stat {
+  display: block;
+  padding: 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-stat__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--steel-blue);
+}
+
+.app-stat__value {
+  margin-top: 0.25rem;
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--deep-navy);
+}
+
+.app-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-tool {
+  display: block;
+  height: 100%;
+  padding: 0.875rem 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-tool:hover {
+  border-color: var(--steel-blue);
+}
+
+.app-tool__name {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--deep-navy);
+}
+
+.app-tool__what {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--slate-blue, #64748b);
+}
+
+.app-ai-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.app-ai-select-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--deep-navy);
+}
+
+.app-ai-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.app-ai-select-wrap--compact {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+@layer components {
+  .email-studio.app-workspace {
+    max-width: min(100%, 1920px);
+  }
+}
+
+.email-studio-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.studio-workbench-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.studio-workbench-bar > div { display: flex; gap: 0.5rem; }
+.studio-workbench-bar button {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  padding: 0.625rem 0.875rem;
+  color: var(--text-primary);
+  min-height: 44px;
+}
+.studio-workbench-bar button[aria-pressed="true"] {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+}
+@media (max-width: 1279px) {
+  .studio-workbench-bar button:first-child { display: none; }
+}
+.studio-address-check { margin: 0; padding: 0.75rem 1rem; font-size: 0.8125rem; color: var(--text-primary); }
+.studio-address-check span { display: block; margin-top: 0.25rem; color: var(--text-muted); }
+.email-studio:not(.studio-preview-open) .email-studio-gmail-rail { display: none; }
+.email-studio:not(.studio-preview-open) .email-studio-compose { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1280px) {
+  .email-studio.studio-focus .email-studio-layout > .studio-step,
+  .email-studio.studio-focus #email-generator-section { display: none; }
+  .email-studio.studio-focus #email-editor-section { max-width: 100%; }
+}
+
+.email-studio-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.email-studio-generator-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  min-width: 0;
+}
+
+.email-studio-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.email-studio-grow-field {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.email-studio-brief-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .email-studio-brief-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.email-studio-compose {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+}
+
+.email-studio-editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.email-studio-body-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .email-studio-compose {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1280px) {
+  .app-shell:has(.email-studio) {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .app-shell-body:has(.email-studio) {
+    min-height: 0;
+  }
+
+  .app-shell-main:has(.email-studio),
+  .app-shell-main:has(.email-studio) .app-shell-main-inner {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .email-studio {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .email-studio .app-page-header {
+    flex-shrink: 0;
+    margin-bottom: 1rem;
+  }
+
+  .email-studio-layout {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  /* One interpolable size per panel. Collapsing used to swap the sizing
+     class, which moved the size between flex-basis and width — two
+     discontinuous values, so nothing animated and the panel snapped shut. */
+  .email-studio-contacts {
+    --panel-width: 280px;
+    flex: 0 0 var(--panel-width);
+    max-width: var(--panel-width);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .email-studio-contacts[data-collapsed='true'],
+  .email-studio-generator[data-collapsed='true'] {
+    --panel-width: 3.5rem;
+  }
+
+  .email-studio-contacts-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .email-studio-generator {
+    --panel-width: 22rem;
+    flex: 0 0 var(--panel-width);
+    max-width: var(--panel-width);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .email-studio-generator-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* The assistant is a narrow rail; viewport breakpoints must not split its
+     fields into cramped two-column controls. */
+  .email-studio-generator .email-studio-brief-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .email-studio-field--grow {
+    flex: 1 1 5.5rem;
+    min-height: 5.5rem;
+  }
+
+  .email-studio-field--grow .email-studio-grow-field {
+    flex: 1 1 auto;
+    min-height: 5rem;
+  }
+
+  .email-studio-main {
+    flex-direction: row;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  #email-editor-section.studio-step {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* Only the compose area gives up height. The heading, the address check
+     and the campaign toggle were allowed to shrink too, and on a short
+     column were squeezed below their own line height and clipped in half;
+     now they keep their height and the section scrolls instead. */
+  #email-editor-section.studio-step > :not(.email-studio-compose) {
+    flex-shrink: 0;
+  }
+
+  .email-studio-campaign {
+    max-height: calc(100% - 18rem);
+    overflow: auto;
+  }
+
+  .email-studio-compose {
+    flex: 1 1 auto;
+    min-height: 18rem;
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  .email-studio-editor-column,
+  .email-studio-gmail-rail {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .email-studio-editor-column > :not(.email-studio-editor-stack),
+  .email-studio-gmail-rail > h3 {
+    flex-shrink: 0;
+  }
+
+  .studio-draft-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-block: 0.5rem;
+    background: var(--surface);
+  }
+
+  .email-studio-editor-stack {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
+  .email-studio-body-wrap {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 17.5rem;
+  }
+
+  .email-studio-body {
+    flex: 1 1 auto;
+    min-height: 17.5rem;
+    padding-bottom: 5rem;
+  }
+
+  .email-studio-gmail-card {
+    flex: 1 1 auto;
+    min-height: 17.5rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .email-studio-gmail-body {
+    flex: 1 1 auto;
+  }
+}
+
+.studio-generate-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding: 0.75rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.studio-generate-row__go {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.app-auth-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--deep-navy);
+  background-image:
+    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    url('/yucg-bg/pauli-murray-tower.jpg');
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: multiply, normal;
+}
+
+/* ——— Product UI primitives ——— */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ui-button {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border: 2px solid transparent;
+  border-radius: var(--radius-control) !important;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-button--sm {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.ui-button--primary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-bg);
+}
+
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--btn-primary-hover);
+  border-color: var(--btn-primary-hover);
+}
+
+.ui-button--secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--border);
+}
+
+.ui-button--secondary:hover:not(:disabled),
+.ui-button--ghost:hover:not(:disabled) {
+  background: var(--surface-subtle);
+}
+
+.ui-button--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--ink);
+}
+
+/* Inputs and selects share the button metrics so a control row lines up:
+   same height, same radius, same font. Buttons had a system; these did not,
+   which is why fields and the buttons beside them sat at different heights. */
+.ui-input {
+  min-height: var(--control-height);
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.2;
+}
+
+.ui-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.ui-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-input--sm {
+  min-height: 2.25rem;
+  width: auto;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8125rem;
+}
+
+.ui-notice {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-panel);
+  color: var(--ink);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.ui-notice--info { background: var(--info-soft); border-left-color: var(--focus); }
+.ui-notice--success { background: var(--success-soft); border-left-color: var(--success); }
+.ui-notice--warning { background: var(--warning-soft); border-left-color: var(--warning); }
+.ui-notice--danger { background: var(--danger-soft); border-left-color: var(--danger); }
+
+.ui-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px !important;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ui-status--info { background: var(--info-soft); border-color: var(--focus); }
+.ui-status--success { background: var(--success-soft); border-color: var(--success); }
+.ui-status--warning { background: var(--warning-soft); border-color: var(--warning); }
+.ui-status--danger { background: var(--danger-soft); border-color: var(--danger); }
+
+.ui-empty {
+  padding: clamp(2rem, 6vw, 4rem) 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: center;
+}
+
+.ui-empty h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ui-empty p {
+  max-width: 34rem;
+  margin: 0.5rem auto 0;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+}
+
+.ui-empty__action { margin-top: 1rem; }
+
+.ui-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.ui-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.ui-dialog {
+  position: relative;
+  width: min(32rem, 100%);
+  padding: 1.25rem;
+  border: 2px solid var(--deep-navy);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-xl);
+}
+
+.ui-dialog h2 { margin: 0; font-size: 1.125rem; }
+.ui-dialog__body { margin-top: 0.75rem; color: var(--ink-muted); line-height: 1.5; }
+.ui-dialog__actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem; }
+
+.app-page-header .yucg-photo-banner--strip {
+  min-height: 6.5rem;
+}
+
+.app-page-header .yucg-photo-banner__content {
+  padding: 1.125rem 1.25rem;
+}
+
+@layer components {
+  .app-workspace {
+    width: 100%;
+    max-width: 90rem;
+    margin-inline: auto;
+  }
+}
+
+.app-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app-toolbar input,
+.app-toolbar select {
+  min-height: var(--control-height);
+}
+
+.app-section-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+/* Research audience workflow (Find contacts) */
+.research-workspace { display: grid; gap: 1.5rem; }
+
+.research-brief-form,
+.research-brief-field,
+.research-review-field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.research-brief-form {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-panel, 0.5rem);
+}
+
+.research-brief-form input,
+.research-brief-form select,
+.research-brief-form textarea,
+.research-review-field textarea {
+  min-height: var(--control-height, 2.5rem);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control, 0.375rem);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.research-brief-form > button { justify-self: start; }
+.research-brief-field p { margin: 0; color: var(--ink-muted); font-size: 0.75rem; }
+.research-brief-select { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
+.research-brief-select select { min-height: var(--control-height, 2.5rem); }
+
+.research-queue-tab {
+  min-height: var(--control-height, 2.5rem);
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.research-queue-tab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  border-bottom-color: transparent;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.research-queue-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.research-recommendations,
+.research-companies,
+.research-jobs,
+.research-sources {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.research-recommendations > li,
+.research-companies > li,
+.research-jobs > li {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-panel, 0.5rem);
+}
+
+.research-recommendations h3,
+.research-companies h3,
+.research-jobs h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.research-recommendations p,
+.research-companies p,
+.research-jobs p { margin: 0; color: var(--ink-muted); }
+
+.research-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.research-actions .ui-button { min-height: 2.5rem; }
+.research-dimensions { display: grid; gap: 0.5rem; margin: 0; }
+.research-dimensions > div { display: grid; grid-template-columns: minmax(9rem, 1fr) 2fr; gap: 0.5rem; }
+.research-dimensions dt { color: var(--ink-muted); font-weight: 700; }
+.research-dimensions dd { margin: 0; color: var(--ink); }
+.research-dimensions-inline { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; color: var(--ink-muted); }
+.research-drawer { width: min(44rem, 100%); max-height: min(80vh, 44rem); overflow-y: auto; }
+.research-evidence { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
+.research-evidence h3 { margin: 0.5rem 0 0; font-size: 0.9rem; color: var(--ink); }
+.research-evidence p { margin: 0; color: var(--ink-muted); }
+.research-evidence blockquote { margin: 0.25rem 0 0; padding: 0.5rem; border-left: 3px solid var(--border); background: var(--surface-subtle); color: var(--ink); }
+.research-sources li { display: grid; gap: 0.25rem; }
+.research-error { color: var(--danger, #b42318); }
+
+@media (prefers-reduced-motion: reduce) {
+  .research-workspace * { transition: none !important; animation: none !important; }
+}
+
+.studio-mobile-steps {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .studio-mobile-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    padding: 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.625rem;
+    background: var(--surface-subtle);
+  }
+
+  .studio-mobile-steps button {
+    min-height: 2.75rem;
+    border-radius: 0.45rem;
+    color: var(--ink-muted);
+    font-size: 0.75rem;
+    font-weight: 800;
+  }
+
+  .studio-mobile-steps button[aria-current="step"] {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+  }
+
+  .email-studio .studio-step:not(.is-active) {
+    display: none;
+  }
+
+  .email-studio .studio-step.is-active {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: none;
+  }
+}
+
+@media (max-width: 767px) {
+  :root { --control-height: 2.75rem; }
+
+  .app-shell-main {
+    padding: 0.75rem;
+    padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .yucg-photo-banner__title { font-size: 1.15rem; }
+  .yucg-photo-banner__subtitle { font-size: 0.8125rem; }
+  .app-page-header .yucg-photo-banner--strip { min-height: 5.5rem; }
+  .ui-dialog__actions { flex-direction: column-reverse; }
+  .ui-dialog__actions .ui-button { width: 100%; }
+
+  .slate-table th:nth-child(4),
+  .slate-table td:nth-child(4),
+  .slate-table th:nth-child(5),
+  .slate-table td:nth-child(5),
+  .ingestion-table th:nth-child(n + 4),
+  .ingestion-table td:nth-child(n + 4) {
+    display: none;
+  }
+
+  .ingestion-table,
+  .slate-table {
+    min-width: 100%;
+    table-layout: auto;
+  }
+}
+
+/* One persistent navigation bar; page sections scroll with their content. */
+.app-nav-group { position: relative; }
+.app-nav-group summary { cursor: pointer; list-style: none; height: 100%; }
+.app-nav-group summary::-webkit-details-marker { display: none; }
+.app-nav-group-panel { position: absolute; top: calc(100% + 0.5rem); left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--border); box-shadow: 0 8px 24px rgb(15 23 42 / 0.12); }
+.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0.75rem 1rem; }
+.app-nav-group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ——— One opening motion for every menu and panel ———
+   Nav dropdowns, <details> disclosures and the grid-row collapsibles all
+   opened differently (or instantly). They now share one duration, one easing
+   and one direction, so a panel opening anywhere in the app reads the same.
+   Native <select> popups are drawn by the operating system and cannot be
+   animated; every menu the app draws itself is covered here. */
+:root {
+  --disclosure-duration: 180ms;
+  --disclosure-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes disclosure-open {
+  from { opacity: 0; transform: translateY(-0.35rem) scaleY(0.98); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+.app-nav-group[open] > .app-nav-group-panel,
+details[open] > *:not(summary),
+.ui-disclosure-panel,
+.app-shell-drawer,
+.ui-dialog,
+.company-autocomplete-list {
+  animation: disclosure-open var(--disclosure-duration) var(--disclosure-ease) both;
+  transform-origin: top center;
+}
+
+.app-shell-drawer { transform-origin: right center; }
+
+/* Collapsing a workspace panel is a disclosure too: the state that arrives
+   (full panel or collapsed rail) is new DOM, so it animates in on every
+   toggle instead of snapping. The size is one length, so flex-basis and
+   max-width move together; registering it keeps engines that only
+   interpolate registered custom properties in step. */
+@property --panel-width {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.studio-panel {
+  transition:
+    --panel-width var(--disclosure-duration) var(--disclosure-ease),
+    flex-basis var(--disclosure-duration) var(--disclosure-ease),
+    max-width var(--disclosure-duration) var(--disclosure-ease);
+}
+
+.studio-panel > * {
+  animation: disclosure-open var(--disclosure-duration) var(--disclosure-ease) both;
+}
+
+/* Collapsibles that animate their own height keep the same timing. */
+.ui-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--disclosure-duration) var(--disclosure-ease);
+}
+
+.ui-disclosure[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.ui-disclosure > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* A disclosure chevron turns with the panel it controls. */
+.ui-disclosure-chevron {
+  display: inline-block;
+  transition: transform var(--disclosure-duration) var(--disclosure-ease);
+}
+
+.ui-disclosure-chevron[data-open='false'] { transform: rotate(-90deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-nav-group[open] > .app-nav-group-panel,
+  details[open] > *:not(summary),
+  .ui-disclosure-panel,
+  .app-shell-drawer,
+  .ui-dialog,
+  .company-autocomplete-list,
+  .studio-panel > * { animation: none; }
+  .ui-disclosure, .ui-disclosure-chevron, .studio-panel { transition: none; }
+}
+
+/* ——— Message formatting bar ——— */
+.email-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.email-toolbar__button {
+  min-width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.email-toolbar__button:hover { background: var(--surface-subtle); }
+
+.email-toolbar__button.is-active {
+  background: var(--deep-navy);
+  border-color: var(--deep-navy);
+  color: #ffffff;
+}
+
+.email-toolbar__select { height: 2rem; min-height: 2rem; width: auto; max-width: 8.5rem; }
+
+.email-toolbar__divider {
+  width: 1px;
+  height: 1.25rem;
+  margin: 0 0.25rem;
+  background: var(--border);
+}
+
+.email-toolbar__color {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.email-toolbar__color:hover { background: var(--surface-subtle); }
+.email-toolbar__color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.dark .email-toolbar { background: var(--bg-card); border-color: var(--border); }
+.dark .email-toolbar__button { color: var(--text-primary); }
+.dark .email-toolbar__button.is-active { background: var(--accent); border-color: var(--accent); }
+
+@media (min-width: 768px) {
+  .app-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+  .app-page-header-actions { margin-top: 0; flex-shrink: 0; }
+}

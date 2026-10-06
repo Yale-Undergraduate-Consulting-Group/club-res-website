@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" class="yucg-brand-redesign">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login preview — YUCG</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --deep-navy: #1a2f5a;
+      --border: #c8dced;
+      --text-primary: #1a2f5a;
+      --yucg-tint: rgba(0, 53, 107, 0.58);
+      --yucg-tint-strong: rgba(26, 47, 90, 0.72);
+    }
+    html.dark {
+      --text-primary: #e2e8f0;
+      --border: #334155;
+      --yucg-tint: rgba(0, 34, 68, 0.68);
+      --yucg-tint-strong: rgba(8, 15, 28, 0.78);
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body { font-family: Lato, sans-serif; }
+    .toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 9; padding: 0.5rem 1rem; background: #fff; border-bottom: 2px solid var(--deep-navy); display: flex; gap: 0.5rem; }
+    html.dark .toolbar { background: #1e293b; color: #e2e8f0; }
+    .toolbar button { font-family: inherit; font-weight: 700; font-size: 0.75rem; padding: 0.35rem 0.75rem; border: 2px solid var(--border); cursor: pointer; background: inherit; color: inherit; }
+    .app-auth-shell {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background-color: var(--deep-navy);
+      background-image: linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)), url(/yucg-bg/pauli-murray-tower.jpg);
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-blend-mode: multiply, normal;
+    }
+    html.dark .app-auth-shell { background-color: #0f172a; background-blend-mode: soft-light, normal; }
+    .surface-card {
+      width: 100%;
+      max-width: 28rem;
+      padding: 2rem;
+      background: rgba(255,255,255,0.94);
+      border: 1px solid rgba(255,255,255,0.55);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(15,32,58,0.22);
+      text-align: center;
+      color: var(--text-primary);
+    }
+    html.dark .surface-card {
+      background: rgba(30,41,59,0.92);
+      border-color: rgba(148,163,184,0.3);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    }
+    h1 { font-size: 1.5rem; font-weight: 900; margin: 0.75rem 0 0.25rem; }
+    p.sub { font-size: 0.875rem; opacity: 0.85; margin-bottom: 1.5rem; }
+    .btn { width: 100%; padding: 0.75rem; font-family: inherit; font-weight: 700; font-size: 0.875rem; border: 2px solid var(--deep-navy); background: #fff; color: var(--deep-navy); cursor: pointer; text-transform: uppercase; }
+    html.dark .btn { background: #334155; color: #e2e8f0; border-color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong style="margin-right:auto;font-size:0.8rem">Login preview (centered card)</strong>
+    <button type="button" onclick="document.documentElement.classList.remove('dark')">Light</button>
+    <button type="button" onclick="document.documentElement.classList.add('dark')">Dark</button>
+  </div>
+  <div class="app-auth-shell">
+    <div class="surface-card">
+      <div style="font-weight:900;font-size:1.25rem;color:var(--deep-navy);margin-bottom:0.5rem">yucg</div>
+      <h1>YUCG Outreach</h1>
+      <p class="sub">Yale Undergraduate Consulting Group</p>
+      <button type="button" class="btn">Sign in with Google</button>
+    </div>
+  </div>
+</body>
+</html>
