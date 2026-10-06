@@ -6,32 +6,8 @@ Runs in an AWS Organization **management account**. Creates the `YUCG` OU (or re
 
 ## One-time prerequisites (a human with management-account administrator access)
 
-1. State bucket and GitHub OIDC provider: run `scripts/bootstrap-account.sh us-east-2` with management-account operator credentials (it also adds an audit trail and GuardDuty), or create an equivalent private, versioned, encrypted bucket and the `token.actions.githubusercontent.com` provider by hand.
-2. IAM role for `AWS_ORGANIZATION_ROLE_ARN`, max session 1 hour. Trust (replace `<ORG_ACCOUNT_ID>`):
-
-```json
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRoleWithWebIdentity",
- "Principal":{"Federated":"arn:aws:iam::<ORG_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"},
- "Condition":{"StringEquals":{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com","token.actions.githubusercontent.com:sub":[
-  "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:organization-plan",
-  "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:organization-apply"]}}}]}
-```
-
-   Inline policy (replace `<BUCKET>` and `<KEY>` with `ORG_STATE_BUCKET` and `ORG_STATE_KEY`):
-
-```json
-{"Version":"2012-10-17","Statement":[
- {"Sid":"ReadOrganization","Effect":"Allow","Action":["organizations:Describe*","organizations:List*"],"Resource":"*"},
- {"Sid":"VendAccounts","Effect":"Allow","Resource":"*","Action":["organizations:CreateAccount","organizations:MoveAccount",
-  "organizations:CreateOrganizationalUnit","organizations:UpdateOrganizationalUnit","organizations:CreatePolicy","organizations:UpdatePolicy",
-  "organizations:AttachPolicy","organizations:DetachPolicy","organizations:TagResource","organizations:UntagResource"]},
- {"Sid":"BootstrapVendedAccounts","Effect":"Allow","Action":"sts:AssumeRole","Resource":"arn:aws:iam::*:role/OrganizationAccountAccessRole"},
- {"Sid":"CheckStateBucket","Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketVersioning","s3:GetBucketPublicAccessBlock"],"Resource":"arn:aws:s3:::<BUCKET>"},
- {"Sid":"StateAndSavedPlans","Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],"Resource":["arn:aws:s3:::<BUCKET>/<KEY>",
-  "arn:aws:s3:::<BUCKET>/ci-plans/organization/*","arn:aws:s3:::<BUCKET>/ci-diagnostics/organization/*"]},
- {"Sid":"StateLock","Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":"arn:aws:s3:::<BUCKET>/<KEY>.tflock"}]}
-```
-
+1. Sign in to the **management account**, open AWS CloudShell, and paste the whole of [`cloudshell-setup.sh`](cloudshell-setup.sh). It refuses to run anywhere else. It creates the private state bucket, the GitHub OIDC provider, and the role `yucg-organization` (trust pinned to the two `organization-*` environments, permissions limited to Organizations, the state bucket, and `OrganizationAccountAccessRole`), then prints `ORG_ACCOUNT_ID`, `AWS_ORGANIZATION_ROLE_ARN`, `ORG_STATE_BUCKET` and `ORG_STATE_KEY`. Safe to run again; the script is the only definition of that role, so change it there.
+2. Send the printed values to a maintainer.
 3. GitHub environments `organization-plan` and `organization-apply`, deployment branch `prod` only, a maintainer as required reviewer on `-apply`, each with the same variables: `ORG_ACCOUNT_ID`, `AWS_ORGANIZATION_ROLE_ARN`, `ORG_DEV_EMAIL`, `ORG_PROD_EMAIL` (unique inboxes the club controls), `ORG_STATE_BUCKET`, `ORG_STATE_KEY` (e.g. `club-res-website/organization/terraform.tfstate`).
 
 ## Running
