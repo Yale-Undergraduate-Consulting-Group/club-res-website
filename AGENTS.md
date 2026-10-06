@@ -90,28 +90,28 @@ Read [terraform/](terraform/) and [docs/CI_CD.md](docs/CI_CD.md) together before
 - Separate credential-free verification from jobs authorized to mutate AWS.
 - Bind OIDC to the exact repository and environment; also enforce the environment's allowed branch in GitHub.
 - Keep candidate execution separate from privileged default-branch promotion code.
-- Missing account bindings, failed integrity checks, or unsupported backend delivery must stop deployment.
+- Missing account bindings, failed integrity checks, a failed image push or SSM command, or a failed health check must stop deployment.
 - Do not run Terraform apply, change IAM, provision billable services, or delete data without explicit task authorization.
 - Present resource changes, cost drivers, data effects, and recovery before a production infrastructure change.
 - Update Terraform and its consumers together; avoid undocumented console drift.
 - Treat Terraform's IAM-policy editing capability as privileged, not as a harmless update-only sandbox.
 - Budget alerts notify; they do not impose a hard spending cap.
 
-The defined runtime is a public static website: CloudFront, signed OAC reads, and private S3 origins.
-Node builds the site in CI; this stack does not run a Node or Python application server.
+The defined runtime, per environment, is one EC2 instance running one container (FastAPI API plus the Vite SPA) with SQLite on an encrypted EBS volume. Prod adds CloudFront, WAF, a VPC origin, and a private S3 bucket for the public pages. Dev has no public URL and is reached only through an SSM port-forward.
 
-- Keep localhost builds flexible; require static-export compatibility only at the downstream AWS boundary.
-- Do not assume server rendering, API routes, sessions, a database, or backend hosting exists.
-- Verify application and service capabilities in current code before describing them as implemented.
-- Add a backend, domain, model integration, or data store only for an explicit requirement and a reviewed design.
-- Prefer no idle server or NAT gateway when the requested behavior needs neither.
+- Node builds the frontend in CI; Python serves `/api` on the box.
+- The SQLite file is the shared club warehouse: one member's write is visible to every member. Browser `localStorage` is not shared truth.
+- Keep one writer process. Do not add a second app instance, or a Lambda behind API Gateway (long Find requests exceed its limit), without a reviewed design. Aurora or RDS as the default database costs more than this instance.
+- Stopping the instance keeps the volume; scheduled mail jobs run only while it is running.
+- Hosted AI is Bedrock through `backend/app/services/llm.py`; the model and per-member and per-club call limits are environment configuration.
+- Add a domain, data store, or model integration only for an explicit requirement and a reviewed design.
 - Include ongoing charges, request costs, retained data, and CI minutes in cost decisions.
 
 ## Client data and authorization
 
-- A private S3 origin can serve public content through CloudFront. Dev URLs are not inherently private.
-- Never place credentials, client records, NDA documents, or production data in static exports, fixtures, logs, or caches.
-- Use synthetic or explicitly approved public data for development and demonstrations.
+- Dev has no public URL. A private S3 origin still serves public content through CloudFront in prod.
+- Never place credentials, client records, NDA documents, or production data in static exports, fixtures, logs, caches, or Git history.
+- Real client data may exist in dev only when a feature needs it: copy it deliberately and minimally from prod, keep sending disabled, and never copy OAuth tokens. Otherwise use synthetic or approved public data.
 - Enforce tenant/client authorization server-side on every relevant read, write, download, and background operation.
 - Test forbidden cross-client access as well as allowed access when those capabilities are implemented.
 - Enterprise model-provider protections do not replace application authorization, purpose limits, or retention controls.
@@ -119,7 +119,7 @@ Node builds the site in CI; this stack does not run a Node or Python application
 - Treat Terraform state, saved plans, and diagnostic logs as potentially sensitive.
 - Object deletion, version expiration, cache invalidation, and deletion of all copies are different operations.
 - Do not promise immediate deletion from lifecycle rules or imply that browser downloads can be recalled.
-- Document recovery limits; current static publication is not an atomic release or automatic rollback mechanism.
+- Document recovery limits; site publication is not atomic, and only the container image has an automatic rollback.
 
 ## Verification and completion
 
@@ -130,7 +130,10 @@ Run checks that defend the changed contract. Do not manufacture test count as pr
 | Python delivery behavior | `python3 -m unittest discover -s tests -p 'test_*.py'` |
 | Workflow routing or permissions | `actionlint`; exercise relevant route/preflight commands |
 | Terraform | Format check, backend-disabled initialization, validation, and mocked-provider tests |
-| Frontend or backend | Use the actual package scripts/test commands; exercise the changed path |
+| Frontend | `npm run test:unit`, lint, build, `scripts/npm_audit_gate.sh`; exercise the changed path |
+| Backend | `backend/scripts/test_suite.py` in a Python 3.12 environment with `requirements-dev.txt`; exercise the changed path |
+| Container image | `docker buildx build --platform linux/amd64 -f docker/app.Dockerfile .`, `trivy image --severity HIGH,CRITICAL`, then run it and request `/api/health` |
+| Dependencies | Regenerate `backend/requirements.lock` with the command in its header; a Trivy image scan must stay clean |
 | Web UI | Run the real surface and inspect it in a browser; cover error and empty states |
 | Diagram or instructions | Render changed diagrams; check links, imports, commands, and policy consistency |
 
