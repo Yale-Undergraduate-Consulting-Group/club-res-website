@@ -24,7 +24,7 @@ jobs:
   organization:
     if: ${{ github.ref == 'refs/heads/prod' && (inputs.operation == 'plan' || inputs.operation == 'apply') }}
     environment: organization-${{ inputs.operation }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Account creation takes minutes per account; the OIDC session lasts one hour.
     timeout-minutes: 45
     permissions:

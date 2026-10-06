@@ -36,7 +36,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/feature/') }}
 jobs:
   scope:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       phase: ${{ steps.route.outputs.phase }}
@@ -95,7 +95,7 @@ jobs:
   backend:
     needs: scope
     if: needs.scope.outputs.backend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -107,7 +107,7 @@ jobs:
   frontend:
     needs: scope
     if: needs.scope.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -123,7 +123,7 @@ jobs:
   infra:
     needs: scope
     if: needs.scope.outputs.infra == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -135,7 +135,7 @@ jobs:
   image:
     needs: scope
     if: needs.scope.outputs.image == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -157,7 +157,7 @@ jobs:
     - image
     if: ${{ always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.operation == '' || inputs.operation
       == 'deliver') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -188,7 +188,7 @@ jobs:
     - required-checks
     if: ${{ always() && !cancelled() && needs.required-checks.result == 'success' && needs.scope.outputs.phase == 'ship' &&
       needs.scope.outputs.deploy == 'true' && needs.frontend.result == 'success' && needs.image.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: prod
     permissions:
@@ -233,7 +233,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.operation == 'plan' || inputs.operation == 'apply') && github.ref
       == 'refs/heads/prod' }}
     environment: infrastructure-${{ inputs.target }}-${{ inputs.operation }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
