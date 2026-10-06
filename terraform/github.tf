@@ -9,6 +9,10 @@ locals {
   ]
   state_bucket_arn = "arn:aws:s3:::${var.tf_state_bucket}"
   budget_name      = "${local.name}-monthly"
+  # Every bucket this stack owns; the site bucket exists only with the edge.
+  stack_bucket_arns = concat([for b in aws_s3_bucket.site : b.arn], [for b in aws_s3_bucket.data : b.arn])
+  # The box, selected by its Site tag, which default_tags puts on every resource.
+  site_tag_condition = { StringEquals = { "aws:ResourceTag/Site" = local.name } }
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -20,11 +24,12 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
 }
 
-# Publishes the static export: sync to the site bucket and invalidate its
-# distribution. Nothing else.
+# Ships a release: pushes the image to this environment's ECR repository,
+# runs ops/restart-yucg.sh on this environment's box through SSM and, with
+# the edge, publishes the SPA to the site bucket and invalidates CloudFront.
 resource "aws_iam_role" "deploy" {
   name                 = "${local.name}-deploy"
-  description          = "GitHub environment ${var.environment} publishes the static site."
+  description          = "GitHub environment ${var.environment} ships the app image, restarts the box and publishes the SPA."
   max_session_duration = 3600
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -45,37 +50,80 @@ resource "aws_iam_role" "deploy" {
 }
 
 resource "aws_iam_role_policy" "deploy" {
-  name = "publish-static-site"
+  name = "ship-app"
   role = aws_iam_role.deploy.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
+      {
+        Sid      = "EcrToken"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      {
+        Sid    = "PushAppImage"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages",
+        ]
+        Resource = aws_ecr_repository.app.arn
+      },
+      {
+        Sid      = "RunShellScriptDocument"
+        Effect   = "Allow"
+        Action   = "ssm:SendCommand"
+        Resource = "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript"
+      },
+      {
+        Sid       = "RunOnlyOnThisEnvironmentsBox"
+        Effect    = "Allow"
+        Action    = "ssm:SendCommand"
+        Resource  = "arn:aws:ec2:${var.aws_region}:${local.account_id}:instance/*"
+        Condition = { StringEquals = { "ssm:resourceTag/Site" = local.name } }
+      },
+      {
+        Sid      = "ReadCommandResultsAndPreflight"
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation", "ec2:DescribeInstances", "ec2:DescribeSecurityGroups", "ec2:DescribeVolumes"]
+        Resource = "*"
+      },
+      # Statements in a conditional group share one shape (list Action and
+      # Resource) so Terraform can unify the two branches' types.
+      ], local.edge ? [
       {
         Sid      = "ListSiteBucket"
         Effect   = "Allow"
-        Action   = "s3:ListBucket"
-        Resource = aws_s3_bucket.site.arn
+        Action   = ["s3:ListBucket"]
+        Resource = [aws_s3_bucket.site[0].arn]
       },
       {
         Sid      = "PublishSiteObjects"
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
-        Resource = "${aws_s3_bucket.site.arn}/*"
+        Resource = ["${aws_s3_bucket.site[0].arn}/*"]
       },
       {
         Sid      = "InvalidateSiteCache"
         Effect   = "Allow"
         Action   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"]
-        Resource = aws_cloudfront_distribution.site.arn
+        Resource = [aws_cloudfront_distribution.site[0].arn]
       },
-    ]
+    ] : [])
   })
 }
 
-# Runs reviewed plan/apply from prod. It reads and updates the resources of
-# this state; it cannot create or delete them. The first apply (bootstrap) and
-# any change that creates, replaces or deletes a resource run with operator
-# credentials, and the apply environment requires a reviewer.
+# Runs reviewed plan/apply from prod. It reads every resource of this state
+# and updates their settings; it cannot create or delete them. The first
+# apply (bootstrap) and any change that creates, replaces or deletes a
+# resource run with operator credentials, and the apply environment requires
+# a reviewer.
 resource "aws_iam_role" "terraform" {
   name                 = "${local.name}-terraform"
   description          = "GitHub environments infrastructure-${var.environment}-plan/apply run reviewed Terraform."
@@ -127,13 +175,63 @@ resource "aws_iam_role_policy" "terraform" {
         Resource = "${local.state_bucket_arn}/${var.tf_state_key}.tflock"
       },
       {
-        Sid    = "ManageSiteBucket"
+        # Refresh: read-only calls, most of which have no resource-level scope.
+        # Secret values and parameter values other than the AMI and the
+        # config are deliberately absent.
+        Sid    = "ReadStack"
+        Effect = "Allow"
+        Action = [
+          "ec2:Describe*",
+          "kms:DescribeKey",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListAliases",
+          "kms:ListResourceTags",
+          "logs:DescribeLogGroups",
+          "logs:ListTagsForResource",
+          "logs:ListTagsLogGroup",
+          "iam:GetInstanceProfile",
+          "route53resolver:Get*",
+          "route53resolver:List*",
+          "dlm:GetLifecyclePolicy",
+          "dlm:GetLifecyclePolicies",
+          "dlm:ListTagsForResource",
+          "ecr:DescribeRepositories",
+          "ecr:GetLifecyclePolicy",
+          "ecr:GetRepositoryPolicy",
+          "ecr:ListTagsForResource",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetResourcePolicy",
+          "ssm:DescribeParameters",
+          "ssm:ListTagsForResource",
+          "scheduler:GetSchedule",
+          "scheduler:ListTagsForResource",
+          "cloudfront:GetVpcOrigin",
+          "cloudfront:GetResponseHeadersPolicy",
+          "cloudfront:GetResponseHeadersPolicyConfig",
+          "wafv2:GetWebACL",
+          "wafv2:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ReadAmiAndConfigParameters"
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}::parameter/aws/service/ami-amazon-linux-latest/*",
+          "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${local.config_parameter}",
+        ]
+      },
+      {
+        Sid    = "ManageStackBuckets"
         Effect = "Allow"
         Action = [
           "s3:ListBucket",
           "s3:GetBucketLocation",
           "s3:GetBucketAcl",
           "s3:GetBucketCORS",
+          "s3:PutBucketCORS",
           "s3:GetBucketWebsite",
           "s3:GetBucketVersioning",
           "s3:PutBucketVersioning",
@@ -155,8 +253,125 @@ resource "aws_iam_role_policy" "terraform" {
           "s3:GetBucketPublicAccessBlock",
           "s3:PutBucketPublicAccessBlock",
         ]
-        Resource = aws_s3_bucket.site.arn
+        Resource = local.stack_bucket_arns
       },
+      {
+        # Instance type and volume size changes stop/start the box or grow
+        # the volume; tag edits and endpoint/security-group rule settings.
+        Sid    = "UpdateTaggedNetworkAndCompute"
+        Effect = "Allow"
+        Action = [
+          "ec2:ModifyInstanceAttribute",
+          "ec2:StopInstances",
+          "ec2:StartInstances",
+          "ec2:ModifyVolume",
+          "ec2:ModifyVpcEndpoint",
+          "ec2:ModifySecurityGroupRules",
+          "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+          "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+        ]
+        Resource  = "*"
+        Condition = local.site_tag_condition
+      },
+      {
+        # Starting the box with CMK-encrypted volumes creates EBS grants.
+        Sid    = "ManageEnvironmentKey"
+        Effect = "Allow"
+        Action = [
+          "kms:CreateGrant",
+          "kms:PutKeyPolicy",
+          "kms:UpdateKeyDescription",
+          "kms:EnableKeyRotation",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:UpdateAlias",
+        ]
+        Resource = [aws_kms_key.env.arn, aws_kms_alias.env.arn]
+      },
+      {
+        Sid      = "ManageLogGroups"
+        Effect   = "Allow"
+        Action   = ["logs:PutRetentionPolicy", "logs:AssociateKmsKey", "logs:TagResource", "logs:UntagResource", "logs:TagLogGroup", "logs:UntagLogGroup"]
+        Resource = "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/${local.name}/*"
+      },
+      {
+        Sid      = "ManageAppSecretMetadata"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:UpdateSecret", "secretsmanager:TagResource", "secretsmanager:UntagResource"]
+        Resource = aws_secretsmanager_secret.app.arn
+      },
+      {
+        Sid      = "ManageConfigParameter"
+        Effect   = "Allow"
+        Action   = ["ssm:PutParameter", "ssm:AddTagsToResource", "ssm:RemoveTagsFromResource"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter${local.config_parameter}"
+      },
+      {
+        Sid      = "ManageAppRepository"
+        Effect   = "Allow"
+        Action   = ["ecr:PutLifecyclePolicy", "ecr:PutImageScanningConfiguration", "ecr:PutImageTagMutability", "ecr:TagResource", "ecr:UntagResource"]
+        Resource = aws_ecr_repository.app.arn
+      },
+      {
+        Sid      = "ManageSnapshotPolicy"
+        Effect   = "Allow"
+        Action   = ["dlm:UpdateLifecyclePolicy", "dlm:TagResource", "dlm:UntagResource"]
+        Resource = aws_dlm_lifecycle_policy.data.arn
+      },
+      {
+        Sid    = "ManageDnsFirewallAndQueryLogs"
+        Effect = "Allow"
+        Action = [
+          "route53resolver:UpdateFirewallRule",
+          "route53resolver:UpdateFirewallRuleGroupAssociation",
+          "route53resolver:UpdateFirewallConfig",
+          "route53resolver:TagResource",
+          "route53resolver:UntagResource",
+        ]
+        Resource = "arn:aws:route53resolver:${var.aws_region}:${local.account_id}:*"
+      },
+      {
+        Sid    = "ManageStackRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:ListRoleTags",
+          "iam:UpdateRole",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:GetRolePolicy",
+          "iam:PutRolePolicy",
+        ]
+        Resource = concat(
+          [aws_iam_role.deploy.arn, aws_iam_role.terraform.arn, aws_iam_role.box.arn, aws_iam_role.dlm.arn, aws_iam_role.flow_logs.arn],
+          [for r in aws_iam_role.scheduler : r.arn],
+        )
+      },
+      {
+        Sid       = "PassServiceRoles"
+        Effect    = "Allow"
+        Action    = "iam:PassRole"
+        Resource  = concat([aws_iam_role.dlm.arn, aws_iam_role.flow_logs.arn], [for r in aws_iam_role.scheduler : r.arn])
+        Condition = { StringEquals = { "iam:PassedToService" = ["dlm.amazonaws.com", "vpc-flow-logs.amazonaws.com", "scheduler.amazonaws.com"] } }
+      },
+      {
+        Sid      = "ManageBudget"
+        Effect   = "Allow"
+        Action   = ["budgets:ViewBudget", "budgets:ModifyBudget", "budgets:ListTagsForResource", "budgets:TagResource", "budgets:UntagResource"]
+        Resource = "arn:aws:budgets::${local.account_id}:budget/${local.budget_name}"
+      },
+      ], var.office_hours_enabled ? [{
+        Sid      = "ManageOfficeHoursSchedules"
+        Effect   = "Allow"
+        Action   = ["scheduler:UpdateSchedule", "scheduler:TagResource", "scheduler:UntagResource"]
+        Resource = "arn:aws:scheduler:${var.aws_region}:${local.account_id}:schedule/default/${local.name}-*"
+      }] : [], local.edge ? [
       {
         Sid    = "ManageDistribution"
         Effect = "Allow"
@@ -168,44 +383,32 @@ resource "aws_iam_role_policy" "terraform" {
           "cloudfront:TagResource",
           "cloudfront:UntagResource",
         ]
-        Resource = aws_cloudfront_distribution.site.arn
+        Resource = [aws_cloudfront_distribution.site[0].arn]
       },
       {
         Sid      = "ManageOriginAccessControl"
         Effect   = "Allow"
         Action   = ["cloudfront:GetOriginAccessControl", "cloudfront:UpdateOriginAccessControl"]
-        Resource = "arn:aws:cloudfront::${local.account_id}:origin-access-control/${aws_cloudfront_origin_access_control.site.id}"
+        Resource = ["arn:aws:cloudfront::${local.account_id}:origin-access-control/${aws_cloudfront_origin_access_control.site[0].id}"]
       },
       {
         Sid      = "ManageRoutesFunction"
         Effect   = "Allow"
         Action   = ["cloudfront:DescribeFunction", "cloudfront:GetFunction", "cloudfront:UpdateFunction", "cloudfront:PublishFunction"]
-        Resource = aws_cloudfront_function.routes.arn
+        Resource = [aws_cloudfront_function.routes[0].arn]
       },
       {
-        Sid    = "ManageSiteRoles"
-        Effect = "Allow"
-        Action = [
-          "iam:GetRole",
-          "iam:ListRoleTags",
-          "iam:UpdateRole",
-          "iam:UpdateAssumeRolePolicy",
-          "iam:TagRole",
-          "iam:UntagRole",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:GetRolePolicy",
-          "iam:PutRolePolicy",
-        ]
-        Resource = [aws_iam_role.deploy.arn, aws_iam_role.terraform.arn]
-      },
-      {
-        Sid      = "ManageBudget"
+        Sid      = "ManageVpcOriginAndHeaders"
         Effect   = "Allow"
-        Action   = ["budgets:ViewBudget", "budgets:ModifyBudget", "budgets:ListTagsForResource", "budgets:TagResource", "budgets:UntagResource"]
-        Resource = "arn:aws:budgets::${local.account_id}:budget/${local.budget_name}"
+        Action   = ["cloudfront:UpdateVpcOrigin", "cloudfront:UpdateResponseHeadersPolicy", "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource"]
+        Resource = [aws_cloudfront_vpc_origin.api[0].arn, "arn:aws:cloudfront::${local.account_id}:response-headers-policy/${aws_cloudfront_response_headers_policy.site[0].id}"]
       },
-      ], var.manage_github_oidc_provider ? [{
+      ] : [], local.edge && var.enable_waf ? [{
+        Sid      = "ManageWebAcl"
+        Effect   = "Allow"
+        Action   = ["wafv2:UpdateWebACL", "wafv2:TagResource", "wafv2:UntagResource"]
+        Resource = aws_wafv2_web_acl.edge[0].arn
+        }] : [], var.manage_github_oidc_provider ? [{
         Sid    = "ManageGitHubOidcProvider"
         Effect = "Allow"
         Action = [
