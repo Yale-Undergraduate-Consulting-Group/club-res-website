@@ -23,7 +23,7 @@ Still open: an organization owner must allow GitHub Actions to create pull reque
 
 Organization-level rules need someone with permission to manage organization rulesets. After installation, day-to-day review and merging needs only a maintainer.
 
-Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap; section 14 for the application runtime and confidentiality.
+Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap; section 14 for the application runtime and confidentiality; section 15 for account vending. [EXTENSIONS.md](EXTENSIONS.md) lists planned extensions that are not implemented, such as a managed knowledge base.
 
 ## 1. Contributors enter through local checks
 
