@@ -32,6 +32,11 @@ mock_provider "aws" {
       arn = "arn:aws:iam::123456789012:role/mock"
     }
   }
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/mock-boundary"
+    }
+  }
   mock_resource "aws_s3_bucket" {
     defaults = {
       arn = "arn:aws:s3:::mock"
@@ -326,5 +331,46 @@ run "production_trust_follows_the_environment" {
   assert {
     condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:prod"
     error_message = "The production deploy role must trust only the prod GitHub environment."
+  }
+}
+
+run "every_role_is_fenced_off_from_prod" {
+  command = apply
+  # Own state: earlier runs apply the prod edge, which this dev run would destroy.
+  state_key = "boundary_dev"
+
+  variables {
+    office_hours_enabled = true
+  }
+
+  assert {
+    condition = alltrue([for b in concat(
+      [aws_iam_role.deploy.permissions_boundary, aws_iam_role.terraform.permissions_boundary, aws_iam_role.box.permissions_boundary,
+      aws_iam_role.dlm.permissions_boundary, aws_iam_role.flow_logs.permissions_boundary],
+    [for r in aws_iam_role.scheduler : r.permissions_boundary]) : b == aws_iam_policy.boundary.arn])
+    error_message = "Every role must carry the boundary; dev and prod share one account and a role without it could rewrite its own policy to reach the other environment."
+  }
+  assert {
+    condition     = contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:*:*:*:*club-res-website-prod*") && jsondecode(aws_iam_policy.boundary.policy).Statement[2].Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-prod"
+    error_message = "The dev boundary must deny prod resources by name and by Site tag."
+  }
+}
+
+run "every_role_is_fenced_off_from_dev" {
+  command   = apply
+  state_key = "boundary_prod"
+
+  variables {
+    environment  = "prod"
+    tf_state_key = "club-res-website/prod.tfstate"
+  }
+
+  assert {
+    condition     = aws_iam_role.terraform.permissions_boundary == aws_iam_policy.boundary.arn && aws_iam_role.deploy.permissions_boundary == aws_iam_policy.boundary.arn
+    error_message = "Prod roles must carry the boundary."
+  }
+  assert {
+    condition     = contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:s3:::*/club-res-website/dev/*") && jsondecode(aws_iam_policy.boundary.policy).Statement[2].Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-dev"
+    error_message = "The prod boundary must deny dev resources, including dev's Terraform state, by name and by Site tag."
   }
 }

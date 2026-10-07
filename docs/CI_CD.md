@@ -286,7 +286,9 @@ flowchart LR
 
 Dev and prod run in **one** account, `073813807852`. This replaces the earlier plan of separate dev and prod accounts: creating accounts needs an organization's management account, and nobody who runs this pipeline has one. Each environment has its own Terraform state key, VPC, box, buckets, KMS key, secrets, ECR repository, IAM roles, and budget, all named `club-res-website-<env>`.
 
-**What the shared account separates, and what it does not.** Each environment's GitHub roles trust only that environment's OIDC subject. Their write permissions name that environment's resources or require `aws:ResourceTag/Site = club-res-website-<env>`. Their only `*` grants are read-only or the account-wide ECR login token. So the dev pipeline cannot change prod. People are the gap: anyone with administrator access to the account can reach both environments, and the organization that owns the account keeps its control over it. Section 15 moves the environments to separate accounts when the club controls an organization.
+**What the shared account separates, and what it does not.** Each environment's GitHub roles trust only that environment's OIDC subject, and their policies name that environment's resources or require `aws:ResourceTag/Site = club-res-website-<env>`. That alone is not enough: each Terraform role may rewrite its own inline policy and those of its environment's other roles (`ManageStackRoles`), so a reviewed dev apply could grant itself prod access. A **permissions boundary**, `club-res-website-<env>-boundary`, is therefore attached to every role. It denies any action on resources named or tagged for the other environment, including the other environment's Terraform state and saved plans, and the roles cannot remove or edit it. Changing the boundary needs operator credentials. So no dev role, deploy or Terraform, can reach prod, and the reverse. This was checked with `iam simulate-custom-policy` against both environments' ARNs; a Terraform test fails if any role lacks the boundary.
+
+People are the remaining gap: anyone with administrator access to the account can reach both environments, and the organization that owns the account keeps its control over it. Section 15 moves the environments to separate accounts when the club controls an organization.
 
 **Dev is private.** It has no CloudFront distribution and its security group allows no inbound traffic. Developers reach it with `aws ssm start-session --document-name AWS-StartPortForwardingSession`, which is IAM-authenticated and logged in CloudTrail. Dev may contain real client data when a feature under development needs it. Copy only the tables the feature needs, as a deliberate and logged operation; never run a standing sync from prod. Dev must never send mail: it runs with `EMAIL_DELIVERY_ENABLED=false`, its own `JWT_SECRET` (so Gmail tokens copied from prod cannot be decrypted), and no Gmail tokens in any copied table.
 
@@ -301,6 +303,7 @@ Dev and prod run in **one** account, `073813807852`. This replaces the earlier p
 | WAF | AWS managed Common and Known Bad Inputs rule groups plus an IP rate rule on the prod distribution | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | Response headers | Custom policy: HSTS, nosniff, frame deny, referrer policy, CSP | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | IAM OIDC provider | Short-lived AWS sessions, exact repository/environment trust; created once per account by `scripts/bootstrap-account.sh` | [`github.tf`](../terraform/github.tf) |
+| Permissions boundary | Every role is capped to its own environment; the other environment's resources and state are denied by name and `Site` tag | [`github.tf`](../terraform/github.tf) |
 | Role separation | Site and image publisher versus privileged reviewed Terraform operator | [`github.tf`](../terraform/github.tf) |
 | S3 state locking | Terraform 1.10+ S3 lockfile; no DynamoDB table | [`main.tf`](../terraform/main.tf) |
 | Customer-managed KMS key | One key per environment for client-data stores: EBS data volume, catalog, backups, secrets | [`security.tf`](../terraform/security.tf) |
@@ -374,7 +377,7 @@ The subject names an environment, not a branch. GitHub environment branch polici
 
 The deploy role cannot apply Terraform or read state. It can list the site bucket, publish/delete current site objects, abort multipart uploads, and invalidate its distribution. It has no permission to delete historical object versions.
 
-The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. This is **not** a general sandbox: IAM-policy modification can expand access. Maintainer review is essential.
+The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. Rewriting a role's policy can expand access **within its own environment**; the permissions boundary stops it at the other environment. Maintainer review is essential.
 
 No long-lived AWS access key is required in GitHub. GitHub environment variables contain target identifiers, not AWS secret keys.
 
