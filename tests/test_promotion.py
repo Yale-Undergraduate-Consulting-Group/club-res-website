@@ -74,10 +74,31 @@ class PromotionTests(unittest.TestCase):
             promote.prepare_pr(REPO, run(), 'integration')
         self.assertFalse(any(method != 'GET' for method, _ in calls))
 
-    def test_candidate_behind_target_cannot_receive_green_status(self):
-        with patch.object(promote, 'api', return_value={'ahead_by': 2, 'behind_by': 1}) as api:
+    def _behind_api(self, destination, calls):
+        def api(path, method='GET', payload=None):
+            calls.append((method, path))
+            if path.startswith(f'repos/{REPO}/compare/integration...'):
+                return {'ahead_by': 2, 'behind_by': 1}
+            if path.startswith(f'repos/{REPO}/compare/feature%2Falice...integration'):
+                return destination
+            if method == 'POST' and path.endswith('/pulls'):
+                return {'html_url': 'https://github.com/club/site/pull/9'}
+            return []
+        return api
+
+    def test_destination_with_file_changes_blocks_the_candidate(self):
+        for destination in ({'files': [{'filename': 'backend/main.py'}]}, {}, {'files': None}):
+            calls = []
+            with self.subTest(destination=destination), patch.object(promote, 'api', side_effect=self._behind_api(destination, calls)):
+                promote.prepare_pr(REPO, run(), 'integration')
+            self.assertFalse(any('/pulls' in path or '/statuses/' in path for _, path in calls))
+
+    def test_destination_with_history_only_commits_does_not_block_the_candidate(self):
+        calls = []
+        with patch.object(promote, 'api', side_effect=self._behind_api({'files': []}, calls)):
             promote.prepare_pr(REPO, run(), 'integration')
-            self.assertEqual(api.call_count, 1)
+        posts = [path for method, path in calls if method == 'POST']
+        self.assertEqual(posts, [f'repos/{REPO}/pulls', f'repos/{REPO}/statuses/{SHA}'])
 
     def test_admin_review_brake_uses_latest_substantive_review(self):
         reviews = [{'user': {'login': 'owner'}, 'state': 'CHANGES_REQUESTED'},

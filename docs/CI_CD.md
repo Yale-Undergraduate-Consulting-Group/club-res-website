@@ -190,9 +190,13 @@ A successful Dev deployment dispatches Production verification on `dev`. The Pro
 
 The Production required check enforces this evidence too. Opening a production PR manually does not bypass the deployment prerequisite. Any workflow in this repository can post a status with the required context, so the environment-gated production deploy job proves the evidence again itself: the second parent of the merge commit on `prod` must have a successful dev deployment, or the deploy fails before any AWS call.
 
-Hold labels are `hold`, `do-not-merge`, and `release:hold`. Drafts, requested changes, recently closed unmerged candidates, stale source heads, and branches behind their destination stop advancement. Oversized evidence pages fail closed or stop automatic advancement.
+Hold labels are `hold`, `do-not-merge`, and `release:hold`. Drafts, requested changes, recently closed unmerged candidates, stale source heads, and candidates whose destination holds file changes they lack stop advancement. Oversized evidence pages fail closed or stop automatic advancement.
 
 GitHub-generated PR events do not reliably start workflows when the controller uses `GITHUB_TOKEN`. Source pushes already perform Intake and Dev verification. The controller explicitly dispatches Production verification and publishes the verified status on the exact PR head.
+
+Observed 2026-10-07: the Intake `pull_request` run on a controller-opened PR ends in failure with no jobs, no check runs and no annotations, while the Intake `push` run on the same commit succeeds and supplies the required `intake-required-checks`. The Dev workflow's run on a controller-opened PR succeeded, so the cause is not simply the bot actor, and it is unexplained. Gating is unaffected, because the ruleset reads the check run on the commit, not the event that produced it. Treat a red `pull_request` Intake run on a controller PR as noise only after confirming the push run passed.
+
+**Destination commits that change no files do not block a promotion.** PR merge commits land on `dev` and `integration` and never flow back, so the destination routinely holds commits its source lacks. The controller compares the destination against the source (`compare/<source>...<destination>`); when that comparison lists no changed files, the extra commits are history only, cannot change what the candidate's checks tested, and the PR opens anyway. GitHub then marks it behind its base, which changes nothing in practice: only maintainers can merge into these branches, and they merge with bypass. When the comparison lists files, or cannot prove there are none (a missing or non-list `files`), the controller prints "Admin must synchronize ... then verify again." and stops: merge the destination branch into the source first (section 11).
 
 Maintainer review remains essential: contributor code can modify its own proposed checks. Protected shared refs and organization rules form the enforcement boundary, not workflow names alone.
 
@@ -528,7 +532,7 @@ This recovery diagram is an operator procedure, not an automated rollback workfl
 
 No uptime alarm, synthetic monitor, CloudFront access-log destination, central audit trail, or application error telemetry is provisioned here. AWS service metrics and account audit facilities require an operations review; do not infer alerting from a green deployment.
 
-Branches can diverge after merge commits. A maintainer can create `feature/sync` from `integration` and merge the destination history into it. That branch follows Intake and the normal reviewed sequence. Do not open a direct `prod → integration` PR: Intake rejects that source. No controller bypass exists.
+Branches can diverge when the destination receives real file changes, for example a hotfix applied directly. A maintainer can create `feature/sync` from `integration` and merge the destination history into it. That branch follows Intake and the normal reviewed sequence. Do not open a direct `prod → integration` PR: Intake rejects that source. No controller bypass exists. History-only divergence needs no sync (section 4).
 
 ## 12. Cost controls bound the always-on application server
 
