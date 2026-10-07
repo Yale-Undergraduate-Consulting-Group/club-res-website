@@ -351,8 +351,8 @@ run "every_role_is_fenced_off_from_prod" {
     error_message = "Every role must carry the boundary; dev and prod share one account and a role without it could rewrite its own policy to reach the other environment."
   }
   assert {
-    condition     = contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:*:*:*:*club-res-website-prod*") && jsondecode(aws_iam_policy.boundary.policy).Statement[2].Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-prod"
-    error_message = "The dev boundary must deny prod resources by name and by Site tag."
+    condition     = contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:iam::*:role/club-res-website-prod*") && contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:secretsmanager:*:*:*club-res-website/prod*") && length([for r in jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource : r if startswith(r, "arn:aws:*")]) == 0 && jsondecode(aws_iam_policy.boundary.policy).Statement[2].Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-prod"
+    error_message = "The dev boundary must deny prod resources by name (one ARN per service; IAM rejects a wildcard service) and by Site tag."
   }
 }
 

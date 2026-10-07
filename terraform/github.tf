@@ -17,6 +17,10 @@ locals {
   # from the other's resources by the boundary below.
   other_environment = var.environment == "dev" ? "prod" : "dev"
   other_name        = "club-res-website-${local.other_environment}"
+  # IAM rejects a wildcard service in a policy ARN, so the boundary names every
+  # service this stack uses. Global services take an empty region field.
+  boundary_regional_services = ["secretsmanager", "ssm", "ecr", "logs", "kms", "ec2", "wafv2", "scheduler", "dlm", "route53resolver"]
+  boundary_global_services   = ["cloudfront", "budgets"]
 }
 
 # Permissions boundary on every role of this stack. A role's effective rights are
@@ -36,15 +40,25 @@ resource "aws_iam_policy" "boundary" {
         Sid    = "DenyOtherEnvironmentByName"
         Effect = "Deny"
         Action = "*"
-        Resource = [
-          # The last segment also matches ARNs with more colons, such as secrets.
-          "arn:aws:*:*:*:*${local.other_name}*",
-          "arn:aws:*:*:*:*club-res-website/${local.other_environment}*",
-          "arn:aws:s3:::${local.other_name}*",
-          "arn:aws:s3:::*/club-res-website/${local.other_environment}/*",
-          "arn:aws:s3:::*/ci-plans/${local.other_environment}/*",
-          "arn:aws:s3:::*/ci-diagnostics/${local.other_environment}/*",
-        ]
+        # Validated with a real IAM CreatePolicy, then checked with iam
+        # simulate-custom-policy against both environments' ARNs.
+        Resource = concat(
+          flatten([for s in local.boundary_regional_services : [
+            "arn:aws:${s}:*:*:*${local.other_name}*",
+            "arn:aws:${s}:*:*:*club-res-website/${local.other_environment}*",
+          ]]),
+          flatten([for s in local.boundary_global_services : [
+            "arn:aws:${s}::*:*${local.other_name}*",
+            "arn:aws:${s}::*:*club-res-website/${local.other_environment}*",
+          ]]),
+          [for t in ["role", "policy", "instance-profile"] : "arn:aws:iam::*:${t}/${local.other_name}*"],
+          [
+            "arn:aws:s3:::${local.other_name}*",
+            "arn:aws:s3:::*/club-res-website/${local.other_environment}/*",
+            "arn:aws:s3:::*/ci-plans/${local.other_environment}/*",
+            "arn:aws:s3:::*/ci-diagnostics/${local.other_environment}/*",
+          ],
+        )
       },
       {
         Sid       = "DenyOtherEnvironmentByTag"
