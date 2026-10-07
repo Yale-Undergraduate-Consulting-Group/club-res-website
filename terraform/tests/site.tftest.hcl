@@ -186,7 +186,7 @@ run "role_trust_is_pinned_to_the_environment" {
   command = plan
 
   assert {
-    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:dev"
+    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698:environment:dev"
     error_message = "The deploy role must trust only the dev GitHub environment of this repository."
   }
   assert {
@@ -194,7 +194,7 @@ run "role_trust_is_pinned_to_the_environment" {
     error_message = "The deploy role must trust only the GitHub OIDC provider of this account."
   }
   assert {
-    condition     = toset(jsondecode(aws_iam_role.terraform.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset(["repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:infrastructure-dev-plan", "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:infrastructure-dev-apply"])
+    condition     = toset(jsondecode(aws_iam_role.terraform.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset(["repo:Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698:environment:infrastructure-dev-plan", "repo:Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698:environment:infrastructure-dev-apply"])
     error_message = "The Terraform role must trust only the dev infrastructure plan and apply environments."
   }
 }
@@ -259,6 +259,15 @@ run "rejects_origin_timeouts_above_the_cloudfront_maximum" {
   expect_failures = [var.origin_read_timeout]
 }
 
+run "rejects_a_subject_without_immutable_ids" {
+  command = plan
+
+  variables {
+    github_repository_subject = "Yale-Undergraduate-Consulting-Group/club-res-website"
+  }
+
+  expect_failures = [var.github_repository_subject]
+}
 run "prod_edge_routes_api_through_the_vpc_origin" {
   command = apply
 
@@ -329,7 +338,7 @@ run "production_trust_follows_the_environment" {
   }
 
   assert {
-    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:prod"
+    condition     = jsondecode(aws_iam_role.deploy.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698:environment:prod"
     error_message = "The production deploy role must trust only the prod GitHub environment."
   }
 }
@@ -374,3 +383,4 @@ run "every_role_is_fenced_off_from_dev" {
     error_message = "The prod boundary must deny dev resources, including dev's Terraform state, by name and by Site tag."
   }
 }
+
