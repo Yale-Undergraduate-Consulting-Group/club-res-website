@@ -572,7 +572,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     if not domain and not profiled:
         # This used to take the host of the first search hit, unchecked, so
         # "Meta Platforms, Inc." became globaldata.com (a data vendor's profile
-        # page) and the run saved jeff.kim@globaldata.com as a Meta prospect.
+        # page) and the run saved a data-vendor employee's address as a Meta prospect.
         # The resolver only answers with a domain that looks like the company,
         # is not a platform or data vendor, and accepts mail. When nothing
         # verifies the run goes on without a domain: web search, the roster and
