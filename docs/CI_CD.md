@@ -194,6 +194,10 @@ Hold labels are `hold`, `do-not-merge`, and `release:hold`. Drafts, requested ch
 
 GitHub-generated PR events do not reliably start workflows when the controller uses `GITHUB_TOKEN`. Source pushes already perform Intake and Dev verification. The controller explicitly dispatches Production verification and publishes the verified status on the exact PR head.
 
+Observed 2026-10-07: the Intake `pull_request` run on a controller-opened PR ends in failure with no jobs, no check runs and no annotations, while the Intake `push` run on the same commit succeeds and supplies the required `intake-required-checks`. The Dev workflow's run on a controller-opened PR succeeded, so the cause is not simply the bot actor, and it is unexplained. Gating is unaffected, because the ruleset reads the check run on the commit, not the event that produced it. Treat a red `pull_request` Intake run on a controller PR as noise only after confirming the push run passed.
+
+**Every promotion needs a sync first.** PR merge commits land on `dev` and `integration` and never flow back, so after each merge the destination holds a commit its source lacks and the controller refuses with "Admin must synchronize ... then verify again." Merge the destination branch into the source before waiting on the controller: for `integration → dev`, sync `dev` into `integration` through a `feature/sync` branch (section 11); for `feature/<login> → integration`, merge `integration` into the contributor branch.
+
 Maintainer review remains essential: contributor code can modify its own proposed checks. Protected shared refs and organization rules form the enforcement boundary, not workflow names alone.
 
 A successful production deployment creates a semantic-version release for the **deployed SHA**, not the controller checkout SHA. Documentation-only changes create no deployment release. Repeating a release reuses the existing release for that commit.
