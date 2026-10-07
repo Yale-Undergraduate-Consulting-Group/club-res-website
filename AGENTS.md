@@ -82,7 +82,7 @@ A branch named `feature` cannot coexist with `feature/user` in Git.
 
 Read [terraform/](terraform/) and [docs/CI_CD.md](docs/CI_CD.md) together before changing the cloud contract.
 
-- Preserve separate dev/prod accounts, state, buckets, role bindings, and deployment targets unless an approved design changes them.
+- Dev and prod share account `073813807852`. Keep their state keys, buckets, role scopes, and `Site` tags separate; never grant one environment's role access to the other's resources.
 - Verify the account and region before any AWS mutation; never rely only on a local profile name.
 - Never use AWS root credentials for development, deployment, or CI.
 - Use human roles for provisioning and short-lived OIDC roles for Actions.
