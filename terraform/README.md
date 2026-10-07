@@ -4,7 +4,7 @@ Architecture and delivery rules live in [docs/CI_CD.md](../docs/CI_CD.md). This 
 
 ## First provisioning of an environment (operator credentials, never CI)
 
-1. `AWS_PROFILE=<operator> scripts/bootstrap-account.sh us-east-2` once per account: state bucket `yucgtfstate<account>`, GitHub OIDC provider, audit trail, GuardDuty.
+1. `AWS_PROFILE=<operator> scripts/bootstrap-account.sh us-east-2` once per account: state bucket `yucgtfstate<account>`, GitHub OIDC provider, audit trail, GuardDuty. Dev and prod share account `073813807852`, which is already bootstrapped; skip this step there. Run steps 2–8 once per environment, each with its own state key.
 2. Enable Bedrock model access for Anthropic Claude Haiku 4.5 in the account (first-use form).
 3. Prod only, when `origin_read_timeout` is above 60: get a Service Quotas increase for the CloudFront origin response timeout first, or the distribution update fails.
 4. Initialise and apply:

@@ -13,6 +13,64 @@ locals {
   stack_bucket_arns = concat([for b in aws_s3_bucket.site : b.arn], [for b in aws_s3_bucket.data : b.arn])
   # The box, selected by its Site tag, which default_tags puts on every resource.
   site_tag_condition = { StringEquals = { "aws:ResourceTag/Site" = local.name } }
+  # dev and prod share one account; each environment's roles are fenced off
+  # from the other's resources by the boundary below.
+  other_environment = var.environment == "dev" ? "prod" : "dev"
+  other_name        = "club-res-website-${local.other_environment}"
+}
+
+# Permissions boundary on every role of this stack. A role's effective rights are
+# the intersection of its own policies and this boundary, so even a reviewed apply
+# that rewrites a role's inline policy (ManageStackRoles allows that) cannot reach
+# the other environment. The roles cannot edit or remove the boundary; changing it
+# needs operator credentials. Verified with iam simulate-custom-policy against both
+# environments' resource ARNs (secrets, parameters, state paths, tagged KMS/EC2/CloudFront).
+resource "aws_iam_policy" "boundary" {
+  name        = "${local.name}-boundary"
+  description = "Caps every ${local.name} role: no access to ${local.other_name} resources."
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Sid = "AllowWithinIdentityGrants", Effect = "Allow", Action = "*", Resource = "*" },
+      {
+        Sid    = "DenyOtherEnvironmentByName"
+        Effect = "Deny"
+        Action = "*"
+        Resource = [
+          # The last segment also matches ARNs with more colons, such as secrets.
+          "arn:aws:*:*:*:*${local.other_name}*",
+          "arn:aws:*:*:*:*club-res-website/${local.other_environment}*",
+          "arn:aws:s3:::${local.other_name}*",
+          "arn:aws:s3:::*/club-res-website/${local.other_environment}/*",
+          "arn:aws:s3:::*/ci-plans/${local.other_environment}/*",
+          "arn:aws:s3:::*/ci-diagnostics/${local.other_environment}/*",
+        ]
+      },
+      {
+        Sid       = "DenyOtherEnvironmentByTag"
+        Effect    = "Deny"
+        Action    = "*"
+        Resource  = "*"
+        Condition = { StringEquals = { "aws:ResourceTag/Site" = local.other_name } }
+      },
+      {
+        Sid       = "DenyTaggingAsOtherEnvironment"
+        Effect    = "Deny"
+        Action    = "*"
+        Resource  = "*"
+        Condition = { StringEquals = { "aws:RequestTag/Site" = local.other_name } }
+      },
+      {
+        Sid    = "DenyBoundaryRemoval"
+        Effect = "Deny"
+        Action = [
+          "iam:DeleteRolePermissionsBoundary", "iam:PutRolePermissionsBoundary", "iam:CreatePolicyVersion",
+          "iam:DeletePolicy", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -31,6 +89,7 @@ resource "aws_iam_role" "deploy" {
   name                 = "${local.name}-deploy"
   description          = "GitHub environment ${var.environment} ships the app image, restarts the box and publishes the SPA."
   max_session_duration = 3600
+  permissions_boundary = aws_iam_policy.boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -128,6 +187,7 @@ resource "aws_iam_role" "terraform" {
   name                 = "${local.name}-terraform"
   description          = "GitHub environments infrastructure-${var.environment}-plan/apply run reviewed Terraform."
   max_session_duration = 3600
+  permissions_boundary = aws_iam_policy.boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -184,6 +244,10 @@ resource "aws_iam_role_policy" "terraform" {
           "ec2:Describe*",
           "kms:DescribeKey",
           "kms:GetKeyPolicy",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyTags",
+          "iam:ListPolicyVersions",
           "kms:GetKeyRotationStatus",
           "kms:ListAliases",
           "kms:ListResourceTags",

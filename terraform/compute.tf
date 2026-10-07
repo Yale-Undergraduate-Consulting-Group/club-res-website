@@ -59,7 +59,8 @@ resource "aws_ecr_lifecycle_policy" "app" {
 }
 
 resource "aws_iam_role" "box" {
-  name = "${local.name}-box"
+  name                 = "${local.name}-box"
+  permissions_boundary = aws_iam_policy.boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -205,7 +206,8 @@ resource "aws_volume_attachment" "data" {
 # .backup snapshots in the backups bucket are the verified restore path).
 
 resource "aws_iam_role" "dlm" {
-  name = "${local.name}-dlm"
+  name                 = "${local.name}-dlm"
+  permissions_boundary = aws_iam_policy.boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -270,8 +272,9 @@ resource "aws_dlm_lifecycle_policy" "data" {
 # (terraform/README.md). office_hours_enabled adds a weekday schedule.
 
 resource "aws_iam_role" "scheduler" {
-  count = var.office_hours_enabled ? 1 : 0
-  name  = "${local.name}-office-hours"
+  count                = var.office_hours_enabled ? 1 : 0
+  name                 = "${local.name}-office-hours"
+  permissions_boundary = aws_iam_policy.boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

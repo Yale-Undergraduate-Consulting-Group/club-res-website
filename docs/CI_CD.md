@@ -23,7 +23,7 @@ Still open: an organization owner must allow GitHub Actions to create pull reque
 
 Organization-level rules need someone with permission to manage organization rulesets. After installation, day-to-day review and merging needs only a maintainer.
 
-Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap; section 14 for the application runtime and confidentiality.
+Read sections 1–5 for Actions and permissions; sections 6–12 for AWS, website operation, and data; section 13 for bootstrap; section 14 for the application runtime and confidentiality; section 15 for account vending. [EXTENSIONS.md](EXTENSIONS.md) lists planned extensions that are not implemented, such as a managed knowledge base.
 
 ## 1. Contributors enter through local checks
 
@@ -42,13 +42,13 @@ flowchart TD
   DG -->|No| FIX
   DG -->|Yes| DP["Controller prepares integration to dev PR"]
   DP --> DR["Maintainer review and merge"]
-  DR --> DEV["dev: recheck, approve, deploy dev account"]
+  DR --> DEV["dev: recheck, approve, deploy dev environment"]
   DEV --> P["Production verification on dev"]
   P --> PG{"Strict checks and<br/>exact dev deployment proven?"}
   PG -->|No| FIX
   PG -->|Yes| PP["Controller prepares dev to prod PR"]
   PP --> PRV["Maintainer review and merge"]
-  PRV --> PROD["prod: recheck, approve, deploy prod account"]
+  PRV --> PROD["prod: recheck, approve, deploy prod environment"]
 ```
 
 Each arrow across a shared branch requires a PR and a maintainer merge. Passing checks does not authorize a contributor to merge. The controller never merges or synchronizes branches.
@@ -114,7 +114,7 @@ GitHub references: [organization ruleset API](https://docs.github.com/en/rest/or
 | Terraform | **Not installed or validated** | Format, validate, mocked plan tests | Same checks repeated |
 | Source scanning | Workflow lint, secrets, Python audit/code scan when present | Adds configuration misconfiguration scan | Same checks repeated |
 | Cloud credentials during verification | None | None | None |
-| Deployment after merge | None | Dev account, environment `dev` | Prod account, environment `prod` |
+| Deployment after merge | None | Environment `dev` in the shared account | Environment `prod` in the shared account |
 | Missing frontend | Can be no-work if no frontend exists | Blocks executable changes | Blocks executable changes |
 | Missing AWS bindings | Not relevant | Blocks deployment | Blocks deployment |
 | Backend deployment | Not relevant | Image pushed to ECR and the box restarted by digest through SSM; automatic rollback on a failed health check | Same, then the public site is published and checked through CloudFront |
@@ -261,37 +261,41 @@ Dev has no CloudFront: it skips step 4 and relies on the on-box health check. Sh
 
 Source: [`frontend/action.yml`](../.github/actions/frontend/action.yml), [`ship/action.yml`](../.github/actions/ship/action.yml).
 
-## 6. Three AWS accounts isolate builders, dev, and prod
+## 6. One AWS account hosts dev and prod
 
 ```mermaid
 flowchart LR
   GH["GitHub Actions"] -->|dev environment OIDC| DR
   GH -->|prod environment OIDC| PR
-  OP["Operator, SSO role"] -->|bootstrap and first apply| B
-  subgraph B["Builder account"]
-    BS["Bootstrap scripts and rehearsal stack"]
-  end
-  subgraph DEV["Dev AWS account: private"]
-    DR["Dev deploy role"] --> DBOX["Dev box, no public listener"]
-    DEVS["Developer"] -->|"SSM port-forward"| DBOX
-  end
-  subgraph PROD["Prod AWS account"]
-    PR["Prod deploy role"] --> PS["Private S3 site bucket"]
-    PR --> PBOX["Prod box, VPC origin only"]
-    PC["CloudFront and WAF"] -->|OAC| PS
-    PC -->|VPC origin /api| PBOX
+  OP["Operator, AccountFullAccessRole"] -->|bootstrap and first apply| ACC
+  subgraph ACC["Account 073813807852, us-east-2"]
+    BS["Shared: state bucket, OIDC provider, CloudTrail, GuardDuty"]
+    subgraph DEV["dev: private"]
+      DR["Dev deploy role"] --> DBOX["Dev box, no public listener"]
+      DEVS["Developer"] -->|"SSM port-forward"| DBOX
+    end
+    subgraph PROD["prod"]
+      PR["Prod deploy role"] --> PS["Private S3 site bucket"]
+      PR --> PBOX["Prod box, VPC origin only"]
+      PC["CloudFront and WAF"] -->|OAC| PS
+      PC -->|VPC origin /api| PBOX
+    end
   end
   PUBLIC["Public browser"] --> PC
 ```
 
-The builder account only rehearses and bootstraps: it holds no client data and is not a deployment target of the pipeline. Until the dev and prod accounts exist, the builder account hosts the `dev` environment.
+Dev and prod run in **one** account, `073813807852`. This replaces the earlier plan of separate dev and prod accounts: creating accounts needs an organization's management account, and nobody who runs this pipeline has one. Each environment has its own Terraform state key, VPC, box, buckets, KMS key, secrets, ECR repository, IAM roles, and budget, all named `club-res-website-<env>`.
+
+**What the shared account separates, and what it does not.** Each environment's GitHub roles trust only that environment's OIDC subject, and their policies name that environment's resources or require `aws:ResourceTag/Site = club-res-website-<env>`. That alone is not enough: each Terraform role may rewrite its own inline policy and those of its environment's other roles (`ManageStackRoles`), so a reviewed dev apply could grant itself prod access. A **permissions boundary**, `club-res-website-<env>-boundary`, is therefore attached to every role. It denies any action on resources named or tagged for the other environment, including the other environment's Terraform state and saved plans, and the roles cannot remove or edit it. Changing the boundary needs operator credentials. So no dev role, deploy or Terraform, can reach prod, and the reverse. This was checked with `iam simulate-custom-policy` against both environments' ARNs; a Terraform test fails if any role lacks the boundary.
+
+People are the remaining gap: anyone with administrator access to the account can reach both environments, and the organization that owns the account keeps its control over it. Section 15 moves the environments to separate accounts when the club controls an organization.
 
 **Dev is private.** It has no CloudFront distribution and its security group allows no inbound traffic. Developers reach it with `aws ssm start-session --document-name AWS-StartPortForwardingSession`, which is IAM-authenticated and logged in CloudTrail. Dev may contain real client data when a feature under development needs it. Copy only the tables the feature needs, as a deliberate and logged operation; never run a standing sync from prod. Dev must never send mail: it runs with `EMAIL_DELIVERY_ENABLED=false`, its own `JWT_SECRET` (so Gmail tokens copied from prod cannot be decrypted), and no Gmail tokens in any copied table.
 
 | AWS feature | Design choice and consequence | Source |
 |---|---|---|
-| Separate accounts | Distinct resources, state, roles, and cost tracking; no shared runtime data path | Environment inputs in [`main.tf`](../terraform/main.tf) |
-| Region | `us-east-2` for everything except CloudFront, ACM, WAF-for-CloudFront, KMS, IAM, and Bedrock cross-region routing; the organization's guardrails deny other regions | [`main.tf`](../terraform/main.tf) |
+| One shared account | One bootstrap, one set of audit controls; environments separated by name, role scope, VPC, KMS key, and `Site` tag | Environment inputs in [`main.tf`](../terraform/main.tf), role policies in [`github.tf`](../terraform/github.tf) |
+| Region | `us-east-2` for everything except CloudFront, ACM, WAF-for-CloudFront, KMS, IAM, and Bedrock cross-region routing. The account's organization decides which regions its policies allow | [`main.tf`](../terraform/main.tf) |
 | S3 origin | Private regional S3 endpoint; not S3 public website hosting | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | CloudFront | HTTPS delivery for pages and `/api`, compression, HTTP/2 and HTTP/3, IPv6; prod only | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | CloudFront VPC origin | The API box has no public listener; only the CloudFront service security group can reach port 80 | [`cloudfront.tf`](../terraform/cloudfront.tf), [`network.tf`](../terraform/network.tf) |
@@ -299,6 +303,7 @@ The builder account only rehearses and bootstraps: it holds no client data and i
 | WAF | AWS managed Common and Known Bad Inputs rule groups plus an IP rate rule on the prod distribution | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | Response headers | Custom policy: HSTS, nosniff, frame deny, referrer policy, CSP | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | IAM OIDC provider | Short-lived AWS sessions, exact repository/environment trust; created once per account by `scripts/bootstrap-account.sh` | [`github.tf`](../terraform/github.tf) |
+| Permissions boundary | Every role is capped to its own environment; the other environment's resources and state are denied by name and `Site` tag | [`github.tf`](../terraform/github.tf) |
 | Role separation | Site and image publisher versus privileged reviewed Terraform operator | [`github.tf`](../terraform/github.tf) |
 | S3 state locking | Terraform 1.10+ S3 lockfile; no DynamoDB table | [`main.tf`](../terraform/main.tf) |
 | Customer-managed KMS key | One key per environment for client-data stores: EBS data volume, catalog, backups, secrets | [`security.tf`](../terraform/security.tf) |
@@ -372,7 +377,7 @@ The subject names an environment, not a branch. GitHub environment branch polici
 
 The deploy role cannot apply Terraform or read state. It can list the site bucket, publish/delete current site objects, abort multipart uploads, and invalidate its distribution. It has no permission to delete historical object versions.
 
-The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. This is **not** a general sandbox: IAM-policy modification can expand access. Maintainer review is essential.
+The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. Rewriting a role's policy can expand access **within its own environment**; the permissions boundary stops it at the other environment. Maintainer review is essential.
 
 No long-lived AWS access key is required in GitHub. GitHub environment variables contain target identifiers, not AWS secret keys.
 
@@ -538,12 +543,12 @@ flowchart TD
   FORE --> EMAIL
 ```
 
-Budget notices are not spending limits. Billing data and notices can lag. The tag-filtered budget is not an account-wide cap and may miss untagged or unattributed costs. Activate the `Site` cost-allocation tag in each account.
+Budget notices are not spending limits. Billing data and notices can lag. The tag-filtered budget is not an account-wide cap and may miss untagged or unattributed costs. Activate the `Site` cost-allocation tag once in the shared account; each environment's budget then counts only its own tag.
 
 | Choice | Benefit | Cost or limitation |
 |---|---|---|
 | One small instance per environment, no NAT gateway | Lowest fixed cost for a shared, always-on API | The instance and its public IPv4 bill continuously; stop the instance (host-control Lambda) when unused |
-| Separate accounts | Clear deployment and data boundaries | Two resource sets and operational setup |
+| One shared account | One bootstrap and audit trail; no management account needed | Administrators of the account reach both environments |
 | WAF on the prod edge | Blocks common attacks before they reach the API | Fixed web ACL and rule charges |
 | Customer-managed KMS key per environment | Key isolation for EBS, catalog, backups, and secrets | About $1 per key per month; the public site bucket stays on SSE-S3 |
 | `PriceClass_100` | Limit edge locations | Some users can see higher latency |
@@ -565,14 +570,14 @@ Every job has a bounded timeout. Documentation changes skip costly lanes. CloudF
 7. Add the current maintainers as required reviewers on `prod` and both `infrastructure-*-apply` environments.
 8. Verify a write-role contributor cannot create or update a branch outside `feature/*`.
 9. Verify maintainers still need passing checks to merge into all three shared branches, plus one team approval for `dev` and `prod`.
-10. Create the dev and prod AWS accounts in the organization. Only the organization's management account can do this; run the **Organization** workflow (section 15) from it, or have the organization owner run the same Terraform by hand.
-11. Run `scripts/bootstrap-account.sh <region>` once per account with operator credentials: it creates the private state bucket with retention, the GitHub OIDC provider, a multi-region CloudTrail trail with its log bucket, and a GuardDuty detector.
-12. Run initial Terraform provisioning with operator credentials, separately for each account.
+10. Use the shared account `073813807852` for both environments (section 6). Creating separate accounts needs an organization's management account; section 15 covers that later move.
+11. Run `scripts/bootstrap-account.sh <region>` once in the account with operator credentials: it creates the private state bucket with retention, the GitHub OIDC provider, a multi-region CloudTrail trail with its log bucket, and a GuardDuty detector. Both environments share them.
+12. Run initial Terraform provisioning with operator credentials, once per environment, with its own state key (`club-res-website/<env>/terraform.tfstate`).
 13. Configure GitHub environment variables from verified account IDs and Terraform outputs.
 14. Activate billing tags and confirm budget email delivery.
 15. Integrate the real frontend through `feature/<user>`; complete the dev and prod deployment drills.
 
-Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default branch `prod`, four repository rulesets, six environments with branch policies, team reviewers. Steps 8–9 need a write-role contributor to test. Step 11 was run on 2026-10-05 for the builder account `073813807852` in `us-east-2` (state bucket, OIDC provider, CloudTrail trail, GuardDuty detector). Steps 10 and 12–15 are not done: the dev and prod accounts do not exist yet and nothing has been applied by Terraform.
+Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default branch `prod`, four repository rulesets, six environments with branch policies, team reviewers. Steps 8–9 need a write-role contributor to test. Steps 10–11 are done: on 2026-10-05 the account `073813807852` was bootstrapped in `us-east-2` (state bucket, OIDC provider, CloudTrail trail, GuardDuty detector). Steps 12–15 are not done: nothing has been applied by Terraform.
 
 ### Environment bindings
 
@@ -581,7 +586,7 @@ Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default b
 | `dev` | `dev` | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY`, `BOX_INSTANCE_ID` |
 | `prod` | `prod` | The same variables plus `SITE_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `SITE_URL` |
 | `infrastructure-dev-plan`, `infrastructure-dev-apply` | `prod` | `AWS_TERRAFORM_ROLE_ARN`, `TF_REGION`, `TF_ACCOUNT_ID`, `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_BUDGET_EMAIL`, `TF_MONTHLY_BUDGET_USD` |
-| `infrastructure-prod-plan`, `infrastructure-prod-apply` | `prod` | Same variable names, distinct prod values |
+| `infrastructure-prod-plan`, `infrastructure-prod-apply` | `prod` | Same variable names. Same account, region, and state bucket as dev; prod's own role ARN, state key, and budget values |
 | `organization-plan`, `organization-apply` | `prod` | `ORG_ACCOUNT_ID`, `AWS_ORGANIZATION_ROLE_ARN`, `ORG_DEV_EMAIL`, `ORG_PROD_EMAIL`, `ORG_STATE_BUCKET`, `ORG_STATE_KEY` |
 
 Set `TF_MANAGE_GITHUB_OIDC_PROVIDER` to `false`: `scripts/bootstrap-account.sh` already created the provider. Plan and apply bindings must match exactly.
@@ -644,7 +649,7 @@ flowchart LR
   V --> E["Operator: first Terraform apply, then GitHub environment variables"]
 ```
 
-`organization/` is organization-agnostic: it names no organization, so moving to an organization the club controls is a new plan and apply with that organization's management account, not a rewrite. It runs through the same reviewed saved-plan runner as `terraform/` (section 9), with the same identity manifest, 24-hour age limit, and SHA256 match, under the environments `organization-plan` and `organization-apply`.
+**Not in use.** Dev and prod share one account (section 6), so this workflow does not run and the `organization-*` environments stay unconfigured. It is kept for the move to separate accounts once the club controls an organization's management account. `organization/` is organization-agnostic: it names no organization, so that move is a new plan and apply with that management account, not a rewrite. It runs through the same reviewed saved-plan runner as `terraform/` (section 9), with the same identity manifest, 24-hour age limit, and SHA256 match, under the environments `organization-plan` and `organization-apply`.
 
 Limits to know:
 

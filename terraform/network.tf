@@ -154,7 +154,8 @@ resource "aws_cloudwatch_log_group" "flow" {
 }
 
 resource "aws_iam_role" "flow_logs" {
-  name = "${local.name}-flow-logs"
+  name                 = "${local.name}-flow-logs"
+  permissions_boundary = aws_iam_policy.boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
