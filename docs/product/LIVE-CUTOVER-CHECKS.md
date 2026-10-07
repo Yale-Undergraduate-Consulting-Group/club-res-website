@@ -2,7 +2,7 @@
 
 ## Fresh read-only evidence
 
-- AWS profile `andreheidvscode` authenticates to account `442429446212` as root. Use a scoped operational identity for the proposed mutations; none were made in this pass.
+- Use a scoped operational identity, never root credentials, for the proposed mutations; none were made in this pass.
 - `YucgOutreach-dev` remains `UPDATE_ROLLBACK_COMPLETE`. Existing instance output is `i-09a071e22270b027c`.
 - CloudFront `E35QVGFDWHVOPG` is deployed/enabled, with one VPC origin (`vo_1cUN7wIxTWcCDPYkk4dLaX`) at `ip-172-31-14-232.ec2.internal`. Read timeout is 120 seconds, keepalive 5 seconds. There are no ordered cache behaviors. Static origin cutover has not happened.
 - Existing catalog bucket `yucgoutreach-dev-catalog742f25fd-y8qmakbekdds` returns `NoSuchCORSConfiguration`. Browser uploads through the compatibility bucket are not ready.
