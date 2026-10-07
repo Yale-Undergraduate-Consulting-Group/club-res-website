@@ -36,7 +36,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/feature/') }}
 jobs:
   scope:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       phase: ${{ steps.route.outputs.phase }}
@@ -47,7 +47,6 @@ jobs:
       image: ${{ steps.classify.outputs.image }}
       security: ${{ steps.classify.outputs.security }}
       deploy: ${{ steps.classify.outputs.deploy }}
-      backend_runtime: ${{ steps.classify.outputs.backend_runtime }}
     steps:
     - id: route
       name: Select the stage operation
@@ -96,7 +95,7 @@ jobs:
   backend:
     needs: scope
     if: needs.scope.outputs.backend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -108,7 +107,7 @@ jobs:
   frontend:
     needs: scope
     if: needs.scope.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -124,7 +123,7 @@ jobs:
   infra:
     needs: scope
     if: needs.scope.outputs.infra == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -136,13 +135,18 @@ jobs:
   image:
     needs: scope
     if: needs.scope.outputs.image == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
     - uses: ./.github/actions/image
+      with:
+        phase: ${{ needs.scope.outputs.phase }}
+      id: build
+    outputs:
+      image_sha256: ${{ steps.build.outputs.image_sha256 }}
   required-checks:
     name: production-required-checks
     needs:
@@ -153,7 +157,7 @@ jobs:
     - image
     if: ${{ always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.operation == '' || inputs.operation
       == 'deliver') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -180,40 +184,47 @@ jobs:
     needs:
     - scope
     - frontend
+    - image
     - required-checks
     if: ${{ always() && !cancelled() && needs.required-checks.result == 'success' && needs.scope.outputs.phase == 'ship' &&
-      needs.scope.outputs.deploy == 'true' && needs.frontend.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+      needs.scope.outputs.deploy == 'true' && needs.frontend.result == 'success' && needs.image.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: prod
     permissions:
       contents: read
+      actions: read
       id-token: write
-    outputs:
-      configured: ${{ steps.binding.outputs.configured }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
       AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      BOX_INSTANCE_ID: ${{ vars.BOX_INSTANCE_ID }}
       SITE_BUCKET: ${{ vars.SITE_BUCKET }}
       CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
       SITE_URL: ${{ vars.SITE_URL }}
       DEPLOYMENT_ENV: prod
+      EXPECTED_IMAGE_SHA256: ${{ needs.image.outputs.image_sha256 }}
       EXPECTED_SITE_SHA256: ${{ needs.frontend.outputs.site_sha256 }}
-      BACKEND_CHANGED: ${{ needs.scope.outputs.backend_runtime }}
     steps:
-    - id: binding
-      name: Require a complete deploy target
+    - name: Require a complete deploy target
       run: |
         set -euo pipefail
-        for name in AWS_REGION AWS_ACCOUNT_ID AWS_DEPLOY_ROLE_ARN SITE_BUCKET CLOUDFRONT_DISTRIBUTION_ID SITE_URL; do
+        for name in AWS_REGION AWS_ACCOUNT_ID AWS_DEPLOY_ROLE_ARN ECR_REPOSITORY BOX_INSTANCE_ID SITE_BUCKET CLOUDFRONT_DISTRIBUTION_ID SITE_URL; do
           if [ -z "${!name}" ]; then echo "::error::Missing environment binding: $name"; exit 1; fi
         done
-        test "$BACKEND_CHANGED" != true || { echo "::error::Backend delivery is unavailable; configure a real backend host before release."; exit 1; }
-        echo configured=true >> "$GITHUB_OUTPUT"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+        fetch-depth: 2
+    # The required status context can be posted by any workflow in this repository,
+    # so the environment-gated job proves the dev deployment itself: the second
+    # parent of the merge commit on prod is the dev head that must have deployed.
+    - name: Require the merged dev commit to have deployed to dev
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/promote.py --verify-dev "$(git rev-parse HEAD^2)"
     - uses: ./.github/actions/ship
       with:
         role: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -222,7 +233,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.operation == 'plan' || inputs.operation == 'apply') && github.ref
       == 'refs/heads/prod' }}
     environment: infrastructure-${{ inputs.target }}-${{ inputs.operation }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -258,4 +269,11 @@ jobs:
         TF_BUDGET_EMAIL: ${{ vars.TF_BUDGET_EMAIL }}
         TF_MONTHLY_BUDGET_USD: ${{ vars.TF_MONTHLY_BUDGET_USD }}
         TF_MANAGE_GITHUB_OIDC_PROVIDER: ${{ vars.TF_MANAGE_GITHUB_OIDC_PROVIDER }}
+        TF_INSTANCE_TYPE: ${{ vars.TF_INSTANCE_TYPE }}
+        TF_DATA_VOLUME_GB: ${{ vars.TF_DATA_VOLUME_GB }}
+        TF_ENABLE_EDGE: ${{ vars.TF_ENABLE_EDGE }}
+        TF_ENABLE_WAF: ${{ vars.TF_ENABLE_WAF }}
+        TF_ORIGIN_READ_TIMEOUT: ${{ vars.TF_ORIGIN_READ_TIMEOUT }}
+        TF_OFFICE_HOURS_ENABLED: ${{ vars.TF_OFFICE_HOURS_ENABLED }}
+        TF_CATALOG_OPERATOR_PRINCIPAL_ARNS: ${{ vars.TF_CATALOG_OPERATOR_PRINCIPAL_ARNS }}
       run: bash scripts/terraform-release.sh "$OPERATION"

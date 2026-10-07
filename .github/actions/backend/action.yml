@@ -1,5 +1,5 @@
 name: Backend tests
-description: FastAPI backend tests for staged club delivery.
+description: Full FastAPI backend regression suite with coverage floors at every stage.
 inputs:
   stage:
     description: Stage supplied by the stage workflow.
@@ -10,40 +10,46 @@ runs:
     - id: present
       name: Locate the backend
       shell: bash
+      env:
+        STAGE: ${{ inputs.stage }}
       run: |
         if [ ! -e backend ]; then
+          if [ "$STAGE" != intake ]; then
+            echo '::error::AWS delivery requires a real backend/'
+            exit 1
+          fi
           echo present=false >> "$GITHUB_OUTPUT"
           echo 'Backend: this revision has no backend/; nothing to test.' >> "$GITHUB_STEP_SUMMARY"
           exit 0
         fi
-        if [ ! -f backend/requirements.txt ]; then
-          echo '::error::backend/ exists without backend/requirements.txt'
-          exit 1
-        fi
+        for file in requirements.lock requirements-dev.txt scripts/test_suite.py; do
+          if [ ! -f "backend/$file" ]; then
+            echo "::error::backend/ exists without backend/$file"
+            exit 1
+          fi
+        done
         echo present=true >> "$GITHUB_OUTPUT"
     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       if: steps.present.outputs.present == 'true'
       with:
         python-version: "3.12"
         cache: pip
-        cache-dependency-path: backend/requirements*.txt
-    - name: Install dependencies
+        cache-dependency-path: |
+          backend/requirements.lock
+          backend/requirements-dev.txt
+    - name: Install locked dependencies
       if: steps.present.outputs.present == 'true'
       shell: bash
       working-directory: backend
       run: |
-        python -m pip install -q -r requirements.txt
-        if [ -f requirements-dev.txt ]; then
-          python -m pip install -q -r requirements-dev.txt
-        fi
-    # Tests run from backend/ so `import main` resolves exactly as in the container.
-    - name: Run fast Intake tests
-      if: steps.present.outputs.present == 'true' && inputs.stage == 'intake'
+        python -m pip install --require-hashes -q -r requirements.lock
+        python -m pip install -q -r requirements-dev.txt
+    # The tests are standalone scripts (no pytest). Every stage runs all of them
+    # with branch coverage and critical-module thresholds.
+    - name: Run the full backend suite with coverage
+      if: steps.present.outputs.present == 'true'
       shell: bash
       working-directory: backend
-      run: python -m pytest -q -m "not slow" tests
-    - name: Run the full backend suite
-      if: steps.present.outputs.present == 'true' && inputs.stage != 'intake'
-      shell: bash
-      working-directory: backend
-      run: python -m pytest -q tests
+      env:
+        JWT_SECRET: ci-test-secret-not-a-known-default-xx
+      run: python scripts/test_suite.py
