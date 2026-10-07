@@ -88,10 +88,22 @@ def dispatch(repo, workflow, branch):
     api(f'repos/{repo}/actions/workflows/{workflow}/dispatches', 'POST', {'ref': branch})
 
 
+def destination_changes_files(repo, source, target):
+    """Whether target holds file changes that source lacks. Unproven counts as yes.
+
+    PR merge commits land on the destination and never flow back, so the destination
+    is routinely "ahead" by commits that change no files. Those cannot invalidate what
+    the candidate's checks tested; a destination with real changes still must be
+    merged into the candidate first.
+    """
+    files = api(f'repos/{repo}/compare/{quote(source, safe="")}...{target}').get('files')
+    return not isinstance(files, list) or bool(files)
+
+
 def prepare_pr(repo, run, target):
     source, sha = run['head_branch'], run['head_sha']
     comparison = api(f'repos/{repo}/compare/{target}...{quote(source, safe="")}')
-    if comparison['behind_by']:
+    if comparison['behind_by'] and destination_changes_files(repo, source, target):
         print(f'Admin must synchronize {target} into {source}, then verify again.')
         return
     if comparison['ahead_by'] == 0:
