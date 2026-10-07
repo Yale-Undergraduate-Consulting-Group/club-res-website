@@ -371,7 +371,7 @@ flowchart TD
   TF --> UPDATE["Manage existing stack configuration"]
 ```
 
-The deploy trust subject is `repo:Yale-Undergraduate-Consulting-Group/club-res-website:environment:<dev|prod>`. Terraform trusts only `infrastructure-<target>-plan` and `infrastructure-<target>-apply` subjects.
+The deploy trust subject is `repo:Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698:environment:<dev|prod>`: GitHub issues this immutable form (owner and repository IDs) to repositories created after 2026-07-15, and a trust written as `owner/name` never matches their tokens, which is how the first Dev deploy failed. Terraform trusts only `infrastructure-<target>-plan` and `infrastructure-<target>-apply` subjects, in the same form. Look the IDs up with `gh api repos/<owner>/<repo> --jq '.owner.id, .id'`; `terraform-release.sh` computes them from `GITHUB_REPOSITORY_OWNER_ID` and `GITHUB_REPOSITORY_ID`.
 
 The subject names an environment, not a branch. GitHub environment branch policies must enforce `dev` for dev deployment and `prod` for prod deployment and infrastructure jobs. Without those settings, the trust boundary is incomplete.
 

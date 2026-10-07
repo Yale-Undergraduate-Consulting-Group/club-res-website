@@ -43,7 +43,9 @@ if [ "${1:-}" = plan ]; then
     export TF_VAR_accounts
   else
     : "${TF_BUDGET_EMAIL:?}" "${TF_MONTHLY_BUDGET_USD:?}"
-    export TF_VAR_environment="$TF_TARGET" TF_VAR_github_repository="$GITHUB_REPOSITORY"
+    # The OIDC subject GitHub issues for this repository: immutable owner and repository IDs.
+    export TF_VAR_environment="$TF_TARGET"
+    export TF_VAR_github_repository_subject="${GITHUB_REPOSITORY_OWNER}@${GITHUB_REPOSITORY_OWNER_ID:?}/${GITHUB_REPOSITORY#*/}@${GITHUB_REPOSITORY_ID:?}"
     export TF_VAR_monthly_budget_usd="$TF_MONTHLY_BUDGET_USD" TF_VAR_budget_email="$TF_BUDGET_EMAIL"
     export TF_VAR_tf_state_bucket="$TF_STATE_BUCKET" TF_VAR_tf_state_key="$TF_STATE_KEY"
     export TF_VAR_manage_github_oidc_provider="${TF_MANAGE_GITHUB_OIDC_PROVIDER:-true}"
