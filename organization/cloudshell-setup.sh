@@ -8,6 +8,9 @@ set -euo pipefail
 
 REGION=us-east-2
 REPO=Yale-Undergraduate-Consulting-Group/club-res-website
+# GitHub issues the immutable subject (owner and repository IDs) for repositories created after
+# 2026-07-15; a trust written as owner/name never matches. gh api repos/$REPO --jq '.owner.id, .id'
+SUBJECT=Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698
 ROLE=yucg-organization
 KEY=club-res-website/organization/terraform.tfstate
 export AWS_DEFAULT_REGION="$REGION"
@@ -49,7 +52,7 @@ TRUST="$(cat <<JSON
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRoleWithWebIdentity",
 "Principal":{"Federated":"$PROVIDER"},
 "Condition":{"StringEquals":{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com","token.actions.githubusercontent.com:sub":[
-"repo:$REPO:environment:organization-plan","repo:$REPO:environment:organization-apply"]}}}]}
+"repo:$SUBJECT:environment:organization-plan","repo:$SUBJECT:environment:organization-apply"]}}}]}
 JSON
 )"
 POLICY="$(cat <<JSON

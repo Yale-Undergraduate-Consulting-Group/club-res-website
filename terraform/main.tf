@@ -39,13 +39,13 @@ variable "environment" {
   }
 }
 
-variable "github_repository" {
+variable "github_repository_subject" {
   type        = string
-  default     = "Yale-Undergraduate-Consulting-Group/club-res-website"
-  description = "owner/name of the repository whose GitHub environments may assume the roles."
+  default     = "Yale-Undergraduate-Consulting-Group@264275789/club-res-website@1401667698"
+  description = "OWNER@OWNER-ID/REPO@REPO-ID, the repository part of GitHub's immutable OIDC subject. Repositories created after 2026-07-15 get this form, and a trust policy written as owner/name never matches their tokens. IDs: gh api repos/<owner>/<repo> --jq '.owner.id, .id'."
   validation {
-    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
-    error_message = "github_repository must be owner/name."
+    condition     = can(regex("^[A-Za-z0-9_.-]+@[0-9]+/[A-Za-z0-9_.-]+@[0-9]+$", var.github_repository_subject))
+    error_message = "github_repository_subject must be OWNER@OWNER-ID/REPO@REPO-ID."
   }
 }
 

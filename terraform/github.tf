@@ -2,10 +2,10 @@
 # exactly one GitHub environment of this repository.
 locals {
   github_oidc_provider_arn = "arn:aws:iam::${local.account_id}:oidc-provider/token.actions.githubusercontent.com"
-  deploy_subject           = "repo:${var.github_repository}:environment:${var.environment}"
+  deploy_subject           = "repo:${var.github_repository_subject}:environment:${var.environment}"
   terraform_subjects = [
-    "repo:${var.github_repository}:environment:infrastructure-${var.environment}-plan",
-    "repo:${var.github_repository}:environment:infrastructure-${var.environment}-apply",
+    "repo:${var.github_repository_subject}:environment:infrastructure-${var.environment}-plan",
+    "repo:${var.github_repository_subject}:environment:infrastructure-${var.environment}-apply",
   ]
   state_bucket_arn = "arn:aws:s3:::${var.tf_state_bucket}"
   budget_name      = "${local.name}-monthly"
