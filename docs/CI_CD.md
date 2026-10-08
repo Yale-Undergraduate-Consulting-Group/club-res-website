@@ -263,6 +263,8 @@ When a `backend/`, `docker/`, or `ops/` path changes, the ship job deploys the c
 
 Dev has no CloudFront: it skips step 4 and relies on the on-box health check. Shipping the image and the pages are separate steps, so a failure between them can leave new pages talking to the previous API version. Keep API changes backward compatible for one release.
 
+An environment on office hours (`office_hours_enabled`) is stopped outside its window, and the preflight (`ops/check_deployment.py`) rejects a stopped box, so a ship outside the window fails before it changes anything. The deploy role cannot start instances. Either promote inside the window, or start the box (`aws ec2 start-instances --instance-ids <BOX_INSTANCE_ID>`, wait for SSM to report it online) and re-run the failed job. Production verification requires a successful Dev deployment of the exact commit, so a Dev ship that failed this way blocks promotion until it is re-run.
+
 Source: [`frontend/action.yml`](../.github/actions/frontend/action.yml), [`ship/action.yml`](../.github/actions/ship/action.yml).
 
 ## 6. One AWS account hosts dev and prod
@@ -304,7 +306,7 @@ People are the remaining gap: anyone with administrator access to the account ca
 | CloudFront | HTTPS delivery for pages and `/api`, compression, HTTP/2 and HTTP/3, IPv6; prod only | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | CloudFront VPC origin | The API box has no public listener; only the CloudFront service security group can reach port 80 | [`cloudfront.tf`](../terraform/cloudfront.tf), [`network.tf`](../terraform/network.tf) |
 | Origin Access Control | CloudFront signs origin requests to S3 with SigV4 | [`cloudfront.tf`](../terraform/cloudfront.tf) |
-| WAF | AWS managed Common and Known Bad Inputs rule groups plus an IP rate rule on the prod distribution | [`cloudfront.tf`](../terraform/cloudfront.tf) |
+| WAF | Available through `enable_waf` (default on): AWS managed Common and Known Bad Inputs rule groups plus a per-IP rate rule, about $8 a month. **Prod is configured with `TF_ENABLE_WAF=false` to save that cost** (the prod distribution does not exist yet); the Yale login gate, the application's own limits, and CloudFront's built-in DDoS protection remain. Turn it on with the variable and a reviewed plan | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | Response headers | Custom policy: HSTS, nosniff, frame deny, referrer policy, CSP | [`cloudfront.tf`](../terraform/cloudfront.tf) |
 | IAM OIDC provider | Short-lived AWS sessions, exact repository/environment trust; created once per account by `scripts/bootstrap-account.sh` | [`github.tf`](../terraform/github.tf) |
 | Permissions boundary | Every role is capped to its own environment; the other environment's resources and state are denied by name and `Site` tag | [`github.tf`](../terraform/github.tf) |
@@ -553,7 +555,8 @@ Budget notices are not spending limits. Billing data and notices can lag. The ta
 |---|---|---|
 | One small instance per environment, no NAT gateway | Lowest fixed cost for a shared, always-on API | The instance and its public IPv4 bill continuously; stop the instance (host-control Lambda) when unused |
 | One shared account | One bootstrap and audit trail; no management account needed | Administrators of the account reach both environments |
-| WAF on the prod edge | Blocks common attacks before they reach the API | Fixed web ACL and rule charges |
+| WAF on the prod edge (off in prod today) | Blocks common attacks and floods before they reach the API | About $8 a month with three rules, plus $0.60 per million requests; without it the single small box sees all scanner traffic |
+| Office hours on dev | The box runs about 80 of 168 hours; compute and its public IPv4 bill only while running (about $9.90 a month saved) | Tools are offline nights and weekends; deploys outside the window need a manual start. Prod stays 24/7 because an open-tracking pixel request that reaches a stopped box is lost permanently, whereas a delayed send or reply sync is only late |
 | Customer-managed KMS key per environment | Key isolation for EBS, catalog, backups, and secrets | About $1 per key per month; the public site bucket stays on SSE-S3 |
 | `PriceClass_100` | Limit edge locations | Some users can see higher latency |
 | Cheap Intake | No Docker, Terraform, or Playwright | Cloud incompatibility can surface later, intentionally |
@@ -581,7 +584,7 @@ Every job has a bounded timeout. Documentation changes skip costly lanes. CloudF
 14. Activate billing tags and confirm budget email delivery.
 15. Integrate the real frontend through `feature/<user>`; complete the dev and prod deployment drills.
 
-Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default branch `prod`, four repository rulesets, six environments with branch policies, team reviewers. Steps 8–9 need a write-role contributor to test. Steps 10–11 are done: on 2026-10-05 the account `073813807852` was bootstrapped in `us-east-2` (state bucket, OIDC provider, CloudTrail trail, GuardDuty detector). Steps 12–15 are not done: nothing has been applied by Terraform.
+Steps 3–7 were done on 2026-10-02: branches from `main` @ `bbd7385`, default branch `prod`, four repository rulesets, six environments with branch policies, team reviewers. Steps 8–9 need a write-role contributor to test. Steps 10–11 are done: on 2026-10-05 the account `073813807852` was bootstrapped in `us-east-2` (state bucket, OIDC provider, CloudTrail trail, GuardDuty detector). Step 12 (initial Terraform provisioning): **dev is applied** (2026-10-07, first Dev deploy verified healthy on 2026-10-07), and office hours were enabled on dev on 2026-10-08 UTC. **Prod is partly applied**: 78 of 84 planned resources exist (network, box, volumes, KMS, buckets, roles, ECR, secret, CloudFront VPC origin) and the box is stopped. The CloudFront distribution create was refused by AWS (`AccessDenied: Your account must be verified before you can add new CloudFront resources`), so the distribution, the deploy and Terraform role policies, the documents bucket CORS, the site bucket policy, and the SSM config parameter are not created. A new reviewed plan is needed after AWS verifies the account; the spent plan cannot be re-applied. The same verification gate currently blocks Bedrock. Steps 13–15 are not done for prod.
 
 ### Environment bindings
 
