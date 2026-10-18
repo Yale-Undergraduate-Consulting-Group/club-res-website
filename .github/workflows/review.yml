@@ -1,0 +1,21 @@
+name: Review
+# Signals Promotion that a review changed on a dev or prod stage PR. It runs no
+# repository code and has no write access; Promotion recomputes review-gate from
+# the API in its trusted default-branch checkout.
+'on':
+  pull_request_review:
+    types:
+    - submitted
+    - dismissed
+permissions: {}
+jobs:
+  signal:
+    if: ${{ contains(fromJSON('["dev","prod"]'), github.event.pull_request.base.ref) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+    - name: Record the review event
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REVIEW_STATE: ${{ github.event.review.state }}
+      run: 'echo "Review $REVIEW_STATE on PR $PR_NUMBER"'

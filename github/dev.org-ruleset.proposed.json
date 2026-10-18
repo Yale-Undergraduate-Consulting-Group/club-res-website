@@ -22,20 +22,8 @@
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 1,
+        "required_approving_review_count": 0,
         "dismiss_stale_reviews_on_push": true,
-        "required_reviewers": [
-          {
-            "minimum_approvals": 1,
-            "file_patterns": [
-              "*"
-            ],
-            "reviewer": {
-              "id": 19868239,
-              "type": "Team"
-            }
-          }
-        ],
         "require_code_owner_review": false,
         "dismissal_restriction": {
           "enabled": false,
@@ -57,6 +45,10 @@
         "required_status_checks": [
           {
             "context": "dev-required-checks",
+            "integration_id": 15368
+          },
+          {
+            "context": "review-gate",
             "integration_id": 15368
           }
         ]
