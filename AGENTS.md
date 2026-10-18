@@ -72,7 +72,7 @@ A branch named `feature` cannot coexist with `feature/user` in Git.
 - Name roles, not individuals, in rules, docs, and configuration. Membership changes belong in GitHub settings.
 - Organization ownership, repository administration, code review, merge permission, and AWS access are different permissions.
 - Only maintainers merge into shared branches. `integration` needs passing checks; `dev` and `prod` also need one maintainer-team approval. GitHub shows these PRs as blocked; maintainers merge with the rules bypass.
-- Ask a second maintainer to review IAM, client access, deletion, workflow permissions, and protection changes when one is available.
+- One maintainer's review and merge is sufficient for every change, including IAM, client access, deletion, workflow permissions, and protection changes.
 - Keep automation credentials narrow; do not grant every candidate workflow a shared-branch bypass.
 - An empty environment list does not prove missing permission. Report the actual API result and operation.
 - Namespace rules do not prove personal ownership of `feature/<user>` branches.
