@@ -44,10 +44,87 @@ class PromotionTests(unittest.TestCase):
                 promote.process(run('Dev', 'dev'), REPO)
             dispatch.assert_not_called()
 
-    def test_deployed_dev_advances_to_production_verification(self):
-        with patch.object(promote, 'api', return_value={'commit': {'sha': SHA}}), patch.object(promote, 'jobs_for', return_value={'dev-required-checks': 'success', 'deploy': 'success'}), patch.object(promote, 'dispatch') as dispatch:
+    def test_deployed_dev_follows_its_own_dispatch_to_the_production_pr(self):
+        verified = run('Production', 'dev', event='workflow_dispatch')
+        with patch.object(promote, 'api', return_value={'commit': {'sha': SHA}}), patch.object(promote, 'jobs_for', side_effect=[{'dev-required-checks': 'success', 'deploy': 'success'}, {'production-required-checks': 'success'}]), patch.object(promote, 'dispatch') as dispatch, patch.object(promote, 'wait_for_dispatched_run', return_value=verified), patch.object(promote, 'require_dev_deployment'), patch.object(promote, 'prepare_pr') as prepare:
             promote.process(run('Dev', 'dev'), REPO)
             dispatch.assert_called_once_with(REPO, 'production.yml', 'dev')
+            prepare.assert_called_once_with(REPO, verified, 'prod')
+
+    def test_failed_dispatched_verification_stops_promotion(self):
+        failed = {'workflow_runs': [{'id': 5, 'status': 'completed', 'conclusion': 'failure', 'html_url': 'u'}]}
+        with patch.object(promote, 'api', return_value=failed), patch.object(promote.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'failure'):
+                promote.wait_for_dispatched_run(REPO, 'production.yml', 'dev', SHA, '2026-10-18T00:00:00Z')
+
+    def test_small_change_cap_and_sensitive_paths(self):
+        def f(name, changes=1, previous=None):
+            value = {'filename': name, 'changes': changes}
+            return dict(value, previous_filename=previous) if previous else value
+        cases = [
+            ([f('docs/big.md', 5000)], True),
+            ([f('backend/app/x.py', 30), f('frontend/src/y.ts', 20), f('docs/z.md', 900)], True),
+            ([f('backend/app/x.py', 51)], False),
+            ([f('terraform/compute.tf', 1)], False),
+            ([f('AGENTS.md', 1)], False),
+            ([f('backend/requirements.lock', 2)], False),
+            ([f('docs/moved.md', 1, previous='scripts/promote.py')], False),
+            ([f('backend/app/x.py')] * 300, False),
+            ([], False),
+            (None, False),
+        ]
+        for files, expected in cases:
+            with self.subTest(files=files and files[:2]):
+                self.assertEqual(promote.small_change(files), expected)
+
+    def _gate_api(self, files, reviews, permission, calls):
+        def api(path, method='GET', payload=None):
+            calls.append((method, path, payload))
+            if '/compare/' in path:
+                return {'files': files}
+            if path.endswith('/reviews?per_page=100'):
+                return reviews
+            if '/permission' in path:
+                return {'permission': permission}
+            if path.endswith('/requested_reviewers') and method == 'GET':
+                return {'teams': []}
+            return {}
+        return api
+
+    def _gate(self, files, reviews=(), permission='admin'):
+        calls = []
+        pr = {'number': 9, 'head': {'sha': SHA}, 'base': {'ref': 'prod'}, 'html_url': 'u'}
+        with patch.object(promote, 'api', side_effect=self._gate_api(files, list(reviews), permission, calls)):
+            promote.apply_review_gate(REPO, pr)
+        status = next(payload for method, path, payload in calls if '/statuses/' in path)
+        requested = any(method == 'POST' and path.endswith('/requested_reviewers') for method, path, _ in calls)
+        return status['state'], requested
+
+    def test_review_gate_requires_current_admin_approval_for_large_changes(self):
+        large = [{'filename': 'terraform/compute.tf', 'changes': 2}]
+        approved = {'user': {'login': 'owner'}, 'state': 'APPROVED', 'commit_id': SHA}
+        self.assertEqual(self._gate([{'filename': 'docs/a.md', 'changes': 400}]), ('success', False))
+        self.assertEqual(self._gate(large), ('pending', True))
+        self.assertEqual(self._gate(large, [approved]), ('success', False))
+        self.assertEqual(self._gate(large, [approved], permission='write'), ('pending', True))
+        self.assertEqual(self._gate(large, [dict(approved, commit_id='b' * 40)]), ('pending', True))
+        blocked = [approved, {'user': {'login': 'other'}, 'state': 'CHANGES_REQUESTED', 'commit_id': SHA}]
+        self.assertEqual(self._gate(large, blocked), ('pending', True))
+
+    def test_review_signal_refreshes_only_matching_same_repository_prs(self):
+        review = {'name': 'Review', 'path': promote.REVIEW_WORKFLOW, 'conclusion': 'success',
+                  'head_sha': SHA, 'head_repository': {'full_name': REPO}}
+        prs = [{'head': {'sha': SHA, 'repo': {'full_name': REPO}}},
+               {'head': {'sha': 'b' * 40, 'repo': {'full_name': REPO}}},
+               {'head': {'sha': SHA, 'repo': {'full_name': 'fork/site'}}}]
+        with patch.object(promote, 'api', return_value=prs), patch.object(promote, 'apply_review_gate') as gate:
+            promote.process(review, REPO)
+            self.assertEqual(gate.call_count, 2)  # the matching PR, once per gated base
+        for change in ({'path': '.github/workflows/other.yml'}, {'conclusion': 'failure'},
+                       {'head_repository': {'full_name': 'fork/site'}}):
+            with self.subTest(change=change), patch.object(promote, 'api') as api:
+                promote.process(dict(review, **change), REPO)
+                api.assert_not_called()
 
     def test_production_candidate_requires_exact_dev_deployment(self):
         with patch.object(promote, 'api', return_value={'commit': {'sha': SHA}}), patch.object(promote, 'jobs_for', return_value={'production-required-checks': 'success'}), patch.object(promote, 'docs_only', return_value=False), patch.object(promote, 'deployment_proven', return_value=False), patch.object(promote, 'prepare_pr') as prepare:

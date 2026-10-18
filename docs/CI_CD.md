@@ -74,7 +74,7 @@ flowchart TD
   O -->|Yes| S{"integration, dev, or prod?"}
   S -->|No| ADMIN["Maintainer administrative operation"]
   S -->|Yes| Q["Separate quality rules still apply"]
-  Q --> R["PR, required checks, current base;<br/>dev and prod also need one team approval"]
+  Q --> R["PR, required checks, current base;<br/>dev and prod also need review-gate"]
   R --> M["Maintainer merges; no force push or branch deletion"]
 ```
 
@@ -84,13 +84,21 @@ This diagram describes the installed rules. They are repository rulesets on `clu
 |---|---|---|
 | `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners |
 | `integration.org-ruleset.proposed.json` | Require Intake and current base; no approval | None |
-| `dev.org-ruleset.proposed.json` | Require Dev checks, one maintainer-team approval, and current base | None |
-| `prod.org-ruleset.proposed.json` | Require Production checks, one maintainer-team approval, and current base | None |
+| `dev.org-ruleset.proposed.json` | Require Dev checks, `review-gate`, and current base | None |
+| `prod.org-ruleset.proposed.json` | Require Production checks, `review-gate`, and current base | None |
 | Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
 A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
 
-PRs into `integration` need no approval: only maintainers can merge there, so the maintainer's merge is the review, and a single maintainer can merge their own PR. PRs into `dev` and `prod` need one approval from `club-res-website-maintainers`. The controller opens those promotion PRs as `github-actions[bot]`, so one maintainer can approve them. No code owner is required.
+PRs into `integration` need no approval: only maintainers can merge there, so the maintainer's merge is the review, and a single maintainer can merge their own PR. PRs into `dev` and `prod` need the required status `review-gate`, which the controller publishes on the exact PR head. GitHub cannot make an approval rule depend on PR size, so the rulesets require no approving review and the gate carries the size rule instead:
+
+| Change (compared with the destination) | `review-gate` |
+|---|---|
+| Documentation only (`docs/`, top-level `*.md`), any size | Passes immediately |
+| At most 50 changed lines outside documentation, and no sensitive path | Passes immediately |
+| Anything larger, or any change under `terraform/`, `.github/`, `github/`, `scripts/`, `ops/`, `docker/`, `organization/`, `.claude/`, or to `AGENTS.md`, `CLAUDE.md`, `.dockerignore`, `.trivyignore`, the backend requirements, or the frontend package files | Pending; the controller requests a review from `club-res-website-maintainers`. Passes once a repository admin approves the current head and no reviewer's latest review requests changes |
+
+Missing or truncated comparisons (300 files or more) count as large. A review on a `dev` or `prod` PR starts the `Review` workflow, which runs no repository code and has no permissions; its completion triggers Promotion, which recomputes the gate from the API in its default-branch checkout. A new push to the PR head dismisses earlier approvals, and the gate is published again for the new head. No code owner is required.
 
 Because only bypass actors may update `integration`, `dev`, and `prod`, GitHub shows every PR into them as **blocked**, even when every check passes. That is expected. A maintainer merges with **Merge without waiting for requirements to be met (bypass rules)**, or `gh pr merge <n> --merge --admin`. The quality rulesets have no bypass actors, so their checks and approvals are still required.
 
@@ -137,7 +145,8 @@ Documentation-only changes skip application and Terraform lanes and do not deplo
 | Production | Manual `deliver` on `dev`; PR into `prod` from `dev` | Verify strict production contract |
 | Production | Push/manual `deliver` on `prod` | Recheck, build artifact, deploy prod if executable changes exist |
 | Production | Manual `plan` or `apply` on `prod` | Infrastructure only, target `dev` or `prod` |
-| Promotion | Successful completion of Intake, Dev, or Production | Evaluate trusted run evidence; prepare PR or dispatch verification |
+| Review | Review submitted or dismissed on a PR into `dev` or `prod` | Signal only: no repository code, no permissions |
+| Promotion | Successful completion of Intake, Dev, Production, or Review | Evaluate trusted run evidence; prepare PR, dispatch and follow verification, or recompute `review-gate` |
 
 Unsupported refs and PR source branches fail routing. New contributor pushes and PR runs can cancel older checks. Deployment runs do not cancel an active deployment.
 
@@ -192,7 +201,7 @@ The Production required check enforces this evidence too. Opening a production P
 
 Hold labels are `hold`, `do-not-merge`, and `release:hold`. Drafts, requested changes, recently closed unmerged candidates, stale source heads, and candidates whose destination holds file changes they lack stop advancement. Oversized evidence pages fail closed or stop automatic advancement.
 
-GitHub-generated PR events do not reliably start workflows when the controller uses `GITHUB_TOKEN`. Source pushes already perform Intake and Dev verification. The controller explicitly dispatches Production verification and publishes the verified status on the exact PR head.
+GitHub-generated PR events do not reliably start workflows when the controller uses `GITHUB_TOKEN`. Source pushes already perform Intake and Dev verification. After a successful Dev deployment the controller dispatches Production verification on `dev` and then waits, in the same job, for that run to finish (up to 25 minutes, so the Promotion job allows 30): a run started with `GITHUB_TOKEN` never emits the `workflow_run` event that would otherwise wake the controller. When it succeeds, the same job opens the `dev → prod` PR and publishes the verified status on the exact PR head. Promotion runs one at a time (`trusted-promotion` concurrency), and GitHub keeps only one pending run per group, so completions that arrive during that wait can be dropped; rerun the source workflow if an expected PR does not appear.
 
 Observed 2026-10-07: the Intake `pull_request` run on a controller-opened PR ends in failure with no jobs, no check runs and no annotations, while the Intake `push` run on the same commit succeeds and supplies the required `intake-required-checks`. The Dev workflow's run on a controller-opened PR succeeded, so the cause is not simply the bot actor, and it is unexplained. Gating is unaffected, because the ruleset reads the check run on the commit, not the event that produced it. Treat a red `pull_request` Intake run on a controller PR as noise only after confirming the push run passed.
 
@@ -576,7 +585,7 @@ Every job has a bounded timeout. Documentation changes skip costly lanes. CloudF
 6. Create each proposed environment and its matching branch policy through the repository environment APIs.
 7. Add the current maintainers as required reviewers on `prod` and both `infrastructure-*-apply` environments.
 8. Verify a write-role contributor cannot create or update a branch outside `feature/*`.
-9. Verify maintainers still need passing checks to merge into all three shared branches, plus one team approval for `dev` and `prod`.
+9. Verify maintainers still need passing checks to merge into all three shared branches, plus `review-gate` for `dev` and `prod`.
 10. Use the shared account `073813807852` for both environments (section 6). Creating separate accounts needs an organization's management account; section 15 covers that later move.
 11. Run `scripts/bootstrap-account.sh <region>` once in the account with operator credentials: it creates the private state bucket with retention, the GitHub OIDC provider, a multi-region CloudTrail trail with its log bucket, and a GuardDuty detector. Both environments share them.
 12. Run initial Terraform provisioning with operator credentials, once per environment, with its own state key (`club-res-website/<env>/terraform.tfstate`).
@@ -616,7 +625,7 @@ After installing a ruleset, check that its bypass list shows **Repository admin*
 | Login, sessions, member roles | Implemented by the application (Google sign-in limited to `@yale.edu` plus an invitation); needs the Google OAuth client for each environment's URL |
 | NDA/client isolation and uploads | Row-level and workspace isolation exist in the application; storage encrypted per environment; no external authorization test suite yet |
 | Database and client-data retention | SQLite on an encrypted volume with snapshots and `.backup` copies; a deletion-evidence procedure and a restore drill are not done |
-| Bedrock/model integration | Code and IAM exist for `us.anthropic.claude-haiku-5-5`. On 2026-10-18 the Anthropic use-case form was submitted and the Claude Haiku 4.5 and 5.5 agreements were accepted. Calls still fail: Haiku 5.5's cross-region and global tokens-per-minute quotas are 0, below the AWS default of 10,000,000, and Service Quotas only accepts requests above the default. Needs AWS account verification (support case `179211500100390`) to restore the default quotas |
+| Bedrock/model integration | The application and Terraform default to `us.anthropic.claude-haiku-5-5`. The dev box role and config allow Haiku 5.5 (reviewed apply, 2026-10-18); the prod box role still allows only Haiku 4.5 until prod's reviewed apply. On 2026-10-18 the Anthropic use-case form was submitted and the Claude Haiku 4.5 and 5.5 agreements were accepted. Calls still fail: Haiku 5.5's cross-region and global tokens-per-minute quotas are 0, below the AWS default of 10,000,000, and Service Quotas only accepts requests above the default. Needs AWS account verification (support case `179211500100390`) to restore the default quotas |
 | Custom domain | Planned extension only; requires DNS and ACM configuration |
 | Automated rollback and continuous monitoring | Image rollback on a failed health check only; no uptime alarm or synthetic monitor |
 
