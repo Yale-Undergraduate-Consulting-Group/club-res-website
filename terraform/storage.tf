@@ -218,7 +218,7 @@ resource "aws_secretsmanager_secret" "app" {
 }
 
 locals {
-  bedrock_model_id = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+  bedrock_model_id = "us.anthropic.claude-haiku-5-5"
   config_parameter = "/club-res-website/${var.environment}/config"
   # Non-secret runtime configuration read by ops/restart-yucg.sh on every
   # deploy; the key list is documented in templates/user-data.sh.tftpl.

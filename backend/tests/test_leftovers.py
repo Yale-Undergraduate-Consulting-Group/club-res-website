@@ -57,7 +57,7 @@ def test_anthropic_catalog_is_haiku_only_by_default() -> None:
 
     ids = {m["id"] for m in BEDROCK_ANTHROPIC}
     labels = {m["label"] for m in BEDROCK_ANTHROPIC}
-    assert ids == {"us.anthropic.claude-haiku-4-5-20251001-v1:0"}
+    assert ids == {"us.anthropic.claude-haiku-5-5"}
     assert all("Opus" not in label and "Sonnet" not in label for label in labels)
     assert is_bedrock_model("us.anthropic.claude-opus-5")
     assert not is_bedrock_model("ollama:llama3.2")
