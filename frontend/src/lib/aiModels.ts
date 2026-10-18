@@ -16,12 +16,12 @@ export const FALLBACK_AI_GROUPS: AiModelGroup[] = [
     id: 'anthropic',
     label: 'Claude on Bedrock',
     models: [
-      { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude', tier: 'haiku', blurb: 'Fast, grounded club work' },
+      { id: 'us.anthropic.claude-haiku-5-5', label: 'Claude', tier: 'haiku', blurb: 'Fast, grounded club work' },
     ],
   },
 ];
 
-export const DEFAULT_AI_MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+export const DEFAULT_AI_MODEL_ID = 'us.anthropic.claude-haiku-5-5';
 export const AI_MODEL_STORAGE_KEY = 'yucg_ai_model';
 
 export function catalogModelIds(groups: AiModelGroup[]): Set<string> {
