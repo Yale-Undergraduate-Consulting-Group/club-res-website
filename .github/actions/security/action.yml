@@ -21,22 +21,22 @@ runs:
       name: Locate backend dependencies
       shell: bash
       run: |
-        if [ -f backend/requirements.txt ]; then
+        if [ -f backend/requirements.lock ]; then
           echo present=true >> "$GITHUB_OUTPUT"
         else
           echo present=false >> "$GITHUB_OUTPUT"
-          echo 'Python dependency audit: this revision has no backend/requirements.txt.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Python dependency audit: this revision has no backend/requirements.lock.' >> "$GITHUB_STEP_SUMMARY"
         fi
     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       if: steps.backend.outputs.present == 'true'
       with:
         python-version: "3.12"
         cache: pip
-        cache-dependency-path: backend/requirements*.txt
+        cache-dependency-path: backend/requirements.lock
     - name: Audit backend dependencies and code
       if: steps.backend.outputs.present == 'true'
       shell: bash
       run: |
         python -m pip install -q pip-audit==2.9.0 bandit==1.8.3
-        pip-audit -r backend/requirements.txt
-        bandit -q -r backend -lll -iii
+        pip-audit -r backend/requirements.lock
+        bandit -q -r backend/app backend/main.py -lll -iii

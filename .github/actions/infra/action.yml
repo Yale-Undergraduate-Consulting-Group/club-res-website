@@ -7,9 +7,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Check delivery script syntax
+    - name: Check delivery and box script syntax
       shell: bash
-      run: for script in scripts/*.sh; do bash -n "$script"; done
+      run: |
+        for script in scripts/*.sh ops/*.sh; do bash -n "$script"; done
+        python3 -m py_compile ops/*.py
     - name: Test the delivery controller, policy and workflow contracts
       shell: bash
       run: python3 -m unittest discover -s tests -p 'test_*.py'

@@ -1,42 +1,71 @@
-name: Backend image
-description: Build, scan and smoke-test the backend container image with a cached layer store. Verified, not shipped.
+name: Application image
+description: Build, scan and smoke-test the FastAPI + SPA image; preserve it for the ship phase.
+inputs:
+  phase:
+    description: Phase supplied by the stage workflow (verify or ship).
+    required: true
+outputs:
+  image_sha256:
+    description: SHA256 of the saved image archive (ship phase only).
+    value: ${{ steps.archive.outputs.sha256 }}
 runs:
   using: composite
   steps:
-    - name: Require the backend Dockerfile
+    - name: Require the application Dockerfile
       shell: bash
       run: |
-        if [ ! -f backend/Dockerfile ]; then
-          echo '::error::backend/ changed but backend/Dockerfile is missing'
+        if [ ! -f docker/app.Dockerfile ]; then
+          echo '::error::AWS delivery requires docker/app.Dockerfile'
           exit 1
         fi
-    # Dependency layers change only with the Dockerfile or requirements; source-only
+    # Dependency layers change only with the Dockerfile or lockfiles; source-only
     # changes restore them and rebuild just the application layers.
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: /tmp/club-buildx-cache
-        key: club-backend-buildx-${{ runner.os }}-${{ hashFiles('backend/Dockerfile', 'backend/requirements*.txt') }}
+        key: club-app-buildx-${{ runner.os }}-${{ hashFiles('docker/app.Dockerfile', 'backend/requirements.lock', 'frontend/package-lock.json') }}
         restore-keys: |
-          club-backend-buildx-${{ runner.os }}-
-    - name: Build the backend image
+          club-app-buildx-${{ runner.os }}-
+    - name: Build the application image
       shell: bash
       run: |
         set -euo pipefail
         docker buildx create --name club-builder --driver docker-container --use > /dev/null
-        docker buildx build --platform linux/amd64 --file backend/Dockerfile \
-          --tag "club-backend:${GITHUB_SHA}" --load \
+        docker buildx build --platform linux/amd64 --file docker/app.Dockerfile \
+          --tag "club-app:${GITHUB_SHA}" --load \
           --cache-from type=local,src=/tmp/club-buildx-cache \
           --cache-to type=local,dest=/tmp/club-buildx-cache-next,mode=max \
-          backend
+          .
         rm -rf /tmp/club-buildx-cache
         mv /tmp/club-buildx-cache-next /tmp/club-buildx-cache
+    # Trivy reads the reviewed exceptions in the repository's .trivyignore.
     - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
       with:
         version: v0.70.0
-        image-ref: club-backend:${{ github.sha }}
+        image-ref: club-app:${{ github.sha }}
         scanners: vuln,secret
         severity: HIGH,CRITICAL
         exit-code: '1'
-    - name: Smoke-test the image without network access
+    - name: Smoke-test non-root startup and database initialization without network access
       shell: bash
-      run: docker run --rm --network none --entrypoint python "club-backend:${GITHUB_SHA}" -c 'import main'
+      run: |
+        docker run --rm --network none --entrypoint python \
+          -e JWT_SECRET=ci-container-test-secret-not-for-production \
+          -e DATABASE_URL=sqlite:////data/smoke.db \
+          "club-app:${GITHUB_SHA}" scripts/container_smoke.py
+    - id: archive
+      name: Save the verified image
+      if: inputs.phase == 'ship'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p /tmp/club-image
+        docker save "club-app:${GITHUB_SHA}" -o /tmp/club-image/image.tar
+        echo "sha256=$(sha256sum /tmp/club-image/image.tar | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      if: inputs.phase == 'ship'
+      with:
+        name: club-image-${{ github.sha }}
+        path: /tmp/club-image/image.tar
+        retention-days: 2
+        if-no-files-found: error

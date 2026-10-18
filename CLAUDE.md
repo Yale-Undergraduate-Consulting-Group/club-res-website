@@ -13,13 +13,14 @@ Start `claude` in the repository once and accept the trust dialog. Until you do,
 Follow these steps on your own for every code change. The contributor does not need to ask for them.
 
 1. **Plan.** For a nontrivial change, invoke the `grill-me` skill first, before writing code. Do not replace it with your own list of questions. Skip it for typo fixes, one-line fixes, and doc wording.
-2. **Branch.** Before the first edit, if the branch is `main`, `integration`, `dev`, or `prod`, use the `start-feature` skill. A hook blocks edits on those branches.
+2. **Branch.** Each contributor has exactly one branch, `feature/<login>`, and all their work goes there. Before the first edit in a session, if you are not on it, use the `my-branch` skill. It switches to the branch, creates it only the first time, and merges in the latest shared work. Never create a branch per task or add a suffix such as `feature/<login>-search`. A hook blocks edits on `main`, `integration`, `dev`, and `prod`.
 3. **Build.** Follow `AGENTS.md`: the smallest complete change, with its callers, tests, and docs.
 4. **Verify.** Use the `verify` skill after changing code and before saying the task is done.
 5. **Review.** Reread the full diff for bugs, leftover debug code, secrets, and client data, and fix what you find. Contributors can also run the bundled `/code-review`.
-6. **Open the PR.** When the change is complete and verified, use the `open-pr` skill. The push asks the contributor for approval. A maintainer merges.
+6. **Commit.** Commit the verified change to `feature/<login>` with a message that says what changed. Never rebase or force-push it.
+7. **Open the PR.** Use the `open-pr` skill. If the branch already has an open PR, the push updates it; no new PR is created. The push asks the contributor for approval. A maintainer merges, and the contributor keeps working on the same branch.
 
-Contributors can also run any step directly: `/grill-me`, `/start-feature`, `/verify`, `/open-pr`.
+Contributors can also run any step directly: `/grill-me`, `/my-branch`, `/verify`, `/open-pr`.
 
 ## What `.claude/settings.json` blocks
 

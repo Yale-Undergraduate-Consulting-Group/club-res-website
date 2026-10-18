@@ -1,0 +1,74 @@
+name: Organization
+'on':
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Reviewed organization operation
+        type: choice
+        options:
+        - plan
+        - apply
+        default: plan
+      plan_run_id:
+        description: Reviewed saved plan run ID
+        type: string
+      plan_sha256:
+        description: Reviewed saved plan SHA256
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+jobs:
+  organization:
+    if: ${{ github.ref == 'refs/heads/prod' && (inputs.operation == 'plan' || inputs.operation == 'apply') }}
+    environment: organization-${{ inputs.operation }}
+    runs-on: ubuntu-24.04
+    # Account creation takes minutes per account; the OIDC session lasts one hour.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |
+          /tmp/club-terraform
+          ~/.terraform.d/plugin-cache
+        key: club-terraform-${{ runner.os }}-${{ hashFiles('scripts/install-terraform.sh', 'organization/.terraform.lock.hcl')
+          }}
+    - run: bash scripts/install-terraform.sh
+    - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+      with:
+        role-to-assume: ${{ vars.AWS_ORGANIZATION_ROLE_ARN }}
+        aws-region: us-east-2
+        allowed-account-ids: ${{ vars.ORG_ACCOUNT_ID }}
+        retry-max-attempts: 3
+    - name: Execute the reviewed organization operation
+      env:
+        OPERATION: ${{ inputs.operation }}
+        PLAN_RUN_ID: ${{ inputs.plan_run_id }}
+        APPROVED_PLAN_SHA256: ${{ inputs.plan_sha256 }}
+        TF_DIR: organization
+        TF_TARGET: organization
+        TF_REGION: us-east-2
+        TF_ACCOUNT_ID: ${{ vars.ORG_ACCOUNT_ID }}
+        TF_STATE_BUCKET: ${{ vars.ORG_STATE_BUCKET }}
+        TF_STATE_KEY: ${{ vars.ORG_STATE_KEY }}
+        ORG_DEV_EMAIL: ${{ vars.ORG_DEV_EMAIL }}
+        ORG_PROD_EMAIL: ${{ vars.ORG_PROD_EMAIL }}
+      run: bash scripts/terraform-release.sh "$OPERATION"
+    # Same job and session as the apply, so no second approval; runs only after the
+    # exact approved plan applied. Account ids come from the state, not from inputs.
+    - name: Bootstrap the vended accounts
+      if: inputs.operation == 'apply'
+      run: |
+        set -euo pipefail
+        ids="$(terraform -chdir=organization output -json account_ids | jq -r '.[]')"
+        test -n "$ids"
+        mapfile -t accounts <<<"$ids"
+        for id in "${accounts[@]}"; do bash scripts/vend-bootstrap.sh "$id" us-east-2; done

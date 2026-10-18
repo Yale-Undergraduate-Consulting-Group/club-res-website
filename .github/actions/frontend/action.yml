@@ -1,5 +1,5 @@
-name: Frontend checks and static export
-description: Local build in Intake; static export in Dev; required UI coverage in Production.
+name: Frontend checks and build
+description: Unit tests and local build in Intake; Vite build output in Dev; required UI coverage in Production.
 inputs:
   stage:
     description: Stage supplied by the stage workflow.
@@ -9,7 +9,7 @@ inputs:
     required: true
 outputs:
   site_sha256:
-    description: SHA256 of the packaged static export (ship phase only).
+    description: SHA256 of the packaged frontend/dist (production ship phase only).
     value: ${{ steps.package.outputs.sha256 }}
 runs:
   using: composite
@@ -53,22 +53,27 @@ runs:
       shell: bash
       working-directory: frontend
       run: npm run lint
+    # Every stage. A missing test:unit script or an empty suite fails the lane.
+    - name: Unit tests
+      if: steps.present.outputs.present == 'true'
+      shell: bash
+      working-directory: frontend
+      run: npm run test:unit
     - name: Audit dependencies
       if: steps.present.outputs.present == 'true'
       shell: bash
       working-directory: frontend
       run: bash "$GITHUB_WORKSPACE/scripts/npm_audit_gate.sh"
-    - name: Build the static export
+    - name: Build the single-page application
       if: steps.present.outputs.present == 'true'
       shell: bash
       working-directory: frontend
       env:
-        NEXT_TELEMETRY_DISABLED: "1"
         STAGE: ${{ inputs.stage }}
       run: |
         npm run build
-        if [ "$STAGE" != intake ] && [ ! -s out/index.html ]; then
-          echo "::error::AWS delivery requires Next.js output: 'export' and frontend/out/index.html"
+        if [ "$STAGE" != intake ] && [ ! -s dist/index.html ]; then
+          echo "::error::AWS delivery requires the Vite build output frontend/dist/index.html"
           exit 1
         fi
     - name: Require production UI tests
@@ -84,19 +89,21 @@ runs:
           npx playwright install --with-deps chromium
         fi
         npm run test:ui
+    # Only production publishes the SPA to S3 behind CloudFront; dev serves the
+    # copy built into the application image.
     - id: package
-      name: Package the static export with a SHA256 manifest
-      if: steps.present.outputs.present == 'true' && inputs.phase == 'ship'
+      name: Package frontend/dist with a SHA256 manifest
+      if: steps.present.outputs.present == 'true' && inputs.phase == 'ship' && inputs.stage == 'production'
       shell: bash
       run: |
         set -euo pipefail
         mkdir -p /tmp/club-site
-        tar -czf /tmp/club-site/site.tar.gz -C frontend/out .
+        tar -czf /tmp/club-site/site.tar.gz -C frontend/dist .
         cd /tmp/club-site
         sha256sum site.tar.gz > SHA256SUMS
         echo "sha256=$(cut -d ' ' -f 1 SHA256SUMS)" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      if: steps.present.outputs.present == 'true' && inputs.phase == 'ship'
+      if: steps.present.outputs.present == 'true' && inputs.phase == 'ship' && inputs.stage == 'production'
       with:
         name: club-site-${{ github.sha }}
         path: |

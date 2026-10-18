@@ -5,10 +5,16 @@ import os
 import subprocess
 
 LANES = ('backend', 'frontend', 'infra', 'image')
+# Everything that ends up in, or runs, the application image on the box.
+RUNTIME_PREFIXES = ('frontend/', 'backend/', 'docker/', 'ops/')
 
 
 def is_documentation(path):
     return path.startswith('docs/') or ('/' not in path and path.endswith('.md'))
+
+
+def is_runtime(path):
+    return path.startswith(RUNTIME_PREFIXES) or path == '.dockerignore'
 
 
 def classify(paths, stage, phase='verify'):
@@ -16,9 +22,6 @@ def classify(paths, stage, phase='verify'):
         raise ValueError('Unknown stage or phase')
     selected = dict.fromkeys((*LANES, 'security'), False)
     changed = [path for path in paths if path and not is_documentation(path)]
-    selected['frontend_runtime'] = any(p.startswith('frontend/') for p in changed)
-    selected['backend_runtime'] = any(p.startswith('backend/') for p in changed)
-    selected['runtime'] = selected['frontend_runtime'] or selected['backend_runtime']
     selected['deploy'] = bool(changed) and stage != 'intake'
     if not changed:
         return selected
@@ -29,13 +32,19 @@ def classify(paths, stage, phase='verify'):
                 selected['frontend'] = True
             elif path.startswith('backend/'):
                 selected['backend'] = True
-            elif not path.startswith(('terraform/', 'github/')):
+            elif path.startswith('ops/'):
+                selected['infra'] = True
+            elif not path.startswith('terraform/'):
+                # Workflows, actions, scripts, tests and image files can weaken
+                # or break any lane, so they rerun every unit-test lane.
                 selected.update(backend=True, frontend=True, infra=True)
         # infra runs only local controller tests in Intake, never Terraform.
     else:
         # Recheck compatibility at both AWS boundaries, including ship runs.
         selected.update(backend=True, frontend=True, infra=True)
-        selected['image'] = selected['backend_runtime']
+        # Every deployment ships the image, so a successful deploy proves the box
+        # runs this revision; verification builds it only for runtime changes.
+        selected['image'] = phase == 'ship' or any(is_runtime(path) for path in changed)
     return selected
 
 
