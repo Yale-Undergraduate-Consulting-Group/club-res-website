@@ -12,14 +12,14 @@ from typing import Any
 # model ID through BEDROCK_ALLOWED_MODEL_IDS without exposing costly models by default.
 BEDROCK_ANTHROPIC: list[dict[str, str]] = [
     {
-        "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "id": "us.anthropic.claude-haiku-5-5",
         "label": "Claude",
         "tier": "haiku",
         "blurb": "Fast, grounded club work",
     },
 ]
 
-_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+_HAIKU = "us.anthropic.claude-haiku-5-5"
 _ALLOWED = {m["id"] for m in BEDROCK_ANTHROPIC}
 INFERENCE_SLOTS = 2
 _inference_slots = threading.BoundedSemaphore(INFERENCE_SLOTS)

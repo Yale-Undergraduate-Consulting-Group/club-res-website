@@ -11,7 +11,7 @@ locals {
   # The US cross-region inference profile routes to any of these regions.
   bedrock_foundation_models = [
     for region in ["us-east-1", "us-east-2", "us-west-2"] :
-    "arn:aws:bedrock:${region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+    "arn:aws:bedrock:${region}::foundation-model/anthropic.claude-haiku-5-5"
   ]
 }
 

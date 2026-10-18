@@ -22,7 +22,7 @@ This design also avoids an always-on vector database. Amazon Bedrock Knowledge B
 
 ## Cost and concurrency controls
 
-- The default and ranking model is `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
+- The default and ranking model is `us.anthropic.claude-haiku-5-5`.
 - The EC2 role and deployed allowlist permit that model only.
 - Assistant responses are capped at 900 output tokens and 16,000 characters of retrieved context.
 - Each member receives 15 assistant requests per rolling hour by default.
