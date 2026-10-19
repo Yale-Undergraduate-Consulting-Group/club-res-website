@@ -111,6 +111,23 @@ class PromotionTests(unittest.TestCase):
         blocked = [approved, {'user': {'login': 'other'}, 'state': 'CHANGES_REQUESTED', 'commit_id': SHA}]
         self.assertEqual(self._gate(large, blocked), ('pending', True))
 
+    def test_refused_team_request_falls_back_to_repository_admins(self):
+        posts = []
+        def api(path, method='GET', payload=None):
+            if method == 'POST' and 'team_reviewers' in (payload or {}):
+                raise promote.subprocess.CalledProcessError(1, 'gh', stderr='HTTP 422')
+            if method == 'POST':
+                posts.append(payload)
+            if path.endswith('/requested_reviewers'):
+                return {'teams': [], 'users': []}
+            return [{'login': 'owner', 'type': 'User'}, {'login': 'bot[bot]', 'type': 'Bot'}]
+        with patch.object(promote, 'api', side_effect=api):
+            promote.request_maintainer_review(REPO, {'number': 9})
+        self.assertEqual(posts, [{'reviewers': ['owner']}])
+        with patch.object(promote, 'api', return_value={'teams': [{'slug': promote.REVIEW_TEAM}]}) as existing:
+            promote.request_maintainer_review(REPO, {'number': 9})
+            self.assertEqual(existing.call_count, 1)
+
     def test_review_signal_refreshes_only_matching_same_repository_prs(self):
         review = {'name': 'Review', 'path': promote.REVIEW_WORKFLOW, 'conclusion': 'success',
                   'head_sha': SHA, 'head_repository': {'full_name': REPO}}
