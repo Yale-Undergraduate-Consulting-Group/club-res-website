@@ -96,7 +96,7 @@ PRs into `integration` need no approval: only maintainers can merge there, so th
 |---|---|
 | Documentation only (`docs/`, top-level `*.md`), any size | Passes immediately |
 | At most 50 changed lines outside documentation, and no sensitive path | Passes immediately |
-| Anything larger, or any change under `terraform/`, `.github/`, `github/`, `scripts/`, `ops/`, `docker/`, `organization/`, `.claude/`, or to `AGENTS.md`, `CLAUDE.md`, `.dockerignore`, `.trivyignore`, the backend requirements, or the frontend package files | Pending; the controller requests a review from `club-res-website-maintainers`. Passes once a repository admin approves the current head and no reviewer's latest review requests changes |
+| Anything larger, or any change under `terraform/`, `.github/`, `github/`, `scripts/`, `ops/`, `docker/`, `organization/`, `.claude/`, or to `AGENTS.md`, `CLAUDE.md`, `.dockerignore`, `.trivyignore`, the backend requirements, or the frontend package files | Pending; the controller requests a review from `club-res-website-maintainers`, or, because GitHub refuses team requests made with `GITHUB_TOKEN` (HTTP 422), from the repository's admin collaborators. Passes once a repository admin approves the current head and no reviewer's latest review requests changes |
 
 Missing or truncated comparisons (300 files or more) count as large. A review on a `dev` or `prod` PR starts the `Review` workflow, which runs no repository code and has no permissions; its completion triggers Promotion, which recomputes the gate from the API in its default-branch checkout. A new push to the PR head dismisses earlier approvals, and the gate is published again for the new head. No code owner is required.
 
