@@ -226,7 +226,7 @@ def prepare_pr(repo, run, target):
     # verified exact head; strict branch rules still require the current base.
     api(f'repos/{repo}/statuses/{sha}', 'POST', {
         'state': 'success', 'context': WORKFLOWS[run['name']][1],
-        'target_url': run['html_url'], 'description': 'Verified candidate; organization-admin review and merge required'})
+        'target_url': run['html_url'], 'description': 'Verified candidate; maintainer merge required'})
     print(pr['html_url'])
     if target in GATED_TARGETS:
         apply_review_gate(repo, pr)
