@@ -15,9 +15,9 @@ This repository also holds the YUCG Outreach application (`backend/`, `frontend/
 | Not deployed | No successful AWS deployment has been verified for this repository |
 | Not implemented | The architecture has no corresponding resource or application capability |
 
-**Access enforcement is active as repository rulesets (installed 2026-10-02).** The organization is on the Free plan, so the organization rulesets in `github/*.org-ruleset.proposed.json` cannot be installed. The four rules run as repository rulesets with the same conditions and rules. Shared-branch reviews and `prod` / `infrastructure-*-apply` approvals require the team `club-res-website-maintainers`.
+**Access enforcement is active as repository rulesets (installed 2026-10-02).** The organization is on the Free plan, so the organization rulesets in `github/*.org-ruleset.proposed.json` cannot be installed. The four rules run as repository rulesets with the same conditions and rules. `review-gate` on `dev` and `prod` PRs (section 2) and `prod` / `infrastructure-*-apply` approvals require the team `club-res-website-maintainers`.
 
-Still open: an organization owner must allow GitHub Actions to create pull requests (organization Settings → Actions). Until then the controller cannot open stage PRs.
+GitHub Actions may create pull requests in this repository, so the controller opens every stage PR itself.
 
 **Maintainer** means a person with the repository **admin** role. Organization owners also qualify. This document names roles, not individuals: change who maintains the repository in GitHub settings, not in this file.
 
