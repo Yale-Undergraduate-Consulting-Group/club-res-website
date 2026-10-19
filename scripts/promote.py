@@ -161,16 +161,34 @@ def apply_review_gate(repo, pr):
         state, description = 'success', 'Approved by a maintainer'
     else:
         state, description = 'pending', 'Large or sensitive change: maintainer approval required'
-        requested = api(f'repos/{repo}/pulls/{pr["number"]}/requested_reviewers')
-        if not any(team['slug'] == REVIEW_TEAM for team in requested.get('teams', [])):
-            try:
-                api(f'repos/{repo}/pulls/{pr["number"]}/requested_reviewers', 'POST', {'team_reviewers': [REVIEW_TEAM]})
-            except subprocess.CalledProcessError as error:
-                # The request only notifies; the pending gate still blocks the merge.
-                print(f'Could not request review from {REVIEW_TEAM}: {error.stderr.strip()}')
+        request_maintainer_review(repo, pr)
     api(f'repos/{repo}/statuses/{sha}', 'POST', {
         'state': state, 'context': 'review-gate', 'target_url': pr['html_url'], 'description': description})
     print(f'review-gate {state} on #{pr["number"]}: {description}')
+
+
+def request_maintainer_review(repo, pr):
+    """Notify maintainers once. The request only notifies; the pending gate blocks the merge."""
+    path = f'repos/{repo}/pulls/{pr["number"]}/requested_reviewers'
+    requested = api(path)
+    if requested.get('teams') or requested.get('users'):
+        return
+    try:
+        api(path, 'POST', {'team_reviewers': [REVIEW_TEAM]})
+        return
+    except subprocess.CalledProcessError as error:
+        # GITHUB_TOKEN cannot read organization teams, so GitHub rejects team requests (422).
+        print(f'Team review request refused ({error.stderr.strip()}); requesting repository admins instead.')
+    try:
+        admins = [c['login'] for c in api(f'repos/{repo}/collaborators?permission=admin&per_page=100')
+                  if c.get('type') == 'User']
+        if admins:
+            api(path, 'POST', {'reviewers': admins[:15]})
+            print(f'Requested review from repository admins: {", ".join(admins[:15])}')
+        else:
+            print('No repository admin found to request.')
+    except subprocess.CalledProcessError as error:
+        print(f'Could not request review from repository admins: {error.stderr.strip()}')
 
 
 def refresh_review_gates(repo, sha):
