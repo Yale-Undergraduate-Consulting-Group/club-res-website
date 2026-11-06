@@ -52,6 +52,31 @@ In `backend/.env` set:
 
 “Connect Slack” in the app will not work with only these; the scheduled daily digest will post to the given channel.
 
+### Club assistant: mentions, DMs, and `/yucg`
+
+The full OAuth setup also powers the read-only club assistant. A member must use
+**Connect Slack** before the assistant will return club data. The assistant can
+answer free-form questions with Claude on Bedrock, but its tools enforce the
+same contact, draft, campaign, project, and document access rules as the web
+app. It cannot send mail or change club records.
+
+Set `SLACK_SIGNING_SECRET` from **Basic Information → App Credentials**, then
+configure:
+
+- a `/yucg` slash command pointing to `https://<backend>/api/slack/commands`;
+- an Events API request URL of `https://<backend>/api/slack/events`;
+- the `app_mention` bot event and the `message.im` event.
+
+The existing OAuth `chat:write` scope covers both `chat.postMessage` and
+`chat.postEphemeral`; no additional scope is required. Channel mentions receive
+an ephemeral threaded answer visible only to the asker. Direct messages receive
+a normal DM. Free-form `/yucg` calls acknowledge immediately and replace their
+ephemeral acknowledgement through Slack's provided response URL when ready.
+
+The backend also needs its normal Bedrock model configuration and AI budget
+settings. Busy, exhausted-budget, and unavailable-model errors are shown as
+short Slack messages rather than provider details.
+
 ---
 
 ## Summary
