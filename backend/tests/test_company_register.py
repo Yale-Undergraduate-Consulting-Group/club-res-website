@@ -131,7 +131,7 @@ def tests() -> None:
         assert public['written'] == 2 and first['written'] == 1 and first['officers'] == 2
         assert again.get('skipped')
 
-        page = asyncio.run(cr.search_register(limit=50))
+        page = asyncio.run(cr.search_register(limit=50, sort='recent'))
         assert page['total'] == 3
         names = {item['company_name'] for item in page['items']}
         assert names == {'Apple Inc.', 'Microsoft Corp', 'Nova Robotics Inc'}  # shouty name title-cased
@@ -143,6 +143,9 @@ def tests() -> None:
         # that order is what lets a big company outrank an obscure one with
         # nothing else to go on.
         assert [i['company_name'] for i in page['items'][1:]] == ['Apple Inc.', 'Microsoft Corp']
+        # The default browse order puts the listed companies first.
+        value = [i['company_name'] for i in asyncio.run(cr.search_register(limit=50))['items']]
+        assert value == ['Apple Inc.', 'Microsoft Corp', 'Nova Robotics Inc'], value
         assert page['items'][1]['prominence_rank'] == 0
         assert page['items'][2]['prominence_rank'] == 1
         assert page['items'][0]['officer_count'] == 2
@@ -785,6 +788,48 @@ def size_ranking_tests() -> None:
         assert cr.brand_alias_names('  YouTube ') == ('alphabet inc',)
 
 
+def value_ordering_tests() -> None:
+    """A member browsing with no query is looking for a company to reach out
+    to. A Form D shell that filed yesterday must not outrank Amazon just
+    because it is the newest row; `sort=recent` keeps that feed reachable."""
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ['DATABASE_URL'] = f'sqlite:///{Path(tmp) / "t.db"}'
+        for mod in [m for m in list(sys.modules) if m.startswith('app.')]:
+            del sys.modules[mod]
+
+        from app.database import init_db
+        from app.services import company_register as cr
+
+        asyncio.run(init_db())
+        asyncio.run(cr.upsert_companies([
+            {'source': 'sec_form_d', 'source_key': 'D1', 'tier': 'us_private', 'country': 'US',
+             'company_name': 'Shell Fund Vii Lp', 'last_event_at': '2026-10-17', 'last_event_amount': 5_000_000},
+            {'source': 'companies_house', 'source_key': 'U1', 'tier': 'uk', 'country': 'GB',
+             'company_name': 'Medium Uk Limited', 'last_event_at': '2026-10-01',
+             'metadata': {'account_category': 'MEDIUM'}},
+            {'source': 'companies_house', 'source_key': 'U2', 'tier': 'uk', 'country': 'GB',
+             'company_name': 'Group Uk Plc', 'last_event_at': '2026-09-01',
+             'metadata': {'account_category': 'GROUP'}},
+            {'source': 'dol_5500', 'source_key': 'E1', 'tier': 'us_employer', 'country': 'US',
+             'company_name': 'Big Employer Inc', 'employees': 50_000, 'last_event_at': '2025-01-01'},
+            {'source': 'sec_public', 'source_key': '2', 'tier': 'us_public', 'country': 'US',
+             'company_name': 'Microsoft Corp', 'prominence_rank': 1},
+            {'source': 'sec_public', 'source_key': '1', 'tier': 'us_public', 'country': 'US',
+             'company_name': 'Amazon.com, Inc.', 'prominence_rank': 0},
+        ]))
+
+        names = [i['company_name'] for i in asyncio.run(cr.search_register(limit=10))['items']]
+        assert names == ['Amazon.com, Inc.', 'Microsoft Corp', 'Big Employer Inc',
+                         'Group Uk Plc', 'Medium Uk Limited', 'Shell Fund Vii Lp'], names
+
+        recent = [i['company_name'] for i in asyncio.run(cr.search_register(sort='recent', limit=10))['items']]
+        assert recent[0] == 'Shell Fund Vii Lp', recent
+
+        # A typed query keeps its own match-first order regardless of sort.
+        typed = [i['company_name'] for i in asyncio.run(cr.search_register(q='uk', sort='recent'))['items']]
+        assert typed == ['Group Uk Plc', 'Medium Uk Limited'], typed
+
+
 if __name__ == '__main__':
     tests()
     uk_tests()
@@ -797,4 +842,5 @@ if __name__ == '__main__':
     sec_fund_exclusion_tests()
     search_relevance_tests()
     size_ranking_tests()
+    value_ordering_tests()
     print('company register: ok')

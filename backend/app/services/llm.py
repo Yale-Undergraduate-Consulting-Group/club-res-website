@@ -1,26 +1,52 @@
-"""Text generation: current Claude on Bedrock US inference profiles."""
+"""Text generation: Claude on Bedrock US inference profiles, chosen by use.
+
+Every use names a tier, and each tier lists models best-first. A model the
+account cannot call yet (AWS gates new models per account) is skipped for a
+while, so the site always runs the newest model the account may use and moves
+up on its own once AWS enables a newer one.
+"""
 from __future__ import annotations
 
 import json
 import os
 import re
 import threading
-from typing import Any
+import time
+from typing import Any, Callable
 
-# US geo profiles. Converse will not take a bare anthropic.* foundation id.
-# Keep the default catalog deliberately small. Administrators can add a reviewed
-# model ID through BEDROCK_ALLOWED_MODEL_IDS without exposing costly models by default.
+#: Tier -> models, best first. US geo inference profiles: Converse will not take
+#: a bare anthropic.* foundation id.
+TIERS: dict[str, tuple[str, ...]] = {
+    # Ranking, routing, classification and JSON extraction: high volume.
+    "fast": ("us.anthropic.claude-haiku-5-5", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+    # Member-facing writing: drafts, templates, Slack replies.
+    "write": ("us.anthropic.claude-sonnet-5-5", "us.anthropic.claude-sonnet-4-6"),
+    # Hardest analysis; used when a member picks it.
+    "deep": ("us.anthropic.claude-opus-5-5", "us.anthropic.claude-opus-4-6-v1"),
+}
+#: USD per million tokens (input, output) at the standard global rate, from the
+#: Bedrock offers and price list (2026-11-05). us.* profiles add GEO_PREMIUM.
+PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
+    "us.anthropic.claude-haiku-5-5": (0.10, 0.50),
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": (1.00, 5.00),
+    "us.anthropic.claude-sonnet-5-5": (2.00, 10.00),
+    "us.anthropic.claude-sonnet-4-6": (3.00, 15.00),
+    "us.anthropic.claude-opus-5-5": (4.00, 20.00),
+    "us.anthropic.claude-opus-4-6-v1": (5.00, 25.00),
+}
+GEO_PREMIUM = 1.10
+#: An unpriced model is charged as the most expensive one, so adding a model
+#: cannot slip past the club budget.
+_UNPRICED = max(PRICES_PER_MILLION.values(), key=lambda price: price[1])
+
+#: The models a member may choose; the ids are each tier's best model.
 BEDROCK_ANTHROPIC: list[dict[str, str]] = [
-    {
-        "id": "us.anthropic.claude-haiku-5-5",
-        "label": "Claude",
-        "tier": "haiku",
-        "blurb": "Fast, grounded club work",
-    },
+    {"id": TIERS["fast"][0], "label": "Claude Haiku", "tier": "haiku", "blurb": "Fastest and cheapest"},
+    {"id": TIERS["write"][0], "label": "Claude Sonnet", "tier": "sonnet", "blurb": "Default for writing and analysis"},
+    {"id": TIERS["deep"][0], "label": "Claude Opus", "tier": "opus", "blurb": "Most capable; about twice Sonnet's price"},
 ]
+_ALLOWED = {model for chain in TIERS.values() for model in chain}
 
-_HAIKU = "us.anthropic.claude-haiku-5-5"
-_ALLOWED = {m["id"] for m in BEDROCK_ANTHROPIC}
 INFERENCE_SLOTS = 2
 _inference_slots = threading.BoundedSemaphore(INFERENCE_SLOTS)
 #: How long a call waits for a free slot before answering 429. Failing at
@@ -30,6 +56,10 @@ _inference_slots = threading.BoundedSemaphore(INFERENCE_SLOTS)
 #: draft page still retries on it.
 SLOT_WAIT_SEC = float(os.getenv("LLM_SLOT_WAIT_SEC", "20") or 20)
 _UNAVAILABLE = "The language model is unavailable right now."
+#: How long a model AWS refused for this account is skipped before it is tried again.
+GATED_RETRY_SEC = 15 * 60
+_gated_until: dict[str, float] = {}
+_gated_lock = threading.Lock()
 
 
 def allowed_bedrock_models() -> set[str]:
@@ -52,18 +82,15 @@ def llm_provider() -> str:
 
 
 def default_model_id() -> str:
+    """Member-facing writing and analysis."""
     explicit = (os.getenv("BEDROCK_MODEL_ID") or os.getenv("LLM_MODEL") or "").strip()
-    if explicit:
-        return explicit
-    return _HAIKU
+    return explicit or TIERS["write"][0]
 
 
 def rank_model_id() -> str:
-    """Cheap labels on the host. Studio still uses the UI / default_model_id()."""
+    """High-volume ranking and extraction."""
     explicit = (os.getenv("BEDROCK_RANK_MODEL_ID") or "").strip()
-    if explicit:
-        return explicit
-    return _HAIKU
+    return explicit or TIERS["fast"][0]
 
 
 _BEDROCK_PROVIDERS = frozenset(
@@ -85,32 +112,19 @@ def is_bedrock_model(model_id: str | None) -> bool:
     return len(parts) >= 2 and parts[0] in _BEDROCK_PROVIDERS
 
 
-# Quota units one call consumes, relative to the Haiku-class member-facing tier
-# at 1.0, derived from blended $/1M token pricing. A flat call count charges a
-# Nova Micro triage call (~$0.035/1M in) the same as a Studio draft (~$1/1M in),
-# so a cheap bulk fanout could exhaust the hour that Studio needs. Floors are
-# deliberately above true cost ratio so throughput stays bounded too.
-_MODEL_QUOTA_WEIGHTS: tuple[tuple[str, float], ...] = (
-    ("nova-micro", 0.05),
-    ("nova-lite", 0.10),
-    ("nova-pro", 0.75),
-    ("claude-haiku", 1.0),
-    ("claude-sonnet", 3.0),
-    ("claude-opus", 15.0),
-)
+def cost_usd(model_id: str, input_tokens: int, output_tokens: int) -> float:
+    """What a call costs at list price, including the US geo-profile premium."""
+    price_in, price_out = PRICES_PER_MILLION.get(model_id, _UNPRICED)
+    premium = GEO_PREMIUM if model_id.startswith("us.") or model_id not in PRICES_PER_MILLION else 1.0
+    return (max(0, input_tokens) * price_in + max(0, output_tokens) * price_out) * premium / 1_000_000
 
 
-def model_quota_weight(model_id: str | None) -> float:
-    """Quota cost of one call to this model.
-
-    An unrecognised model is charged the member-facing rate rather than being
-    treated as free, so adding a model cannot silently bypass the club budget.
-    """
-    mid = (model_id or "").strip().lower()
-    for token, weight in _MODEL_QUOTA_WEIGHTS:
-        if token in mid:
-            return weight
-    return 1.0
+def model_chain(model_id: str) -> tuple[str, ...]:
+    """The model and the tier's older models after it, which stand in while it is gated."""
+    for chain in TIERS.values():
+        if model_id in chain:
+            return chain[chain.index(model_id):]
+    return (model_id,)
 
 
 def list_models() -> dict[str, Any]:
@@ -131,9 +145,17 @@ def complete_text(
     user_id: int | None = None,
     purpose: str = 'inference',
     max_tokens: int = 2048,
+    on_model: Callable[[str], None] | None = None,
 ) -> str:
-    mid = validate_model(model_id)
-    return _bedrock_text(prompt, mid, system, user_id=user_id, purpose=purpose, max_tokens=max_tokens)
+    from fastapi import HTTPException
+    if len(prompt) + len(system or '') > 24000:
+        raise HTTPException(413, 'Draft input exceeds the 24,000 character limit')
+    response = converse(
+        [{"role": "user", "content": [{"text": prompt}]}],
+        model_id=model_id, system=system, user_id=user_id, purpose=purpose, max_tokens=max_tokens,
+        on_model=on_model,
+    )
+    return response_text(response)
 
 
 def complete_json(
@@ -153,55 +175,92 @@ def complete_json(
     return data if isinstance(data, dict) else None
 
 
-def _bedrock_text(
-    prompt: str,
-    model_id: str,
-    system: str | None,
+def response_text(response: dict[str, Any]) -> str:
+    parts = ((response.get("output") or {}).get("message") or {}).get("content") or []
+    return "".join(p.get("text") or "" for p in parts if isinstance(p, dict)).strip()
+
+
+def _gated(exc: Exception) -> bool:
+    """True when AWS refused the model for this account, not the request itself."""
+    error = getattr(exc, "response", None)
+    if not isinstance(error, dict):
+        return False
+    code = (error.get("Error") or {}).get("Code", "")
+    message = (error.get("Error") or {}).get("Message", "").lower()
+    if code == "ResourceNotFoundException":
+        return True  # retired version, or a use-case form not yet on file
+    if code == "AccessDeniedException":
+        return "not available for this account" in message
+    return code == "ValidationException" and "model identifier is invalid" in message
+
+
+def _usable(chain: tuple[str, ...]) -> list[str]:
+    now = time.monotonic()
+    with _gated_lock:
+        open_models = [m for m in chain if _gated_until.get(m, 0) <= now]
+    # When every model is marked, try them all again rather than refuse outright.
+    return open_models or list(chain)
+
+
+def converse(
+    messages: list[dict[str, Any]],
     *,
+    model_id: str | None = None,
+    system: str | None = None,
+    tools: list[dict[str, Any]] | None = None,
     user_id: int | None = None,
     purpose: str = 'inference',
     max_tokens: int = 2048,
-) -> str:
+    on_model: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """One Bedrock Converse call, charged to the club budget, on the best usable model.
+
+    Returns the raw Converse response; ``tools`` takes Converse toolSpec entries.
+    """
     import boto3
 
-    from fastapi import HTTPException
     from botocore.config import Config
-    mid = validate_model(model_id)
-    if len(prompt) + len(system or '') > 24000:
-        raise HTTPException(413, 'Draft input exceeds the 24,000 character limit')
-    region = (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1").strip()
+    from fastapi import HTTPException
+
+    from app.services.generation_policy import (
+        complete_bedrock_invocation, release_bedrock_invocation, reserve_bedrock_invocation,
+    )
+    requested = validate_model(model_id)
     if not 1 <= max_tokens <= 4096:
         raise HTTPException(503, 'Model output limit is invalid')
-    kwargs: dict[str, Any] = {
-        "modelId": mid,
-        "messages": [{"role": "user", "content": [{"text": prompt}]}],
-        "inferenceConfig": {"maxTokens": max_tokens},
-    }
+    region = (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1").strip()
+    characters = len(system or '') + len(json.dumps(messages, default=str))
+    kwargs: dict[str, Any] = {"messages": messages, "inferenceConfig": {"maxTokens": max_tokens}}
     if system:
         kwargs["system"] = [{"text": system}]
+    if tools:
+        kwargs["toolConfig"] = {"tools": tools}
+    runtime_config = Config(connect_timeout=5, read_timeout=60, retries={'total_max_attempts': 1})
     if not _inference_slots.acquire(timeout=SLOT_WAIT_SEC):
         raise HTTPException(429, 'Draft generation is busy; please retry shortly')
     try:
-        from app.services.generation_policy import reserve_bedrock_invocation, complete_bedrock_invocation
-        reservation_id = reserve_bedrock_invocation(
-            mid,
-            user_id=user_id,
-            purpose=purpose,
-            estimated_input_tokens=max(1,(len(prompt)+len(system or ''))//4),
-            max_output_tokens=max_tokens,
-        )
-        runtime_config = Config(connect_timeout=5, read_timeout=60, retries={'total_max_attempts': 1})
-        try:
-            client = boto3.client("bedrock-runtime", region_name=region, config=runtime_config)
-            resp = client.converse(**kwargs)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(503, _UNAVAILABLE) from exc
-        usage = resp.get('usage') or {}
-        complete_bedrock_invocation(reservation_id,usage.get('inputTokens'),usage.get('outputTokens'))
+        client = boto3.client("bedrock-runtime", region_name=region, config=runtime_config)
+        for mid in _usable(model_chain(requested)):
+            reservation_id = reserve_bedrock_invocation(
+                mid, user_id=user_id, purpose=purpose,
+                estimated_input_tokens=max(1, characters // 4), max_output_tokens=max_tokens,
+            )
+            try:
+                response = client.converse(modelId=mid, **kwargs)
+            except Exception as exc:
+                if _gated(exc):
+                    # Refused before any inference: nothing was spent.
+                    release_bedrock_invocation(reservation_id)
+                    with _gated_lock:
+                        _gated_until[mid] = time.monotonic() + GATED_RETRY_SEC
+                    continue
+                # Uncertain outcome: keep the reservation so spend is never undercounted.
+                raise HTTPException(503, _UNAVAILABLE) from exc
+            usage = response.get('usage') or {}
+            complete_bedrock_invocation(reservation_id, usage.get('inputTokens'), usage.get('outputTokens'))
+            if on_model:
+                on_model(mid)
+            return response
+        raise HTTPException(503, _UNAVAILABLE)
     finally:
         _inference_slots.release()
-    parts = ((resp.get("output") or {}).get("message") or {}).get("content") or []
-    texts = [p.get("text") or "" for p in parts if isinstance(p, dict)]
-    return "".join(texts).strip()

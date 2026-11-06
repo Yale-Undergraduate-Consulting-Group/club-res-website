@@ -22,13 +22,10 @@ This design also avoids an always-on vector database. Amazon Bedrock Knowledge B
 
 ## Cost and concurrency controls
 
-- The default and ranking model is `us.anthropic.claude-haiku-5-5`.
-- The EC2 role and deployed allowlist permit that model only.
+- Models are chosen by use (`TIERS` in `backend/app/services/llm.py`): Claude Haiku 5.5 for ranking and extraction, Sonnet 5.5 for drafts and Slack replies, and Opus 5.5 when a member picks it. While AWS has not enabled a 5.5 model for the account, its tier uses Haiku 4.5, Sonnet 4.6 or Opus 4.6 instead and tries the 5.5 model again every 15 minutes. The box role allows exactly these six models.
 - Assistant responses are capped at 900 output tokens and 16,000 characters of retrieved context.
-- Each member receives 15 assistant requests per rolling hour by default.
-- The club receives 120 assistant requests per rolling hour; all Bedrock callers also share the 200-call club ceiling.
-- Paid attempts are reserved transactionally before Bedrock is called. Reservations retain the model, member, purpose, estimates, and returned token counts, never prompts or responses.
-- The UI shows a rolling hourly dollar estimate from configurable input/output rates. AWS billing remains authoritative, so price changes require updating those two environment values through infrastructure review.
+- Every model call is charged at list price (Bedrock offer prices plus the 10% US geo-profile premium) to one club-wide budget per calendar month, `AI_MONTHLY_BUDGET_USD` (50 by default, set in `ops/restart-yucg.sh`). A call reserves its worst case before Bedrock is called and is re-priced from the returned token counts; a call AWS refuses for the account is not charged; a call of uncertain outcome keeps its worst case. When the budget is spent, model features answer 429 until the next month. There are no per-member or per-hour model limits.
+- Reservations retain the model, member, purpose, estimates, token counts and cost, never prompts or responses.
 - At most two Bedrock calls execute concurrently on the current host.
 - Files remain downloadable up to the workspace limit, while assistant indexing is capped at 8 MB and 600,000 extracted characters per version to protect the small server.
 

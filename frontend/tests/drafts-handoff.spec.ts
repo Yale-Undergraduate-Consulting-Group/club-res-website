@@ -30,7 +30,7 @@ async function mockDrafts(page: Page, { limitAfter = Infinity, busyFirst = 0 } =
         body = { detail: 'Draft generation is busy; please retry shortly' };
       } else if (generated.length >= limitAfter) {
         status = 429;
-        body = { detail: 'Draft generation limit reached. Please try again later.' };
+        body = { detail: "The club's AI budget for this month is used up." };
       } else {
         generated.push(sent);
         body = { subject: 'Three projects', body: '<p>Dear Jordan,</p>', contact_id: sent.contact_id };
@@ -72,13 +72,13 @@ test('people handed to Drafts each get an advisory draft of their own', async ({
   expect(added).toEqual([{ contact_ids: expect.arrayContaining([1, 2]) }]);
 });
 
-test('the hourly draft limit stops the batch and says so, keeping what was drafted', async ({ page }) => {
+test('a spent monthly AI budget stops the batch and says so, keeping what was drafted', async ({ page }) => {
   const { generated } = await mockDrafts(page, { limitAfter: 1 });
   await page.goto('/studio?companies=Acme%20Corp&contact_ids=1%2C2');
 
   const panel = page.getByTestId('advisory-batch');
   await panel.getByRole('button', { name: /Draft an advisory email for each/ }).click();
-  await expect(panel.getByRole('alert')).toContainText('hourly draft limit');
+  await expect(panel.getByRole('alert')).toContainText('AI budget for this month is used up');
   await expect(panel.getByRole('status')).toHaveText('1 drafted');
   await expect(panel.getByRole('button', { name: 'Draft the remaining 1' })).toBeEnabled();
   expect(generated).toHaveLength(1);

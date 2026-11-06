@@ -16,11 +16,11 @@ from app.services.contact_intelligence import (
     CONSUMER_DOMAINS,
     DISPOSABLE_DOMAINS,
     Mailbox,
-    ROLE_LOCALS,
     mailbox_from_legacy,
     now_iso,
 )
 from app.services.contact_intelligence_schema import init_contact_intelligence_schema
+from app.services.contact_scraper import is_role_based_local_part
 from app.services.email_verifier import verify_email_deliverability, verify_email_format
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,7 @@ async def assess_address(email: str, *, actor_id: int, external: bool = False, m
     if not fmt.get("valid"):
         return _result(Mailbox.BAD_SYNTAX.value, "local", "Address syntax is not usable")
     local, _, domain = raw.partition("@")
-    if local in ROLE_LOCALS:
+    if is_role_based_local_part(local):
         return _result(Mailbox.BAD_SYNTAX.value, "local", "Role or generic mailbox, not an individual address")
     if domain in CONSUMER_DOMAINS | DISPOSABLE_DOMAINS:
         return _result(Mailbox.BAD_SYNTAX.value, "local", "Consumer or disposable domain is not used for outreach")

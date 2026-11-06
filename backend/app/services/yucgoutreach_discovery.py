@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import time
 import uuid
 from contextvars import ContextVar
 from typing import Any
@@ -40,6 +41,33 @@ class DiscoveryLeaseLost(RuntimeError):
     """This worker no longer owns the durable discovery run."""
 
 YUCG_MAX_PROSPECTS = int(os.getenv("YUCG_MAX_PROSPECTS", "800"))
+
+# A run's max_prospects is its goal: it keeps searching until that many
+# qualified people are saved, the sources run dry, or its time is spent.
+#
+#: Wall clock after which no further round starts. One worker drains the
+#: queue, so this bounds how long the next member's search waits behind this
+#: one (plus the round already in flight, typically under a minute).
+DISCOVERY_RUN_BUDGET_SEC = float(os.getenv("DISCOVERY_RUN_BUDGET_SEC", "240") or 240)
+#: Rounds after the first wave, and the most searches one round asks.
+DISCOVERY_MAX_ROUNDS = int(os.getenv("DISCOVERY_MAX_ROUNDS", "4") or 4)
+DISCOVERY_ROUND_QUERIES = int(os.getenv("DISCOVERY_ROUND_QUERIES", "8") or 8)
+#: A round that saves fewer new qualified people than this means the company
+#: has no more to find through these sources.
+DISCOVERY_ROUND_MIN_NEW = int(os.getenv("DISCOVERY_ROUND_MIN_NEW", "2") or 2)
+#: How a short run explains why it stopped. Only "exhausted" is a claim about the company.
+_STOP_LABEL = {
+    "exhausted": "no more found",
+    "time_budget": "search time limit reached",
+    "round_cap": "search round limit reached",
+    "search_failed": "web search failing",
+}
+# Searches per run, against TinyFish's free tier (500/hour for the whole club):
+# the first wave asks at most 17 web queries plus 1 company-meta query (the
+# seeds reading shares the first one). Later rounds draw from round_query_pool
+# (at most ~25 queries), at most DISCOVERY_MAX_ROUNDS x DISCOVERY_ROUND_QUERIES
+# = 32 of them. So <= ~43 searches for a run that never reaches its goal, and
+# ~18 for one the first wave satisfies.
 
 
 async def _llm_json(prompt: str) -> dict[str, Any]:
@@ -180,7 +208,7 @@ def _entity_from_spec(spec: dict[str, Any], company: str | None = None) -> dict[
     return {
         "legal_name": name, "display_name": name, "brand_words": company_brand_words(name),
         "hq_country": None, "hq_city": None, "mail_domain": None, "mail_domain_evidence": 0,
-        "alt_mail_domains": [], "exclude": [], "target_country": None, "source": "fallback",
+        "alt_mail_domains": [], "exclude": [], "units": [], "target_country": None, "source": "fallback",
     }
 
 
@@ -248,15 +276,16 @@ async def _tavily_name_seeds(
     *, entity: dict[str, Any] | None = None, skips: dict | None = None,
 ) -> list[dict]:
     """Supplement merged list with Tavily+LLM name extraction when Apify/web yield few rows."""
-    from app.services.web_contact_discovery import SEARCH_PAGE_RESULTS, entity_gate, note_skip
+    from app.services.web_contact_discovery import (
+        SEARCH_PAGE_RESULTS, entity_gate, first_wave_queries, note_skip, person_employer_check,
+    )
     from app.services.web_fetch import web_search_configured
     if max_n <= 0 or not (web_search_configured() or (os.getenv("TAVILY_API_KEY") or "").strip()):
         return []
+    dom = normalize_domain(domain) if domain else ""
     # The web stage's first query, word for word: the run asks it once and
     # both stages read the answer (a second copy used to go out in parallel).
-    hints = (title_hints or "").strip()
-    query = (f'{company_name} {hints} site:linkedin.com/in' if hints
-             else f'{company_name} leadership OR executives site:linkedin.com/in')
+    query = first_wave_queries(company_name, dom, title_hints, entity)[0]
     results = await _tavily_search(query, max_results=SEARCH_PAGE_RESULTS)
     if not results:
         return []
@@ -278,7 +307,6 @@ Results:
     people = data.get("people") if isinstance(data, dict) else None
     if not isinstance(people, list):
         return []
-    dom = normalize_domain(domain) if domain else ""
     out: list[dict] = []
     for p in people:
         if not isinstance(p, dict):
@@ -305,8 +333,19 @@ Results:
         if not keep:
             note_skip(skips, reason, name)
             continue
+        # And who they work for, as the web stage reads it: their own profile's
+        # headline when the page is theirs, else the title the model gave.
+        own = "linkedin.com/in/" in str(page.get("url") or "").lower()
+        keep, reason, unit = person_employer_check(
+            name, str(page.get("title") or "") if own else title, page, company_name, dom, entity, evidence,
+        )
+        if not keep:
+            note_skip(skips, reason, name)
+            continue
+        # A name merely printed near the company gets no invented mailbox,
+        # the same rule the web stage keeps.
         email = ""
-        if dom:
+        if dom and evidence != "press_mention":
             email = build_email_for_person_sync(name, dom, custom_patterns=custom_patterns) or ""
         if not email:
             continue
@@ -321,6 +360,7 @@ Results:
                 "contact_source": "web_discovery",
                 "affiliation_evidence": evidence,
                 "discovery_context": f"Named in search results, tied to {company_name} ({evidence})",
+                "group_unit": unit,
             }
         )
         if len(out) >= max_n:
@@ -403,6 +443,8 @@ _SKIP_LABELS = {
     "other_country": "outside the chosen country",
     "other_domain": "at other mail domains",
     "not_a_person": "not people",
+    "other_employer": "at other employers",
+    "no_employer": "with no employer shown",
 }
 
 
@@ -586,7 +628,15 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             domain = ""
 
     custom_patterns = await _load_custom_patterns()
-    web_max = min(max_prospects * 2, int(os.getenv("SCRAPE_WEB_MAX_PEOPLE", "80")))
+    # Twice the target: a guessed address that fails verification is replaced
+    # from the spare rather than leaving the run short of its goal.
+    web_max = max_prospects * 2
+    started = time.monotonic()
+    from app.services.web_fetch import web_search_configured
+    cn = company or (domain.split(".")[0].title() if domain else "")
+    web_on = bool(cn) and (web_search_configured() or bool((os.getenv("TAVILY_API_KEY") or "").strip()))
+    # Pages and people already read, shared by every round of this run.
+    seen: dict[str, set[str]] = {"urls": set(), "names": set()}
 
     async def _domain() -> list[dict]:
         if not domain:
@@ -604,12 +654,11 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         )
 
     async def _web() -> list[dict]:
-        from app.services.web_fetch import web_search_configured
-        cn = company or (domain.split(".")[0].title() if domain else "")
-        if not cn or not (web_search_configured() or (os.getenv("TAVILY_API_KEY") or "").strip()):
+        if not web_on:
             return []
         return await discover_contacts_from_web(
             cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
+            seen=seen,
         )
 
     async def _roster() -> tuple[list[dict], str]:
@@ -654,9 +703,12 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         )
 
     from app.services.web_contact_discovery import (
-        begin_search_run, end_search_run, person_name_key, search_errors_summary, skipped_summary,
+        begin_search_run, end_search_run, person_name_key, round_query_pool, search_errors_summary,
+        skipped_summary,
     )
 
+    # One search run for every round, so no query is asked twice and the
+    # failure count covers the whole run.
     search_run, search_token = begin_search_run()
     try:
         domain_contacts, web_contacts, meta, (roster_contacts, roster_note), seeded = await asyncio.gather(
@@ -666,70 +718,324 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             _roster(),
             _seeds(),
         )
+        search_errors = search_errors_summary(search_run)
+        # The crawl and the roster are read through the same gate the web stage
+        # applies to each search result, before anything is merged.
+        domain_contacts = _gate_rows(domain_contacts, entity, skips, company)
+        roster_contacts = _gate_rows(roster_contacts, entity, skips, company)
+        kw1 = meta.get("keywords") or ""
+        kw2 = meta.get("keywords_2") or ""
+        if roster_contacts:
+            domain_contacts = domain_contacts + roster_contacts
+        n_site = max(0, len(domain_contacts) - len(roster_contacts))
+        n_web = len(web_contacts)
+
+        await _run_update(
+            run_id,
+            progress_pct=22.0,
+            progress_message=(
+                f"Sources: website {n_site} · roster {len(roster_contacts)} · web {n_web} — merging…"
+            ),
+            research_json=json.dumps(
+                {
+                    "title_hints": title_hints or None,
+                    "domain_contacts": n_site,
+                    "roster_contacts": len(roster_contacts),
+                    "web_contacts": n_web,
+                    "roster_note": roster_note or None,
+                    "search_errors": search_errors,
+                }
+            ),
+        )
+
+        merged = merge_contacts(
+            domain_contacts,
+            company,
+            domain,
+            custom_patterns,
+            web_contacts=web_contacts,
+        )
+
+        # Seeds were fetched alongside the other sources; anybody they found who is
+        # not already here is a person the crawl and the roster missed.
+        if seeded:
+            known = {sanitize_email(c.get("email") or "").lower() for c in merged if c.get("email")}
+            for row in seeded:
+                em = sanitize_email(row.get("email") or "").lower()
+                if em and em not in known and is_valid_person_contact(row, company_name=company, domain=domain):
+                    known.add(em)
+                    merged.append(row)
+
+        # Every address the run has already put through verification, saved
+        # or rejected: a later round only brings new people.
+        tried: set[str] = set()
+        saved_rows: list[dict] = []
+        totals = {"merged": 0, "verified": 0, "junk": 0, "log": 0}
+        round_no = 1
+
+        def _fresh(rows: list[dict]) -> list[dict]:
+            out: list[dict] = []
+            for c in rows:
+                em = sanitize_email(c.get("email") or "").lower()
+                if em and em not in tried:
+                    tried.add(em)
+                    out.append(c)
+            return out
+
+        def _found() -> str:
+            return f"Found {len(saved_rows)} of {max_prospects} qualified people · round {round_no}"
+
+        async def _pipe_progress(phase: str, done: int, total: int, detail: str = "") -> None:
+            label = {
+                "identity": "Identity gate",
+                "verify": "Inbox agents",
+                "ai": "AI agents",
+                "done": "Verification done",
+            }.get(phase, phase)
+            if round_no == 1:
+                base = {"identity": 32.0, "verify": 38.0, "ai": 52.0, "done": 82.0}.get(phase, 35.0)
+                span = {"identity": 4.0, "verify": 12.0, "ai": 28.0, "done": 4.0}.get(phase, 10.0)
+                pct = min(90.0, base + (done / max(total, 1)) * span)
+            else:
+                pct = min(97.0, 40.0 + 55.0 * len(saved_rows) / max_prospects)
+            await _run_update(
+                run_id,
+                progress_pct=pct,
+                progress_message=f"{_found()} — {label} {done}/{total}" + (f" — {detail}" if detail else ""),
+            )
+
+        async def _save(candidates: list[dict]) -> list[dict]:
+            """Store one round's survivors; the rows actually written."""
+            written: list[dict] = []
+            db = await get_db()
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                owns_run = await (await db.execute(
+                    """SELECT 1 FROM yucgoutreach_discovery_runs
+                       WHERE id=? AND lease_token=? AND status='running'""",
+                    (run_id, _active_lease.get()),
+                )).fetchone()
+                if not owns_run:
+                    await db.rollback()
+                    raise DiscoveryLeaseLost("Discovery lease was replaced before results were saved")
+                for idx, c in enumerate(candidates):
+                    name = (c.get("name") or "").strip()
+                    first, last = _split_first_last(name)
+                    email = sanitize_email(c.get("email") or "")
+                    if not email or not is_employee_outreach_email(email):
+                        continue
+                    score = _quality_score(c, title_hints)
+                    secondary = score - 3 if c.get("contact_source") == "linkedin_inferred" else score
+                    linkedin = c.get("linkedin_url") or ""
+                    evidence_obj = {
+                        "contact_source": c.get("contact_source"),
+                        "email_verification_status": c.get("email_verification_status"),
+                        "ai_verdict": c.get("ai_verdict"),
+                        "ai_reason": c.get("ai_reason"),
+                        "email_pattern": c.get("email_pattern"),
+                        "discovery_context": (c.get("discovery_context") or "")[:500],
+                        # The group company they work at, when it is not the
+                        # target itself (AWS for Amazon).
+                        **({"group_unit": c["group_unit"]} if c.get("group_unit") else {}),
+                    }
+                    await db.execute(
+                        """INSERT INTO yucgoutreach_prospects (
+                            run_id, first_name, last_name, email, company, contact_url, title,
+                            account_url, photo_url, account_link, phone, phone_code, verified,
+                            qualification_notes, contact_profile_url, linkedin_url, fit_status,
+                            score, country, employees, industry, keywords_1, keywords_2,
+                            yucgoutreach_score, evidence_json,
+                            email_verification_status, ai_verdict, ai_reason, contact_source
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            run_id,
+                            first,
+                            last,
+                            email,
+                            company,
+                            linkedin or c.get("source_url"),
+                            _clean_title(c.get("title"), name, company),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            _is_verified(c),
+                            (c.get("ai_reason") or c.get("discovery_context") or "")[:2000],
+                            linkedin or None,
+                            linkedin or None,
+                            _fit_status(score, c),
+                            score,
+                            meta.get("country") or None,
+                            meta.get("employees") or None,
+                            meta.get("industry") or None,
+                            kw1 or None,
+                            kw2 or None,
+                            secondary,
+                            json.dumps(evidence_obj)[:8000],
+                            c.get("email_verification_status"),
+                            c.get("ai_verdict"),
+                            c.get("ai_reason"),
+                            c.get("contact_source"),
+                        ),
+                    )
+                    written.append(c)
+                    if idx % 10 == 0:
+                        lease_minutes = max(5, min(int(os.getenv("DISCOVERY_LEASE_MINUTES", "30") or 30), 180))
+                        updated = await db.execute(
+                            """UPDATE yucgoutreach_discovery_runs
+                               SET progress_message=?, prospects_count=?,
+                                   updated_at=CURRENT_TIMESTAMP, lease_expires_at=datetime('now', ?)
+                               WHERE id=? AND lease_token=? AND status='running'""",
+                            (
+                                f"Found {len(saved_rows) + len(written)} of {max_prospects} qualified people"
+                                f" · round {round_no}",
+                                len(saved_rows) + len(written),
+                                f"+{lease_minutes} minutes",
+                                run_id,
+                                _active_lease.get(),
+                            ),
+                        )
+                        if updated.rowcount != 1:
+                            await db.rollback()
+                            raise DiscoveryLeaseLost("Discovery lease was replaced while results were saved")
+                await db.commit()
+            finally:
+                await db.close()
+            return written
+
+        async def _qualify(rows: list[dict]) -> int:
+            """Verify one round's new people and save every one that passes,
+            even past the target: the target only decides whether to search
+            again, and people already found and verified are never thrown away.
+            A reject is never kept to make up the number. Returns how many were saved."""
+            totals["merged"] += len(rows)
+            to_verify: list[dict] = []
+            junk_log: list[dict] = []
+            for c in rows:
+                junk, reason = is_heuristic_junk_contact(c, company)
+                if junk:
+                    junk_log.append(dict(c, ai_verdict="junk", ai_reason=reason))
+                else:
+                    to_verify.append(c)
+            if not to_verify and not junk_log:
+                return 0
+            if round_no == 1:
+                await _run_update(
+                    run_id,
+                    progress_pct=32.0,
+                    progress_message=f"Reviewing {len(to_verify)} contact address(es) — mail-domain and source evidence…",
+                )
+            verified, discovery_log = await run_contact_verify_pipeline(
+                to_verify,
+                company_name=company,
+                domain=domain,
+                on_progress=_pipe_progress if to_verify else None,
+            )
+            for c in junk_log:
+                discovery_log.append(
+                    _log_row(c, verdict="junk", reason=c.get("ai_reason") or "", model=None, source_note="heuristic")
+                )
+            totals["verified"] += len(verified)
+            totals["log"] += len(discovery_log)
+            totals["junk"] += len(junk_log) + sum(1 for c in verified if c.get("ai_verdict") == "junk")
+            # The last gate before storage: whatever a source let through, the row
+            # about to be saved is a person at the target entity, in the target
+            # country, with an address on its mail domain.
+            candidates = _gate_rows(
+                [c for c in verified if c.get("ai_verdict") != "junk"], entity, skips, company,
+            )
+            candidates.sort(key=lambda row: _quality_score(row, title_hints), reverse=True)
+            written = await _save(candidates)
+            saved_rows.extend(written)
+            return len(written)
+
+        # Later rounds: new searches only (round_query_pool never repeats a
+        # first-wave query, and the search run shares any repeat), each round
+        # sized to what is still missing. A round's searches start while the
+        # previous round is being verified whenever even a clean sweep of that
+        # round would leave the run short, so no search is spent on a run
+        # that could already reach its target.
+        pool = round_query_pool(cn, domain, title_hints, entity) if web_on else []
+        # Why no further round was started. Only "exhausted" claims the company
+        # has no more people; the others say the search itself stopped.
+        state = {"rounds": 0, "why": None, "stop": "exhausted"}
+
+        def _next_round() -> asyncio.Future | None:
+            nonlocal pool
+            if not pool:
+                state["why"] = "exhausted"
+                return None
+            if (search_errors_summary(search_run) or {}).get("all_failed"):
+                state["why"] = "search_failed"
+                return None
+            if state["rounds"] >= DISCOVERY_MAX_ROUNDS:
+                state["why"] = "round_cap"
+                return None
+            if time.monotonic() - started >= DISCOVERY_RUN_BUDGET_SEC:
+                state["why"] = "time_budget"
+                return None
+            missing = max(1, max_prospects - len(saved_rows))
+            size = min(DISCOVERY_ROUND_QUERIES, max(3, -(-missing // 4)))
+            batch, pool = pool[:size], pool[size:]
+            state["rounds"] += 1
+            return asyncio.ensure_future(discover_contacts_from_web(
+                cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
+                queries=batch, seen=seen,
+            ))
+
+        first = _fresh(merged)
+        base_queries, base_failed, base_limit = search_run["queries"], search_run["failed"], search_run["limit"]
+        pending = _next_round() if len(first) < max_prospects else None
+        try:
+            await _qualify(first)
+            # The first wave is the broad one; only later rounds can show the
+            # sources running dry.
+            exhausted = False
+            while len(saved_rows) < max_prospects:
+                if pending is None:
+                    if exhausted:
+                        state["stop"] = "exhausted"
+                        break
+                    pending = _next_round()
+                    if pending is None:
+                        state["stop"] = state["why"] or "exhausted"
+                        break
+                rows = _fresh(await pending)
+                pending = None
+                round_no += 1
+                # Fewer new rows than a round must add means this round is
+                # the last one; its successor is only fetched ahead when it
+                # could still be needed.
+                if (not exhausted and len(rows) >= DISCOVERY_ROUND_MIN_NEW
+                        and len(saved_rows) + len(rows) < max_prospects):
+                    pending = _next_round()
+                await _run_update(run_id, progress_pct=min(97.0, 40.0 + 55.0 * len(saved_rows) / max_prospects),
+                                  progress_message=_found())
+                exhausted = await _qualify(rows) < DISCOVERY_ROUND_MIN_NEW
+        finally:
+            if pending is not None:
+                pending.cancel()
+        # Rounds whose searches mostly failed or hit the provider limit say
+        # nothing about the company, so they are never reported as exhausted.
+        dq, df = search_run["queries"] - base_queries, search_run["failed"] - base_failed
+        if state["stop"] == "exhausted" and ((search_run["limit"] and not base_limit) or (dq and df * 2 >= dq)):
+            state["stop"] = "search_failed"
+        search_errors = search_errors_summary(search_run)
     finally:
         end_search_run(search_token)
-    search_errors = search_errors_summary(search_run)
-    # The crawl and the roster are read through the same gate the web stage
-    # applies to each search result, before anything is merged.
-    domain_contacts = _gate_rows(domain_contacts, entity, skips, company)
-    roster_contacts = _gate_rows(roster_contacts, entity, skips, company)
-    kw1 = meta.get("keywords") or ""
-    kw2 = meta.get("keywords_2") or ""
-    if roster_contacts:
-        domain_contacts = domain_contacts + roster_contacts
-    n_site = max(0, len(domain_contacts) - len(roster_contacts))
-    n_web = len(web_contacts)
 
-    await _run_update(
-        run_id,
-        progress_pct=22.0,
-        progress_message=(
-            f"Sources: website {n_site} · roster {len(roster_contacts)} · web {n_web} — merging…"
-        ),
-        research_json=json.dumps(
-            {
-                "title_hints": title_hints or None,
-                "domain_contacts": n_site,
-                "roster_contacts": len(roster_contacts),
-                "web_contacts": n_web,
-                "roster_note": roster_note or None,
-                "search_errors": search_errors,
-            }
-        ),
+    inserted = len(saved_rows)
+    shortfall = None
+    if inserted < max_prospects:
+        shortfall = {"target": max_prospects, "found": inserted, "reason": state["stop"]}
+    short_clause = (
+        f" · {inserted} of {max_prospects} qualified people ({_STOP_LABEL.get(state['stop'], 'no more found')})"
+        if shortfall else ""
     )
-
-    merged = merge_contacts(
-        domain_contacts,
-        company,
-        domain,
-        custom_patterns,
-        web_contacts=web_contacts,
-    )
-
-    # Seeds were fetched alongside the other sources; anybody they found who is
-    # not already here is a person the crawl and the roster missed.
-    if seeded:
-        seen = {sanitize_email(c.get("email") or "").lower() for c in merged if c.get("email")}
-        for row in seeded:
-            em = sanitize_email(row.get("email") or "").lower()
-            if em and em not in seen and is_valid_person_contact(row, company_name=company, domain=domain):
-                seen.add(em)
-                merged.append(row)
-
-    to_verify: list[dict] = []
-    junk_log: list[dict] = []
-    for c in merged:
-        junk, reason = is_heuristic_junk_contact(c, company)
-        if junk:
-            row = dict(c)
-            row["ai_verdict"] = "junk"
-            row["ai_reason"] = reason
-            junk_log.append(row)
-        else:
-            to_verify.append(c)
-
-    if not to_verify and not junk_log:
-        skipped = skipped_summary(skips)
+    skipped = skipped_summary(skips, {person_name_key(c.get("name") or "") for c in saved_rows})
+    unavailable = _search_unavailable(search_errors)
+    if not totals["merged"]:
         await _run_update(
             run_id,
             status="completed",
@@ -738,183 +1044,52 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 f"No contacts saved. Website {n_site} · roster {len(roster_contacts)} · web {n_web}"
                 + (f" ({roster_note})" if roster_note else "")
                 + _skipped_clause(skipped, entity)
-                + (f". {_search_unavailable(search_errors)}." if _search_unavailable(search_errors)
+                + (f". {unavailable}." if unavailable
                    else ". Large-company sites rarely publish person emails; officers appear when the SEC fetch succeeds.")
             ),
             prospects_count=0,
-            research_json=json.dumps({"skipped": skipped, "search_errors": search_errors}),
+            research_json=json.dumps({"skipped": skipped, "search_errors": search_errors,
+                                      "rounds": round_no, "shortfall": shortfall}),
             completed=True,
         )
         return
 
     await _run_update(
         run_id,
-        progress_pct=32.0,
-        progress_message=f"Reviewing {len(to_verify)} contact address(es) — mail-domain and source evidence…",
-    )
-
-    async def _pipe_progress(phase: str, done: int, total: int, detail: str = "") -> None:
-        base = {"identity": 32.0, "verify": 38.0, "ai": 52.0, "done": 82.0}.get(phase, 35.0)
-        span = {"identity": 4.0, "verify": 12.0, "ai": 28.0, "done": 4.0}.get(phase, 10.0)
-        pct = base + (done / max(total, 1)) * span
-        label = {
-            "identity": "Identity gate",
-            "verify": "Inbox agents",
-            "ai": "AI agents",
-            "done": "Verification done",
-        }.get(phase, phase)
-        await _run_update(
-            run_id,
-            progress_pct=min(90.0, pct),
-            progress_message=f"{label} {done}/{total}" + (f" — {detail}" if detail else ""),
-        )
-
-    verified, discovery_log = await run_contact_verify_pipeline(
-        to_verify,
-        company_name=company,
-        domain=domain,
-        on_progress=_pipe_progress if to_verify else None,
-    )
-    for c in junk_log:
-        discovery_log.append(
-            _log_row(c, verdict="junk", reason=c.get("ai_reason") or "", model=None, source_note="heuristic")
-        )
-
-    # The last gate before storage: whatever a source let through, the row
-    # about to be saved is a person at the target entity, in the target
-    # country, with an address on its mail domain.
-    candidates = _gate_rows(
-        [c for c in verified if c.get("ai_verdict") != "junk"], entity, skips, company,
-    )
-    candidates.sort(key=lambda row: _quality_score(row, title_hints), reverse=True)
-    candidates = candidates[:max_prospects]
-
-    inserted = 0
-    db = await get_db()
-    try:
-        await db.execute("BEGIN IMMEDIATE")
-        owns_run = await (await db.execute(
-            """SELECT 1 FROM yucgoutreach_discovery_runs
-               WHERE id=? AND lease_token=? AND status='running'""",
-            (run_id, _active_lease.get()),
-        )).fetchone()
-        if not owns_run:
-            await db.rollback()
-            raise DiscoveryLeaseLost("Discovery lease was replaced before results were saved")
-        for idx, c in enumerate(candidates):
-            name = (c.get("name") or "").strip()
-            first, last = _split_first_last(name)
-            email = sanitize_email(c.get("email") or "")
-            if not email or not is_employee_outreach_email(email):
-                continue
-            score = _quality_score(c, title_hints)
-            secondary = score - 3 if c.get("contact_source") == "linkedin_inferred" else score
-            linkedin = c.get("linkedin_url") or ""
-            evidence_obj = {
-                "contact_source": c.get("contact_source"),
-                "email_verification_status": c.get("email_verification_status"),
-                "ai_verdict": c.get("ai_verdict"),
-                "ai_reason": c.get("ai_reason"),
-                "email_pattern": c.get("email_pattern"),
-                "discovery_context": (c.get("discovery_context") or "")[:500],
-            }
-            await db.execute(
-                """INSERT INTO yucgoutreach_prospects (
-                    run_id, first_name, last_name, email, company, contact_url, title,
-                    account_url, photo_url, account_link, phone, phone_code, verified,
-                    qualification_notes, contact_profile_url, linkedin_url, fit_status,
-                    score, country, employees, industry, keywords_1, keywords_2,
-                    yucgoutreach_score, evidence_json,
-                    email_verification_status, ai_verdict, ai_reason, contact_source
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    run_id,
-                    first,
-                    last,
-                    email,
-                    company,
-                    linkedin or c.get("source_url"),
-                    _clean_title(c.get("title"), name, company),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    _is_verified(c),
-                    (c.get("ai_reason") or c.get("discovery_context") or "")[:2000],
-                    linkedin or None,
-                    linkedin or None,
-                    _fit_status(score, c),
-                    score,
-                    meta.get("country") or None,
-                    meta.get("employees") or None,
-                    meta.get("industry") or None,
-                    kw1 or None,
-                    kw2 or None,
-                    secondary,
-                    json.dumps(evidence_obj)[:8000],
-                    c.get("email_verification_status"),
-                    c.get("ai_verdict"),
-                    c.get("ai_reason"),
-                    c.get("contact_source"),
-                ),
-            )
-            inserted += 1
-            if idx % 10 == 0:
-                lease_minutes = max(5, min(int(os.getenv("DISCOVERY_LEASE_MINUTES", "30") or 30), 180))
-                progress = 90.0 + (idx / max(len(candidates), 1)) * 8.0
-                updated = await db.execute(
-                    """UPDATE yucgoutreach_discovery_runs
-                       SET progress_pct=?, progress_message=?, prospects_count=?,
-                           updated_at=CURRENT_TIMESTAMP, lease_expires_at=datetime('now', ?)
-                       WHERE id=? AND lease_token=? AND status='running'""",
-                    (
-                        progress,
-                        f"Saving prospects {idx + 1}/{len(candidates)}…",
-                        inserted,
-                        f"+{lease_minutes} minutes",
-                        run_id,
-                        _active_lease.get(),
-                    ),
-                )
-                if updated.rowcount != 1:
-                    await db.rollback()
-                    raise DiscoveryLeaseLost("Discovery lease was replaced while results were saved")
-        await db.commit()
-    finally:
-        await db.close()
-
-    junk_total = len(junk_log) + sum(1 for c in verified if c.get("ai_verdict") == "junk")
-    skipped = skipped_summary(skips, {person_name_key(c.get("name") or "") for c in candidates})
-    unavailable = _search_unavailable(search_errors)
-    await _run_update(
-        run_id,
         status="completed",
         progress_pct=100.0,
         progress_message=(
             f"Done — {inserted} saved"
-            + (f" ({junk_total} junk filtered)" if junk_total else "")
+            + (f" ({totals['junk']} junk filtered)" if totals["junk"] else "")
             + _skipped_clause(skipped, entity)
             + (f" · {unavailable}" if unavailable else "")
+            + short_clause
         ),
         prospects_count=inserted,
         research_json=json.dumps(
             {
-                "merged": len(merged),
-                "verified": len(verified),
+                "merged": totals["merged"],
+                "verified": totals["verified"],
                 "saved": inserted,
-                "junk_filtered": junk_total,
-                "discovery_log_count": len(discovery_log),
+                "junk_filtered": totals["junk"],
+                "discovery_log_count": totals["log"],
                 "skipped": skipped,
                 "search_errors": search_errors,
+                "rounds": round_no,
+                "shortfall": shortfall,
             }
         ),
         completed=True,
     )
+    # Only companies a member chose join the weekly SEC officer tracking; the
+    # builder's sweep of every listed company would grow that job (and its
+    # EDGAR requests) from a handful of companies to thousands.
+    if spec.get("origin") == "builder":
+        return
     try:
         from app.services.roster_watch import remember_discovery_people
 
-        await remember_discovery_people(company, domain, candidates)
+        await remember_discovery_people(company, domain, saved_rows)
     except Exception:
         logger.exception("roster remember after Find people failed")
 
@@ -984,10 +1159,14 @@ async def drain_queued_yucgoutreach_runs() -> dict:
                )"""
         )
         await db.commit()
+        # Members first: a member's search is someone watching a progress bar,
+        # a builder run is the catalog builder's unattended crawl. A builder
+        # run is only taken when no member run is waiting.
         row = await (await db.execute(
             """SELECT r.id FROM yucgoutreach_discovery_runs r
                JOIN users u ON u.id=r.user_id AND u.is_active=1
-               WHERE r.status='queued' ORDER BY r.id LIMIT 1"""
+               WHERE r.status='queued'
+               ORDER BY CASE WHEN r.origin='builder' THEN 1 ELSE 0 END, r.id LIMIT 1"""
         )).fetchone()
         if not row:
             return {"ok": True, "claimed": 0}
@@ -1000,7 +1179,9 @@ async def drain_queued_yucgoutreach_runs() -> dict:
                    attempt_count=attempt_count+1, lease_token=?, lease_expires_at=datetime('now', ?)
                WHERE id=? AND status='queued' AND EXISTS (
                    SELECT 1 FROM users u WHERE u.id=yucgoutreach_discovery_runs.user_id AND u.is_active=1
-               ) RETURNING id""",
+               ) AND (origin!='builder' OR NOT EXISTS (
+                   SELECT 1 FROM yucgoutreach_discovery_runs m WHERE m.status='queued' AND m.origin!='builder'
+               )) RETURNING id""",
             (lease_token, f"+{lease_minutes} minutes", run_id),
         )).fetchone()
         if not claimed:

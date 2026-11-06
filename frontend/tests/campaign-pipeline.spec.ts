@@ -126,9 +126,71 @@ test('a company that is not on file anywhere can still be worked', async ({ page
   // And it carries into the next step rather than being dropped as unknown.
   await rail.getByRole('button', { name: 'Next: tick who gets it' }).click();
   await expect(pipeline.locator('[data-lane="Bartik Family Foundation"]')).toBeVisible();
-  // With nobody on file the company keeps its group and offers the search
-  // that would fill it, rather than silently vanishing from the step.
-  await expect(pipeline.getByRole('button', { name: 'Find people here' })).toBeVisible();
+  // With nobody on file the company keeps its group, and the sheet offers
+  // the search that would fill it rather than silently dropping it.
+  await expect(pipeline.getByTestId('recipient-picker').locator('[data-company="Bartik Family Foundation"]')).toBeVisible();
+  await expect(pipeline.getByTestId('sheet-find')).toHaveText('Find people at Bartik Family Foundation');
+});
+
+test('the member sets how many people to find, watches the rounds, and is told plainly when a company runs out', async ({ page }) => {
+  const { runsCreated } = await mockPipeline(page);
+  // Later routes win: the run reports rounds, then finishes short of the goal.
+  let polls = 0;
+  await page.route('**/api/yucgoutreach/runs/9', async route => {
+    polls += 1;
+    const base = { id: 9, company_name: 'A24', max_prospects: 80 };
+    await route.fulfill({
+      json: polls < 2
+        ? { ...base, status: 'running', progress_pct: 40, progress_message: 'Found 42 of 80 qualified people · round 2' }
+        : {
+          ...base, status: 'completed', progress_pct: 100, progress_message: 'Found 51 qualified people',
+          research_json: JSON.stringify({ shortfall: { target: 80, found: 51, reason: 'exhausted' } }),
+        },
+    });
+  });
+  await page.route('**/api/yucgoutreach/runs/9/prospects**', route => route.fulfill({
+    json: [{
+      id: 501, run_id: 9, first_name: 'Ada', last_name: 'Byron', email: 'ada.byron@a24films.com',
+      title: 'Producer', company: 'A24', evidence_json: JSON.stringify({ group_unit: 'A24 Music' }),
+    }],
+  }));
+  await page.route('**/api/yucgoutreach/runs/9/import-contacts', route => route.fulfill({
+    json: { created: 0, updated: 0, skipped: 1, results: [{ prospect_id: 501, contact_id: null, outcome: 'skipped', reason: 'held for review' }] },
+  }));
+  await page.goto('/scraper?view=company&companies=A24&max=120');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  const rail = pipeline.locator('[data-rail]');
+  // A link's ?max= is the starting goal; the field is where it is changed.
+  const goal = rail.getByLabel('How many people');
+  await expect(goal).toHaveValue('120');
+  await goal.fill('80');
+
+  await pipeline.getByTestId('sheet-find').click();
+  await expect.poll(() => runsCreated.length).toBe(1);
+  expect(runsCreated[0].max_prospects).toBe(80);
+
+  const group = pipeline.getByTestId('recipient-picker').locator('[data-company="A24"]');
+  await expect(group.getByText('Found 42 of 80 qualified people · round 2')).toBeVisible();
+  // The run is polled every 2.5s, so the finished state is two polls away.
+  await expect(group.getByTestId('shortfall'))
+    .toHaveText(/Only 51 qualified people found\s+at A24 — that is everyone the sources list for them right now\./, { timeout: 15_000 });
+  // A person at a group business keeps a quiet tag naming it.
+  await expect(group.locator('[data-found="501"]').getByTestId('group-unit')).toHaveText('A24 Music');
+});
+
+test('the goal is clamped to what the server accepts', async ({ page }) => {
+  const { runsCreated } = await mockPipeline(page);
+  await page.goto('/scraper?view=company&companies=A24');
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  const goal = pipeline.locator('[data-rail]').getByLabel('How many people');
+  await expect(goal).toHaveValue('60');
+  await goal.fill('5000');
+  await goal.blur();
+  await expect(goal).toHaveValue('800');
+  await pipeline.getByTestId('sheet-find').click();
+  await expect.poll(() => runsCreated.length).toBe(1);
+  expect(runsCreated[0].max_prospects).toBe(800);
 });
 
 test('a large company selection stays a count and a screenful, not a wall of chips', async ({ page }) => {

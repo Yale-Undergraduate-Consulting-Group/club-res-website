@@ -18,7 +18,9 @@ import { companyKey, isTooSenior, looksLikePerson } from './recipients';
  * started in this sitting finds is added to the club's contacts straight away
  * - the people the default tick would choose - so the member ticks rather
  * than adds; anyone else, and anything an earlier visit's search found, stays
- * "found" until the member adds them on purpose.
+ * "found" until the member adds them on purpose. The same goes for what the
+ * club's catalog builder found at a chosen company: the server hands its
+ * newest finished run back with the member's own, and the newest run wins.
  *
  * The server allows one search per member at a time. Asking for a second
  * one is not a mistake, so it is queued here and started when the first
@@ -47,15 +49,42 @@ export type ChosenCompany = {
 
 export type LaneState = 'idle' | 'queued' | 'searching' | 'done' | 'failed';
 
+/** A finished run that stopped below its target, and why. Only "exhausted"
+ *  means the sources had nobody more; the others mean the search stopped. */
+export type Shortfall = {
+  target: number; found: number;
+  reason: 'exhausted' | 'time_budget' | 'round_cap' | 'search_failed' | string;
+};
+
 export type CompanyRun = {
   state: LaneState;
   runId?: number;
   pct: number;
   message: string;
+  shortfall?: Shortfall;
+  /** The club's catalog builder found these people: anyone may keep them,
+   *  nobody deletes the run. */
+  shared?: boolean;
 };
 
-/** A person a run found, with the reason the last Add left them behind. */
-export type FoundPerson = DiscoveryProspect & { skippedReason?: string };
+/** A person a run found, with the reason the last Add left them behind and
+ *  the group business they work in, when it is not the target itself. */
+export type FoundPerson = DiscoveryProspect & { skippedReason?: string; groupUnit?: string };
+
+/** A JSON text column as an object; anything unreadable is empty. */
+function jsonObject(text?: string | null): Record<string, unknown> {
+  try {
+    const value: unknown = text ? JSON.parse(text) : null;
+    return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function shortfallOf(run: DiscoveryRun): Shortfall | undefined {
+  const value = jsonObject(run.research_json).shortfall as Shortfall | undefined;
+  return value && Number.isFinite(Number(value.found)) ? value : undefined;
+}
 
 export type SearchOptions = { titleHints: string; maxProspects: number; domain?: string };
 
@@ -78,7 +107,8 @@ function usable(rows: DiscoveryProspect[]): FoundPerson[] {
     const email = (row.email || '').trim().toLowerCase();
     if (!email || row.ai_verdict === 'junk' || seen.has(email)) continue;
     seen.add(email);
-    out.push(row);
+    const unit = jsonObject(row.evidence_json).group_unit;
+    out.push(typeof unit === 'string' && unit.trim() ? { ...row, groupUnit: unit.trim() } : row);
   }
   return out;
 }
@@ -108,7 +138,8 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
   const chosenKeyList = [...chosenKeys].sort().join('\n');
 
   // Latest run per company: an older completed run says nothing once a newer
-  // one has been asked for.
+  // one has been asked for. A builder run can only be newer than a member's
+  // own when theirs is past BUILDER_RECRAWL_DAYS, so fresher club data wins.
   const latestByKey = useMemo(() => {
     const map: Record<string, DiscoveryRun> = {};
     for (const run of Object.values(runsById)) {
@@ -158,14 +189,14 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
 
   const refreshRuns = useCallback(async () => {
     try {
-      const list = await api.yucgoutreach.listRuns(40);
+      const list = await api.yucgoutreach.listRuns(40, chosenKeyList ? chosenKeyList.split('\n') : []);
       setRunsById(Object.fromEntries(list.map((run) => [run.id, run])));
       return list;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read earlier searches');
       return [];
     }
-  }, []);
+  }, [chosenKeyList]);
 
   // Arrival, and every change of companies: what the server already knows.
   // Deferred so the fetch is not a synchronous setState inside the effect,
@@ -377,7 +408,10 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
       } else if (run.status === 'failed') {
         map[key] = { state: 'failed', runId: run.id, pct: 100, message: run.error_message || 'Search failed' };
       } else {
-        map[key] = { state: 'done', runId: run.id, pct: 100, message: run.progress_message || 'Search finished' };
+        map[key] = {
+          state: 'done', runId: run.id, pct: 100, message: run.progress_message || 'Search finished',
+          shortfall: shortfallOf(run), shared: run.origin === 'builder',
+        };
       }
     }
     return map;

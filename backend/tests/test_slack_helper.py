@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,7 +24,7 @@ os.environ["SLACK_SIGNING_SECRET"] = "helper-test-signing-secret"
 os.environ["FRONTEND_URL"] = "https://outreach.example.org"
 
 import httpx  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, HTTPException  # noqa: E402
 
 from app.database import get_db, init_db  # noqa: E402
 from app.services import slack_agent  # noqa: E402
@@ -176,8 +176,16 @@ def capture_replies() -> tuple[AsyncMock, list[dict]]:
     to the app over httpx too, and patching that swallowed the request."""
     said: list[dict] = []
 
-    async def record(channel: str, text: str, thread_ts: str | None = None) -> bool:
-        said.append({"channel": channel, "text": text, "thread_ts": thread_ts})
+    async def record(
+        channel: str,
+        text: str,
+        thread_ts: str | None = None,
+        ephemeral_user: str | None = None,
+    ) -> bool:
+        said.append({
+            "channel": channel, "text": text, "thread_ts": thread_ts,
+            "ephemeral_user": ephemeral_user,
+        })
         return True
 
     return AsyncMock(side_effect=record), said
@@ -205,6 +213,7 @@ async def a_mention_is_answered_once_in_its_thread(client) -> None:
     assert second.json().get("duplicate") is True, second.text
     assert len(said) == 1, f"the retry was answered again: {said}"
     assert said[0]["channel"] == "C1" and said[0]["thread_ts"] == "1700000000.1"
+    assert said[0]["ephemeral_user"] == SLACK_USER
     assert "2 on file" in said[0]["text"]
 
 
@@ -244,12 +253,12 @@ async def a_direct_message_is_answered_in_the_dm(client) -> None:
     assert response.status_code == 200
     assert len(said) == 1 and said[0]["channel"] == "D1"
     assert said[0]["thread_ts"] is None, "a direct message was answered in a thread"
+    assert said[0]["ephemeral_user"] is None, "a direct message was made ephemeral"
     assert "A24" in said[0]["text"]
 
 
-async def the_reply_is_posted_with_a_workspace_token() -> None:
-    """post_reply is the only place the helper talks back, so it is the only
-    place a token is needed; it must be a live one, not the row's."""
+async def replies_use_the_workspace_token_and_private_channel_delivery() -> None:
+    """Channel answers are ephemeral to the asker; DMs are ordinary messages."""
     calls: list[dict] = []
 
     async def slack(url, *args, **kwargs):
@@ -257,10 +266,60 @@ async def the_reply_is_posted_with_a_workspace_token() -> None:
         return httpx.Response(200, json={"ok": True})
 
     with patch("httpx.AsyncClient.post", AsyncMock(side_effect=slack)):
-        assert await slack_agent.post_reply("C1", "hello", "1700000000.1") is True
-    assert calls[0]["url"].endswith("chat.postMessage")
-    assert calls[0]["json"] == {"channel": "C1", "text": "hello", "thread_ts": "1700000000.1"}
-    assert calls[0]["headers"]["Authorization"] == "Bearer xoxb-workspace"
+        assert await slack_agent.post_reply(
+            "C1", "channel answer", "1700000000.1", SLACK_USER
+        ) is True
+        assert await slack_agent.post_reply("D1", "dm answer") is True
+    assert calls[0]["url"].endswith("chat.postEphemeral")
+    assert calls[0]["json"] == {
+        "channel": "C1", "text": "channel answer",
+        "thread_ts": "1700000000.1", "user": SLACK_USER,
+    }
+    assert calls[1]["url"].endswith("chat.postMessage")
+    assert calls[1]["json"] == {"channel": "D1", "text": "dm answer"}
+    assert all(
+        call["headers"]["Authorization"] == "Bearer xoxb-workspace" for call in calls
+    )
+
+
+async def the_model_tool_loop_is_bounded_and_charged_to_the_member() -> None:
+    tool_request = {
+        "stopReason": "tool_use",
+        "output": {"message": {"role": "assistant", "content": [{
+            "toolUse": {
+                "toolUseId": "tool-1", "name": "search_contacts",
+                "input": {"query": "A24"},
+            }
+        }]}}
+    }
+    converse = Mock(return_value=tool_request)
+    with (
+        patch("app.services.slack_agent.llm.converse", converse),
+        patch("app.services.slack_agent.run_tool", AsyncMock(return_value={"contacts": []})),
+    ):
+        answer = await slack_agent.handle_message(
+            "Compare our A24 relationships with the project documents and summarize gaps.",
+            {"id": 1, "email": "member@yale.edu", "role": "standard"},
+        )
+    assert answer["text"] == slack_agent.TOOL_LIMIT_REPLY
+    assert converse.call_count == slack_agent.MAX_TOOL_ROUNDS
+    assert all(
+        call.kwargs["user_id"] == 1 and call.kwargs["purpose"] == "slack"
+        for call in converse.call_args_list
+    )
+
+
+async def a_model_budget_error_is_a_friendly_slack_answer() -> None:
+    converse = Mock(side_effect=HTTPException(
+        429, "The club's AI budget for this month is used up."
+    ))
+    with patch("app.services.slack_agent.llm.converse", converse):
+        answer = await slack_agent.handle_message(
+            "Summarize everything we know about our media outreach strategy.",
+            {"id": 1, "email": "member@yale.edu", "role": "standard"},
+        )
+    assert answer["text"] == slack_agent.BUDGET_REPLY
+    assert "HTTPException" not in answer["text"]
 
 
 async def main() -> None:
@@ -289,7 +348,9 @@ async def main() -> None:
             await a_mention_is_answered_once_in_its_thread(client)
             await the_helper_never_answers_itself(client)
             await a_direct_message_is_answered_in_the_dm(client)
-        await the_reply_is_posted_with_a_workspace_token()
+        await replies_use_the_workspace_token_and_private_channel_delivery()
+        await the_model_tool_loop_is_bounded_and_charged_to_the_member()
+        await a_model_budget_error_is_a_friendly_slack_answer()
         print("slack helper: ok")
 
 

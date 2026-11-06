@@ -218,7 +218,6 @@ resource "aws_secretsmanager_secret" "app" {
 }
 
 locals {
-  bedrock_model_id = "us.anthropic.claude-haiku-5-5"
   config_parameter = "/club-res-website/${var.environment}/config"
   # Non-secret runtime configuration read by ops/restart-yucg.sh on every
   # deploy; the key list is documented in templates/user-data.sh.tftpl.
@@ -232,7 +231,6 @@ locals {
     backups_bucket         = aws_s3_bucket.data["backups"].bucket
     documents_bucket       = aws_s3_bucket.data["documents"].bucket
     log_group              = aws_cloudwatch_log_group.app.name
-    bedrock_model_id       = local.bedrock_model_id
     email_delivery_enabled = var.environment == "prod"
     edge                   = local.edge
     config_parameter       = local.config_parameter

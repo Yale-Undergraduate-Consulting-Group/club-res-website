@@ -23,7 +23,7 @@ const AFTER_ADD = {
   company: 'NEON', person_level: 'working',
 };
 
-async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boolean } = {}) {
+async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boolean; builderRun?: boolean } = {}) {
   const built: Record<string, unknown>[] = [];
   const drafted: Record<string, unknown>[] = [];
   const runsCreated: Record<string, unknown>[] = [];
@@ -55,6 +55,12 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
       }
     } else if (p === '/api/yucgoutreach/runs' && method === 'GET' && opts.earlierRun) {
       body = [{ id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done' }];
+    } else if (p === '/api/yucgoutreach/runs' && method === 'GET' && opts.builderRun) {
+      // The catalog builder's run comes back only for a company the page
+      // asked about, alongside the member's own (here none).
+      body = url.searchParams.getAll('companies').includes('neon')
+        ? [{ id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done', origin: 'builder' }]
+        : [];
     } else if (p === '/api/yucgoutreach/runs' && method === 'GET') {
       body = opts.busy && attempted
         ? [{ id: 8, company_name: 'Acme Corp', status: 'running', progress_pct: 30, progress_message: 'Website and web search…' }]
@@ -269,4 +275,27 @@ test("what an earlier visit's search found is shown, never added behind the memb
   await expect(neon.getByRole('button', { name: 'Add Margaret Hamilton' })).toBeVisible();
   await page.waitForTimeout(1000);
   expect(imported).toHaveLength(0);
+});
+
+test('what the catalog builder found is shown to every member, kept only on purpose, and cannot be deleted', async ({ page }) => {
+  const { imported } = await mockPicker(page, { builderRun: true });
+  await page.goto('/scraper?view=company&companies=A24,NEON');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  const neon = pipeline.getByTestId('recipient-picker').locator('[data-company="NEON"]');
+  await expect(neon.getByText('3 found · not on file yet')).toBeVisible();
+  await expect(neon.getByRole('button', { name: 'Add Margaret Hamilton' })).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(imported).toHaveLength(0);
+
+  const lane = pipeline.locator('[data-lane="NEON"]');
+  await lane.hover();
+  await lane.getByLabel('More for NEON').click();
+  await expect(lane.getByRole('button', { name: 'Export .xlsx' })).toBeVisible();
+  await expect(lane.getByRole('button', { name: 'Delete run' })).toHaveCount(0);
+  await lane.getByLabel('More for NEON').click();
+
+  await neon.getByRole('button', { name: 'Add Margaret Hamilton' }).click();
+  await expect.poll(() => imported.length).toBe(1);
+  expect(imported[0]).toEqual({ prospect_ids: [91] });
 });

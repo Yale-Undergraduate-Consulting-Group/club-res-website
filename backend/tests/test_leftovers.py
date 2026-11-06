@@ -52,13 +52,14 @@ def test_pending_2fa_not_authenticated() -> None:
         assert r.json().get("authenticated") is False
 
 
-def test_anthropic_catalog_is_haiku_only_by_default() -> None:
-    from app.services.llm import BEDROCK_ANTHROPIC, is_bedrock_model, list_models
+def test_anthropic_catalog_offers_each_tier_priced() -> None:
+    from app.services.llm import BEDROCK_ANTHROPIC, PRICES_PER_MILLION, TIERS, allowed_bedrock_models, is_bedrock_model, list_models
 
-    ids = {m["id"] for m in BEDROCK_ANTHROPIC}
-    labels = {m["label"] for m in BEDROCK_ANTHROPIC}
-    assert ids == {"us.anthropic.claude-haiku-5-5"}
-    assert all("Opus" not in label and "Sonnet" not in label for label in labels)
+    ids = [m["id"] for m in BEDROCK_ANTHROPIC]
+    # A member picks a tier's newest model; the older stand-ins are internal.
+    assert ids == [TIERS["fast"][0], TIERS["write"][0], TIERS["deep"][0]]
+    # Every model a call can land on is priced, so none is charged as unknown.
+    assert all(model in PRICES_PER_MILLION and model in allowed_bedrock_models() for chain in TIERS.values() for model in chain)
     assert is_bedrock_model("us.anthropic.claude-opus-5")
     assert not is_bedrock_model("ollama:llama3.2")
     catalog = list_models()
@@ -108,6 +109,6 @@ if __name__ == "__main__":
     test_bounce_from_mailer_daemon()
     test_thinkcell_table_names()
     test_pending_2fa_not_authenticated()
-    test_anthropic_catalog_is_haiku_only_by_default()
+    test_anthropic_catalog_offers_each_tier_priced()
     test_spa_week_route_uses_index()
     print("ok")

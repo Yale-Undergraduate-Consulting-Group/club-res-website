@@ -614,7 +614,11 @@ async def init_db():
         try:
             cursor = await db.execute("SELECT COUNT(*) as n FROM users WHERE role = 'admin'")
             if (await cursor.fetchone())["n"] == 0:
-                await db.execute("UPDATE users SET role = 'admin' WHERE id = (SELECT MIN(id) FROM users)")
+                # The catalog builder's account is not a person and never admin.
+                await db.execute(
+                    "UPDATE users SET role = 'admin' WHERE id = "
+                    "(SELECT MIN(id) FROM users WHERE COALESCE(role, 'standard') != 'system')"
+                )
                 await db.commit()
         except Exception:
             pass
@@ -808,6 +812,39 @@ async def init_db():
                 completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (source, batch_key)
             );
+
+            -- Role suggestions (services/role_suggestions.py): one LinkedIn
+            -- search page or equivalence mapping per (company, term), shared
+            -- by members so a reload or restart spends no allowance.
+            CREATE TABLE IF NOT EXISTS role_search_cache (
+                company_key TEXT NOT NULL,
+                term_key TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (company_key, term_key)
+            );
+
+            -- web_fetch.web_search read-through cache, shared club-wide so a
+            -- repeated query (another member, the builder, a restart) spends
+            -- no upstream search. Failures are never written here.
+            CREATE TABLE IF NOT EXISTS web_search_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query_key TEXT NOT NULL,
+                page INTEGER NOT NULL,
+                max_results INTEGER NOT NULL,
+                results_json TEXT NOT NULL,
+                expires_at REAL NOT NULL,
+                UNIQUE (query_key, page, max_results)
+            );
+            CREATE INDEX IF NOT EXISTS idx_web_search_cache_expires ON web_search_cache(expires_at);
+
+            -- One row per real upstream search call (Monid page or Firecrawl),
+            -- so the hourly budget survives a container restart.
+            CREATE TABLE IF NOT EXISTS web_search_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_web_search_usage_at ON web_search_usage(at);
         """)
         await db.commit()
 
@@ -849,12 +886,34 @@ async def init_db():
             ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
             ("lease_token", "TEXT"),
             ("lease_expires_at", "TIMESTAMP"),
+            # 'member' (a person pressed Find people) or 'builder' (the
+            # background catalog builder). The drain claims member runs first.
+            ("origin", "TEXT NOT NULL DEFAULT 'member'"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE yucgoutreach_discovery_runs ADD COLUMN {col} {col_type}")
                 await db.commit()
             except Exception:
                 pass
+
+        # Catalog builder (services/catalog_builder.py): one row per register
+        # company it has taken, so its place in the list survives restarts.
+        # Runs are matched to companies by LOWER(TRIM(company_name)), the same
+        # key the Find page groups by, hence the expression index.
+        await db.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_yucgoutreach_runs_company_key
+                ON yucgoutreach_discovery_runs((lower(trim(company_name))));
+            CREATE TABLE IF NOT EXISTS catalog_builder_companies (
+                register_id INTEGER PRIMARY KEY REFERENCES company_register(id) ON DELETE CASCADE,
+                company_name TEXT NOT NULL,
+                run_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'queued',
+                people_found INTEGER NOT NULL DEFAULT 0,
+                crawled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_catalog_builder_crawled ON catalog_builder_companies(crawled_at);
+        """)
+        await db.commit()
 
         for col, col_type in [
             ("email_verification_status", "TEXT"),

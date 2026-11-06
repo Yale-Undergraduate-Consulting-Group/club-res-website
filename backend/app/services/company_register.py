@@ -1299,6 +1299,22 @@ def _word_break_sql(column: str) -> str:
     return f"(' ' || {expr})"
 
 
+# Size decides: SEC's market-cap order, then headcount, then the Companies
+# House statutory band (group > full > medium), then how many officers are on
+# record - recency only breaks what is left. Shared with the catalog builder,
+# which works down the register in this order.
+REGISTER_VALUE_ORDER = """CASE WHEN tier = 'us_public' AND prominence_rank IS NOT NULL THEN 0 ELSE 1 END,
+                         CASE WHEN prominence_rank IS NOT NULL THEN prominence_rank ELSE 999999999 END ASC,
+                         COALESCE(employees, -1) DESC,
+                         CASE WHEN source = 'companies_house' THEN
+                             CASE json_extract(metadata_json, '$.account_category')
+                                 WHEN 'GROUP' THEN 0 WHEN 'FULL' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END
+                         ELSE 3 END,
+                         officer_count DESC,
+                         COALESCE(last_event_at, '') DESC, COALESCE(last_event_amount, 0) DESC,
+                         company_name"""
+
+
 async def search_register(
     *,
     q: str | None = None,
@@ -1309,6 +1325,7 @@ async def search_register(
     with_officers: bool = False,
     limit: int = 50,
     offset: int = 0,
+    sort: str = "value",
 ) -> dict[str, Any]:
     where: list[str] = []
     args: list[Any] = []
@@ -1392,40 +1409,24 @@ async def search_register(
         where.append("officer_count > 0")
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     limit = max(1, min(int(limit), 200))
+    size_order = REGISTER_VALUE_ORDER
     if searching:
         # A member who types a name wants the company they mean, and within
         # one match level that is almost always the biggest one: "hbo" found
         # three dated UK rows before any listed company because a listed
         # company carries no filing date, so recency-first put every UK
-        # accounts filing ahead of it. Size decides first - SEC's market-cap
-        # order, then headcount, then the Companies House statutory band
-        # (group > full > medium), then how many officers are on record -
-        # and recency only breaks what is left.
-        order_by = """match_level ASC,
-                         CASE WHEN tier = 'us_public' AND prominence_rank IS NOT NULL THEN 0 ELSE 1 END,
-                         CASE WHEN prominence_rank IS NOT NULL THEN prominence_rank ELSE 999999999 END ASC,
-                         COALESCE(employees, -1) DESC,
-                         CASE WHEN source = 'companies_house' THEN
-                             CASE json_extract(metadata_json, '$.account_category')
-                                 WHEN 'GROUP' THEN 0 WHEN 'FULL' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END
-                         ELSE 3 END,
-                         officer_count DESC,
-                         COALESCE(last_event_at, '') DESC, COALESCE(last_event_amount, 0) DESC,
-                         company_name"""
-    else:
-        # Browsing with no query is a "what is new" feed: the newest filing
-        # first is the point of it, so the original order stays.
+        # accounts filing ahead of it.
+        order_by = f"match_level ASC, {size_order}"
+    elif sort == "recent":
+        # The "what is new" feed: the newest filing first is the point of it.
         order_by = """COALESCE(last_event_at, '') DESC, COALESCE(last_event_amount, 0) DESC,
                          officer_count DESC,
-                         -- A listed company has no filing date or dollar amount to
-                         -- rank by - nothing above this line ever distinguishes it
-                         -- from any other listed company. Without this, Meta sorted
-                         -- no differently from a micro-cap nobody has heard of:
-                         -- alphabetically, wherever that fell among 200k+ rows with
-                         -- real recent activity. This is SEC's own market-cap order,
-                         -- so the companies a member actually wants surface first.
                          CASE WHEN prominence_rank IS NOT NULL THEN prominence_rank ELSE 999999999 END ASC,
                          company_name"""
+    else:
+        # A member browsing for a company to reach out to wants the ones
+        # worth reaching first, not whichever Form D shell filed yesterday.
+        order_by = size_order
     db = await get_db()
     try:
         total = await (await db.execute(f"SELECT COUNT(*) AS n FROM company_register {clause}", tuple(args))).fetchone()

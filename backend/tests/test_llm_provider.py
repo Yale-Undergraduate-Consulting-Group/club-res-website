@@ -1,4 +1,4 @@
-"""Rank model is Haiku on Bedrock. From backend/: python3 tests/test_llm_provider.py"""
+"""Ranking runs on the fast Haiku tier and writing on Sonnet, on Bedrock. From backend/: python3 tests/test_llm_provider.py"""
 from __future__ import annotations
 
 import os
@@ -20,7 +20,7 @@ def test_bedrock_rank_is_haiku() -> None:
     os.environ.pop("LLM_MODEL", None)
     assert llm_provider() == "bedrock"
     assert "haiku" in rank_model_id().lower()
-    assert rank_model_id() == default_model_id(), "Interactive and ranking work share the reviewed low-cost model"
+    assert "sonnet" in default_model_id().lower(), "member-facing writing runs on the write tier"
 
 
 def test_explicit_rank_wins() -> None:
@@ -37,7 +37,7 @@ def test_assistant_stays_on_bedrock_when_provider_is_unset() -> None:
     os.environ["OLLAMA_MODEL"] = "llama3.2"
     assert llm_provider() == "bedrock"
     assert "haiku" in rank_model_id().lower()
-    assert "haiku" in default_model_id().lower()
+    assert "sonnet" in default_model_id().lower()
 
 
 def test_ollama_provider_still_uses_bedrock_only() -> None:

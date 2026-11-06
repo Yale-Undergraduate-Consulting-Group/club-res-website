@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from urllib.parse import urlsplit, urlunsplit
 
-from app.services.contact_scraper import looks_like_person_name, normalize_domain
+from app.services.contact_scraper import is_role_based_local_part, looks_like_person_name, normalize_domain
 
 
 class Identity(StrEnum):
@@ -77,7 +77,8 @@ class OutreachState(StrEnum):
     SUPPRESSED = 'suppressed'
 
 
-ROLE_LOCALS = frozenset({'info', 'support', 'sales', 'admin', 'contact', 'hello', 'office', 'careers', 'jobs', 'hr', 'press', 'marketing', 'noreply', 'no-reply', 'recruiting'})
+# Role and generic mailboxes are decided by contact_scraper.is_role_based_local_part
+# alone, so scraping, verification and storage agree on what "info@" is.
 CONSUMER_DOMAINS = frozenset({'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'aol.com'})
 DISPOSABLE_DOMAINS = frozenset({'mailinator.com', 'guerrillamail.com', 'tempmail.com', '10minutemail.com', 'yopmail.com'})
 
@@ -247,7 +248,7 @@ async def ingest_contact(db, *, contact: dict, actor_id: int, project_id: int | 
             conflicts.append('Address is already associated with a different person name')
     if conflicts:
         identity = 'conflicted'
-    if email.partition('@')[0] in ROLE_LOCALS or domain in CONSUMER_DOMAINS | DISPOSABLE_DOMAINS:
+    if (email and is_role_based_local_part(email.partition('@')[0])) or domain in CONSUMER_DOMAINS | DISPOSABLE_DOMAINS:
         identity = 'rejected'
         conflicts.append('Generic or non-professional address')
     fit = contact.get('project_fit', 'weak')

@@ -106,7 +106,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
             custom_instructions: goal.trim() ? `Email purpose: ${goal.trim()}` : undefined,
           });
           // A busy or throttled model is not a failed draft: wait and ask
-          // again. The server gives back the hourly draft for these.
+          // again. Nothing is charged when the model was never reached.
           for (let attempt = 0; ; attempt += 1) {
             try {
               await request();
@@ -120,13 +120,14 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
           setStatus((s) => ({ ...s, [id]: 'done' }));
         } catch (e) {
           const message = e instanceof Error ? e.message : 'Draft failed';
-          setStatus((s) => ({ ...s, [id]: /limit reached/i.test(message) ? 'waiting' : 'failed' }));
+          const budgetSpent = /budget for this month is used up/i.test(message);
+          setStatus((s) => ({ ...s, [id]: budgetSpent ? 'waiting' : 'failed' }));
           setReason((r) => ({ ...r, [id]: message }));
-          // The hourly limit fails every later request too: stop rather than
-          // mark the whole remainder failed.
-          if (/limit reached/i.test(message)) {
+          // A spent monthly budget fails every later request too: stop rather
+          // than mark the whole remainder failed.
+          if (budgetSpent) {
             stopRef.current = true;
-            setNote('The hourly draft limit was reached. Everything drafted so far is saved; press the button again after the hour to write the rest.');
+            setNote("The club's AI budget for this month is used up. Everything drafted so far is saved; an administrator can raise the budget, or the rest can be drafted next month.");
           }
         }
       }

@@ -10,13 +10,14 @@ Slack retries anything it does not hear back from within three seconds — and
 a retried mention that gets answered twice reads as a broken bot.
 """
 import logging
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.services.slack_agent import (
-    HELP, already_handled, answer_event, handle_message, member_for_slack_user,
-    verify_slack_signature,
+    MODEL_UNAVAILABLE_REPLY, already_handled, answer_event, handle_message,
+    is_deterministic_message, member_for_slack_user, verify_slack_signature,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,8 +37,8 @@ def _signed(request: Request, body: bytes) -> bool:
 
 
 @router.post("/commands")
-async def slack_command(request: Request):
-    """The `/yucg` slash command. Plain questions work here too."""
+async def slack_command(request: Request, background: BackgroundTasks):
+    """The `/yucg` slash command. Model questions finish after the immediate ack."""
     body = await request.body()
     if not _signed(request, body):
         return JSONResponse({"error": "invalid_signature"}, status_code=401)
@@ -54,9 +55,36 @@ async def slack_command(request: Request):
         })
 
     text = str(form.get("text") or "")
-    if text.strip() in {"", "help", "-h", "--help"}:
-        return JSONResponse({"response_type": "ephemeral", "text": HELP})
-    return JSONResponse(await handle_message(text, member))
+    if not text.strip() or is_deterministic_message(text):
+        return JSONResponse(await handle_message(text, member))
+
+    response_url = str(form.get("response_url") or "")
+    parsed = urlparse(response_url)
+    if parsed.scheme != "https" or parsed.hostname not in {"hooks.slack.com", "hooks.slack-gov.com"}:
+        # Slack supplies response_url in production. Keeping this fallback makes
+        # local/manual calls useful without creating an arbitrary outbound URL.
+        return JSONResponse(await handle_message(text, member))
+
+    async def answer_command() -> None:
+        import httpx
+
+        try:
+            answer = await handle_message(text, member)
+            payload = {
+                "response_type": "ephemeral",
+                "replace_original": True,
+                "text": str(answer.get("text") or MODEL_UNAVAILABLE_REPLY),
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(response_url, json=payload)
+        except Exception:
+            logger.exception("Slack helper failed to answer slash command")
+
+    background.add_task(answer_command)
+    return JSONResponse({
+        "response_type": "ephemeral",
+        "text": "Looking that up…",
+    })
 
 
 @router.post("/events")
