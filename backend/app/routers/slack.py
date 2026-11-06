@@ -19,6 +19,7 @@ from app.services.slack_agent import (
     MODEL_UNAVAILABLE_REPLY, already_handled, answer_event, handle_message,
     is_deterministic_message, member_for_slack_user, verify_slack_signature,
 )
+from app.services.slack_tools import SlackContext
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -55,21 +56,24 @@ async def slack_command(request: Request, background: BackgroundTasks):
         })
 
     text = str(form.get("text") or "")
+    # Slash commands stay single-turn: no channel/thread, so no memory and no
+    # current-thread reading, but named channels the asker belongs to can be read.
+    context = SlackContext(slack_user=str(form.get("user_id") or ""))
     if not text.strip() or is_deterministic_message(text):
-        return JSONResponse(await handle_message(text, member))
+        return JSONResponse(await handle_message(text, member, context))
 
     response_url = str(form.get("response_url") or "")
     parsed = urlparse(response_url)
     if parsed.scheme != "https" or parsed.hostname not in {"hooks.slack.com", "hooks.slack-gov.com"}:
         # Slack supplies response_url in production. Keeping this fallback makes
         # local/manual calls useful without creating an arbitrary outbound URL.
-        return JSONResponse(await handle_message(text, member))
+        return JSONResponse(await handle_message(text, member, context))
 
     async def answer_command() -> None:
         import httpx
 
         try:
-            answer = await handle_message(text, member)
+            answer = await handle_message(text, member, context)
             payload = {
                 "response_type": "ephemeral",
                 "replace_original": True,
