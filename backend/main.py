@@ -14,6 +14,7 @@ if _env_path.exists():
 else:
     print(f"[env] No backend/.env found at {_env_path}")
 
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 from app.log_redaction import RedactAccessPath
@@ -41,6 +42,7 @@ from app.services.roster_watch import drain_roster_queue, enroll_prospect_compan
 from app.services.roster_email import drain_roster_emails, drain_roster_verification
 from app.services.roster_adjudicate import drain_roster_adjudication
 from app.services.catalog_builder import builder_tick
+from app.services.scheduler_lease import keep_lease, leader_only
 
 # CORS: use CORS_ORIGINS env (comma-separated) when going public; default localhost for dev
 _default_origins = [
@@ -56,9 +58,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     await recover_interrupted_yucgoutreach_runs()
     await enroll_prospect_companies()
+    # A deploy overlaps the old and new containers; only the lease holder runs jobs.
+    lease_stop = asyncio.Event()
+    lease_task = asyncio.create_task(keep_lease(lease_stop))
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
-        drain_queued_yucgoutreach_runs,
+        leader_only(drain_queued_yucgoutreach_runs),
         "interval",
         seconds=10,
         id="company_discovery_queue",
@@ -69,7 +74,7 @@ async def lifespan(app: FastAPI):
     # most one company, and only when no builder run is open and the club is
     # under the builder's share of search and AI budgets.
     scheduler.add_job(
-        builder_tick,
+        leader_only(builder_tick),
         "interval",
         seconds=60,
         id="catalog_builder",
@@ -79,7 +84,7 @@ async def lifespan(app: FastAPI):
     # Bulk register ingest: one step per pass (ticker list, then a Form D
     # quarter, then sector backfill), so no pass is long or bursty at SEC.
     scheduler.add_job(
-        drain_company_register,
+        leader_only(drain_company_register),
         "interval",
         minutes=int(os.getenv("REGISTER_INGEST_MINUTES", "20") or 20),
         id="company_register_ingest",
@@ -87,7 +92,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        drain_roster_queue,
+        leader_only(drain_roster_queue),
         "interval",
         seconds=60,
         id="company_roster_watch",
@@ -95,7 +100,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        drain_roster_emails,
+        leader_only(drain_roster_emails),
         "interval",
         seconds=300,
         id="company_roster_emails",
@@ -103,7 +108,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        drain_roster_adjudication,
+        leader_only(drain_roster_adjudication),
         "interval",
         minutes=20,
         id="company_roster_adjudicate",
@@ -111,7 +116,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        drain_roster_verification,
+        leader_only(drain_roster_verification),
         "cron",
         hour=7,
         minute=30,
@@ -124,9 +129,11 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         yield
         scheduler.shutdown(wait=False)
+        lease_stop.set()
+        await lease_task
         return
     scheduler.add_job(
-        run_follow_up_sequences,
+        leader_only(run_follow_up_sequences),
         "cron",
         hour=8,
         minute=0,
@@ -135,7 +142,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        run_notification_digests,
+        leader_only(run_notification_digests),
         "cron",
         hour=8,
         minute=5,
@@ -144,7 +151,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        sync_replies_all_senders,
+        leader_only(sync_replies_all_senders),
         "cron",
         minute="*/2",
         id="gmail_reply_sync",
@@ -152,7 +159,7 @@ async def lifespan(app: FastAPI):
         coalesce=True,
     )
     scheduler.add_job(
-        drain_releasing_campaigns,
+        leader_only(drain_releasing_campaigns),
         "cron",
         minute="*/5",
         id="campaign_drain",
@@ -162,6 +169,8 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)
+    lease_stop.set()
+    await lease_task
 
 
 app = FastAPI(
