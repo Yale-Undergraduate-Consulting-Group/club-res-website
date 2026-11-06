@@ -68,7 +68,7 @@ configure:
 - the `app_mention` bot event and the `message.im` event.
 
 The existing OAuth `chat:write` scope covers both `chat.postMessage` and
-`chat.postEphemeral`; no additional scope is required. Channel mentions receive
+`chat.postEphemeral`. Channel mentions receive
 an ephemeral threaded answer visible only to the asker. Direct messages receive
 a normal DM. Free-form `/yucg` calls acknowledge immediately and replace their
 ephemeral acknowledgement through Slack's provided response URL when ready.
@@ -76,6 +76,68 @@ ephemeral acknowledgement through Slack's provided response URL when ready.
 The backend also needs its normal Bedrock model configuration and AI budget
 settings. Busy, exhausted-budget, and unavailable-model errors are shown as
 short Slack messages rather than provider details.
+
+#### Choosing the model
+
+Start a message with `opus:` (most capable), `sonnet:`, or `haiku:` (fastest) to
+pick the model for that one question; the prefix is removed before the question
+is sent, for example `@YUCG opus: compare our A24 and NEON outreach`. Without a
+prefix the assistant uses the default model. A prefixed message always goes to
+the model, never to the built-in shortcuts.
+
+#### Follow-up questions (thread memory)
+
+Replies in the same Slack thread, or in the same DM conversation, continue the
+conversation. `/yucg` commands are always single-turn.
+
+- What is stored: only the member's question and the assistant's final answer
+  text, in the `slack_conversation_turns` table of the club database. Tool
+  results, club documents, and Slack message text the assistant read are never
+  stored.
+- Who can see it: each conversation is keyed by channel, thread, and the asking
+  member, so another member in the same thread never receives your earlier
+  turns. In a DM without a Slack thread there is one rolling conversation per
+  member.
+- Retention: the last 8 turns and about 12,000 characters per conversation.
+  A conversation with no new turn for 24 hours is deleted, and expired
+  conversations are pruned whenever any new turn is written. Deletion is from
+  the live SQLite file only; backups and snapshots of the volume may keep a copy
+  until they age out.
+
+#### What the assistant can read in Slack
+
+Besides club data, the assistant can read Slack, read-only, to answer questions
+such as "summarize this thread" or "what did we decide in #channel last week?":
+
+- **The current thread**, or in a DM the recent DM conversation with the bot.
+- **Recent history of a named channel**, but only if the asking member is a
+  member of that channel and the bot can read it (it must be in the channel).
+  Otherwise the assistant answers as though the channel does not exist. The
+  window is at most the last 30 days and 200 messages, with long messages and
+  older messages dropped to fit. Replies inside threads are not part of channel
+  history; ask from the thread for those.
+- Another member's DMs are never readable. User IDs are replaced with display
+  names. Slack text is treated as data, never as instructions.
+
+Slack message text read this way is sent to Bedrock to write the answer, like club
+data, and is not stored by the club app (see retention above for what is).
+
+#### Bot scopes and reinstalling
+
+"Connect Slack" requests these scopes (`SLACK_SCOPES` in
+`backend/app/routers/auth.py`):
+
+`chat:write`, `im:write`, `im:history`, `im:read`, `app_mentions:read`,
+`users:read`, `users:read.email`, `team:read`,
+**`channels:history`**, **`groups:history`**, **`channels:read`**, **`groups:read`**
+
+The last four (bold) are new for reading Slack. `im:history` was already
+present. After deploying this change, add those four under **OAuth &
+Permissions → Bot Token Scopes** in the Slack app, then **Reinstall to
+Workspace**. Each member who connected before must press **Connect Slack** again
+so the stored token carries the new scopes. Until then the Slack-reading tools
+answer "not found" and everything else keeps working. Invite the bot to a channel
+(`/invite @YUCG`) before asking it to read that channel.
 
 ---
 

@@ -483,7 +483,8 @@ async def update_my_profile(payload: ProfileUpdate, user: dict = Depends(get_cur
 # member can talk to rather than a slash command they must remember.
 SLACK_SCOPES = (
     "chat:write,im:write,im:history,im:read,app_mentions:read,"
-    "users:read,users:read.email,team:read"
+    "users:read,users:read.email,team:read,"
+    "channels:history,groups:history,channels:read,groups:read"
 )
 SLACK_STATE_TTL = 600
 
