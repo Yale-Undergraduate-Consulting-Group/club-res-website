@@ -554,6 +554,23 @@ async def init_db():
             );
         """)
         await db.commit()
+        # Thread memory for the Slack assistant: only the member's question and
+        # the assistant's final answer, per (channel, thread, member), pruned
+        # to 8 turns / ~12,000 characters and deleted after 24 hours idle.
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS slack_conversation_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL,
+                thread_key TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_slack_turns_conversation
+                ON slack_conversation_turns(channel, thread_key, user_id, id);
+        """)
+        await db.commit()
         for statement in (
             "ALTER TABLE user_slack_tokens ADD COLUMN refresh_token TEXT",
             "ALTER TABLE user_slack_tokens ADD COLUMN token_expires_at REAL",
