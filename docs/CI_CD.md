@@ -6,7 +6,7 @@
 
 Contributor work starts as a localhost-compatible application. The first merge needs no Terraform or AWS compatibility. Later gates require the AWS deployment contract, then production UI coverage and deployment evidence.
 
-This repository also holds the YUCG Outreach application (`backend/`, `frontend/`, `docker/`), merged from the former `client-affairs-tools` repository, and the box scripts in `ops/`. Its runtime is one container on one EC2 instance per environment with SQLite on an encrypted volume, shipped by the same gates as the static site. **Dev is private**: no public URL, reached only through an SSM port-forward, and it may hold real client data when a feature needs it, but it never sends mail. **Prod** is the only environment with a public edge and live sending. Section 14 describes the runtime and its confidentiality limits.
+This repository also holds the YUCG Outreach application (`backend/`, `frontend/`, `docker/`), merged from the former `client-affairs-tools` repository, and the box scripts in `ops/`. Its runtime is one serving container (deployed blue/green behind host nginx) on one EC2 instance per environment with SQLite on an encrypted volume, shipped by the same gates as the static site. **Dev is private**: no public URL, reached only through an SSM port-forward, and it may hold real client data when a feature needs it, but it never sends mail. **Prod** is the only environment with a public edge and live sending. Section 14 describes the runtime and its confidentiality limits.
 
 | Status | Meaning in this document |
 |---|---|
@@ -267,7 +267,7 @@ When a `backend/`, `docker/`, or `ops/` path changes, the ship job deploys the c
 
 1. Verify the image artifact's SHA256, then push it to the environment's ECR repository as `<sha>-<run id>` (tags are immutable).
 2. Run `ops/check_deployment.py`: the instance selected by tag `Site=club-res-website-<env>` must equal `BOX_INSTANCE_ID`, require IMDSv2, have no `0.0.0.0/0` ingress, and have only encrypted volumes.
-3. Send `ops/restart-yucg.sh` to that instance with `ssm:SendCommand` (`AWS-RunShellScript`), by image digest. The script takes an online SQLite backup, regenerates `/etc/yucg/app.env` from Secrets Manager and `/etc/yucg/config.json`, starts the container, checks `/api/health` on the box, and restarts the previous digest if the check fails.
+3. Send `ops/restart-yucg.sh` to that instance with `ssm:SendCommand` (`AWS-RunShellScript`), by image digest. The script takes an online SQLite backup and regenerates `/etc/yucg/app.env` from Secrets Manager and `/etc/yucg/config.json`. It then deploys blue/green on the box: the new image starts in the idle slot (`yucg-blue` on 127.0.0.1:8001 or `yucg-green` on 8002, recorded in `/etc/yucg/active-slot`), must pass `/api/health` and a database check, and only then does host nginx (the box's listener, :80 on the edge or 127.0.0.1:8000 in dev) reload to it, letting in-flight requests finish on the old container before that one stops. A release that fails before the switch is discarded and the serving container is never stopped; one that fails through the listener is switched back. Both containers share `/data` for the overlap; only the scheduler-lease holder runs background jobs, so a schema change must stay compatible with the previous release. The first blue/green deploy on a box stops the former single `yucg` container before nginx can bind, a one-time gap of seconds.
 4. Prod only: publish `frontend/dist` to S3, invalidate CloudFront, compare the live index, and require `{"status":"ok"}` from `SITE_URL/api/health`.
 
 Dev has no CloudFront: it skips step 4 and relies on the on-box health check. Shipping the image and the pages are separate steps, so a failure between them can leave new pages talking to the previous API version. Keep API changes backward compatible for one release.
@@ -535,7 +535,7 @@ This recovery diagram is an operator procedure, not an automated rollback workfl
 | AWS static export or Terraform check fails | Integration does not advance to dev | Add compatibility changes through Intake |
 | Review/hold/current-base rule blocks | No eligible promotion | Resolve the brake; synchronize source with destination; rerun checks |
 | AWS variable missing | Deployment fails before AWS calls | Configure the exact environment |
-| Backend runtime changed | Ship fails if the image push, SSM command, or box health check fails; the box restarts the previous image digest | Read the SSM command output, fix forward on a `feature/<user>` branch, and redeploy |
+| Backend runtime changed | Ship fails if the image push, SSM command, or the new container's health check fails; the serving container keeps running and is not touched | Read the SSM command output, fix forward on a `feature/<user>` branch, and redeploy |
 | Upload or invalidation fails | Publication may be partial | Inspect S3 and CloudFront before retry or restoration |
 | Index differs | Deployment fails despite HTTP availability | Inspect caching and content; do not record a successful release |
 | Dev deployment evidence missing | Production promotion stops | Deploy that exact dev commit or prove the complete diff is documentation-only |
@@ -628,7 +628,7 @@ After installing a ruleset, check that its bypass list shows **Repository admin*
 | Bedrock/model integration | Models are chosen by use: Haiku for ranking, Sonnet for writing and Slack, Opus on request (`backend/app/services/llm.py`), charged to one monthly club budget. Each tier falls back to its 4.x model while AWS has not enabled the 5.5 model. The six-model box role is applied in dev and prod (2026-11-06). At about 09:55 UTC on 2026-11-06 Haiku 4.5, Sonnet 4.6 and Opus 4.6 answered from the prod box; by 16:30 UTC every Bedrock model, from every provider and every role in the account, returned `ValidationException: Error 002: Access to Bedrock models is not allowed for this account`, and model features are unavailable. Restoration is requested in case `179398462200009`; 5.5 access in case `179393410200701` |
 | Legacy data migration | Done 2026-11-06: the legacy app in account `442429446212` was stopped (its container no longer restarts; the box and volumes are kept for rollback), its database copied with a verified SHA-256 and integrity check into prod, and `prospects/current.xlsx` copied to the prod catalog bucket. Row counts matched. The prod secret carries the legacy `JWT_SECRET`, so stored Gmail and Slack tokens remain readable |
 | Custom domain | Planned extension only; requires DNS and ACM configuration |
-| Automated rollback and continuous monitoring | Image rollback on a failed health check only; no uptime alarm or synthetic monitor |
+| Automated rollback and continuous monitoring | Blue/green deploys keep the serving container until the new one is healthy; no uptime alarm or synthetic monitor |
 
 Do not interpret these gaps as permission to send confidential data through the public site.
 
