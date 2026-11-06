@@ -98,11 +98,11 @@ Read [terraform/](terraform/) and [docs/CI_CD.md](docs/CI_CD.md) together before
 - Treat Terraform's IAM-policy editing capability as privileged, not as a harmless update-only sandbox.
 - Budget alerts notify; they do not impose a hard spending cap.
 
-The defined runtime, per environment, is one EC2 instance running one container (FastAPI API plus the Vite SPA) with SQLite on an encrypted EBS volume. Prod adds CloudFront, WAF, a VPC origin, and a private S3 bucket for the public pages. Dev has no public URL and is reached only through an SSM port-forward.
+The defined runtime, per environment, is one EC2 instance serving one app container (FastAPI API plus the Vite SPA) behind host nginx, with SQLite on an encrypted EBS volume. A deploy is blue/green on that box: the new container starts beside the old one, takes traffic after its health check, and the old one stops. Prod adds CloudFront, WAF, a VPC origin, and a private S3 bucket for the public pages. Dev has no public URL and is reached only through an SSM port-forward.
 
 - Node builds the frontend in CI; Python serves `/api` on the box.
 - The SQLite file is the shared club warehouse: one member's write is visible to every member. Browser `localStorage` is not shared truth.
-- Keep one writer process. Do not add a second app instance, or a Lambda behind API Gateway (long Find requests exceed its limit), without a reviewed design. Aurora or RDS as the default database costs more than this instance.
+- Keep one serving app instance per box. During a deploy's overlap both containers share the database through SQLite WAL, and only the holder of the scheduler lease (`backend/app/services/scheduler_lease.py`) runs background jobs; register every new scheduled job through `leader_only`, and keep schema changes compatible with the previous release for that overlap. Do not add a second box, or a Lambda behind API Gateway (long Find requests exceed its limit), without a reviewed design. Aurora or RDS as the default database costs more than this instance.
 - Stopping the instance keeps the volume; scheduled mail jobs run only while it is running.
 - Hosted AI is Bedrock through `backend/app/services/llm.py`; the model and per-member and per-club call limits are environment configuration.
 - Add a domain, data store, or model integration only for an explicit requirement and a reviewed design.
