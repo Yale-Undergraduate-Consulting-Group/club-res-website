@@ -16,8 +16,8 @@ keeps or imports them, and every member sees them on the Find page.
 
 It spends shared allowances, so it only takes a new company while the club
 is under BUILDER_MAX_SEARCHES_PER_HOUR / _PER_DAY real upstream searches and
-under BUILDER_MAX_AI_SHARE of the hourly Bedrock budget, which every model
-call (the builder's runs included) reserves through generation_policy.
+under BUILDER_MAX_AI_SHARE of this month's AI budget, which every model
+call (the builder's runs included) is charged to through generation_policy.
 """
 from __future__ import annotations
 
@@ -95,13 +95,13 @@ async def ensure_system_user(db) -> int:
 
 
 async def _usage() -> dict[str, float]:
-    from app.services.generation_policy import bedrock_hour_share
+    from app.services.generation_policy import bedrock_budget_share
     from app.services.web_fetch import search_usage_last_hour
 
     return {
         "searches_last_hour": await search_usage_last_hour(),
         "searches_last_day": await search_usage_last_hour(86400),
-        "ai_share": await bedrock_hour_share(),
+        "ai_share": await bedrock_budget_share(),
     }
 
 
@@ -113,7 +113,7 @@ def _pause_reason(usage: dict[str, float], limits: dict[str, float]) -> str | No
         return (f"Daily search budget: {int(usage['searches_last_day'])} of {int(limits['searches_per_day'])}"
                 " club searches used in the last 24 hours")
     if usage["ai_share"] > limits["ai_share"]:
-        return (f"AI budget: {round(usage['ai_share'] * 100)}% of the club's hourly Bedrock allowance in use"
+        return (f"AI budget: {round(usage['ai_share'] * 100)}% of the club's monthly AI budget used"
                 f" (builder yields above {round(limits['ai_share'] * 100)}%)")
     return None
 

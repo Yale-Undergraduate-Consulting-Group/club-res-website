@@ -128,10 +128,9 @@ def generate_email(
     try:
         from app.services.llm import complete_json
 
-        # One repair pass inside the same reservation. A near-miss (an ask
-        # the checker cannot see, a list of four) used to cost the member a
-        # draft from their hourly allowance and produce nothing; the model is
-        # told exactly which rule it broke and rewrites once.
+        # One repair pass. A near-miss (an ask the checker cannot see, a list
+        # of four) used to produce nothing; the model is told exactly which
+        # rule it broke and rewrites once.
         data = complete_json(prompt, model_id=model, system=EMAIL_SYSTEM_PROMPT)
         try:
             return validate_draft(data, brief, length, angle=angle)

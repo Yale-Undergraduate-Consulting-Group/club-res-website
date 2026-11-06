@@ -88,7 +88,7 @@ async def queue_member_run(user_id: int, company: str) -> int:
 async def run() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATABASE_URL"] = "sqlite:///" + tmp + "/builder.db"
-        os.environ["BEDROCK_CALLS_PER_CLUB_PER_HOUR"] = "200"
+        os.environ["AI_MONTHLY_BUDGET_USD"] = "50"
         await init_db()
         await execute(
             "INSERT INTO users(id, email, role, is_active) VALUES "
@@ -114,15 +114,15 @@ async def run() -> None:
         await set_builder_enabled(True)
 
         # Over the builder's share of searches (hour, then day) or of the
-        # club's Bedrock hour: paused, nothing queued.
+        # club's monthly AI budget: paused, nothing queued.
         paused = await tick(hour=250)
         assert paused["action"] == "paused" and "last hour" in paused["reason"], paused
         paused = await tick(day=6000)
         assert paused["action"] == "paused" and "24 hours" in paused["reason"], paused
         db = await get_db()
-        await db.executemany(
-            "INSERT INTO usage_events(event_type, resource_type, details_json) VALUES ('bedrock_reserved', 'inference', '{}')",
-            [()] * 101,
+        # 26 of the 50 USD monthly budget spent: above the builder's 50% share.
+        await db.execute(
+            "INSERT INTO usage_events(event_type, resource_type, details_json) VALUES ('bedrock_reserved', 'inference', '{\"cost_usd\": 26}')"
         )
         await db.commit()
         await db.close()

@@ -269,14 +269,14 @@ def slot_wait() -> None:
         try:
             started = time.monotonic()
             try:
-                llm._bedrock_text("brief", llm.default_model_id(), None)
+                llm.complete_text("brief", llm.default_model_id())
                 raise AssertionError("ran without a slot")
             except HTTPException as exc:
                 assert exc.status_code == 429
             assert time.monotonic() - started >= 0.25, "gave up without waiting"
             # A slot that frees during the wait is taken.
             threading.Timer(0.1, llm._inference_slots.release).start()
-            assert llm._bedrock_text("brief", llm.default_model_id(), None) == "ok"
+            assert llm.complete_text("brief", llm.default_model_id()) == "ok"
         finally:
             for _ in range(llm.INFERENCE_SLOTS - 1):
                 llm._inference_slots.release()

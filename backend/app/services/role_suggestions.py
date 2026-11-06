@@ -253,7 +253,7 @@ _EMPTY_CACHE_TTL_S = 3600
 # the key would only turn identical searches into cache misses. Results are
 # public web data, so members share entries; each fetch is charged to the
 # member who made it. The equivalence mapping is stored the same way under
-# a "map:" term key, so a repeated question costs no assistant allowance.
+# a "map:" term key, so a repeated question costs no model call.
 
 
 async def _cache_get(company_key: str, term_key: str) -> Any | None:
@@ -452,7 +452,7 @@ async def map_equivalents(company: str, hints: str | None, observed: list[dict[s
     role at this company. Constrained to observed titles; anything else in
     the reply is dropped so the model cannot introduce a title nobody holds.
     The reply is shared for a day; only a fresh model call is charged to the
-    member's assistant allowance."""
+    club's AI budget."""
     asked = _parse_hints(hints)
     if not asked or not observed:
         return []
@@ -460,11 +460,8 @@ async def map_equivalents(company: str, hints: str | None, observed: list[dict[s
     company_key, term_key = _key(company), "map:" + "|".join(_key(a) for a in asked)
     rows = await _cache_get(company_key, term_key)
     if rows is None:
-        from app.services.generation_policy import reserve_assistant_request
         from app.services.llm import complete_json, rank_model_id
 
-        if user_id is not None:
-            await reserve_assistant_request(user_id)
         prompt = (
             f"Company: {company}\n"
             f"Titles actually observed at this company (choose ONLY from these, verbatim):\n"

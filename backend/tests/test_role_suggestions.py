@@ -368,8 +368,8 @@ def few_titles_top_up_by_band_within_the_page_budget() -> None:
 
 def stored_answers_survive_a_restart_and_expire() -> None:
     """A second load of the same company - after a restart, by any member -
-    makes no web search and reserves no allowance; once a row passes its
-    TTL the next load refreshes it."""
+    makes no web search and no model call; once a row passes its TTL the
+    next load refreshes it."""
     searches: list[str] = []
     prompts: list[str] = []
 
@@ -399,7 +399,8 @@ def stored_answers_survive_a_restart_and_expire() -> None:
     first = load()
     assert searches == ['Amazon ad sales site:linkedin.com/in',
                         'Amazon leadership director manager lead site:linkedin.com/in'], searches
-    assert len(prompts) == 1 and reservations() == 1
+    assert len(prompts) == 1
+    charged = reservations()
     assert first['equivalents'][0]['at_company'] == ['Head of Retail Media 1']
 
     # Restart: drop every app module so no process memory survives.
@@ -409,7 +410,7 @@ def stored_answers_survive_a_restart_and_expire() -> None:
     prompts.clear()
     second = load()
     assert searches == [] and prompts == [], (searches, prompts)
-    assert reservations() == 1  # no search slot, no assistant request
+    assert reservations() == charged  # nothing new charged
     assert second['roles'] == first['roles'] and second['equivalents'] == first['equivalents']
 
     # Past the day TTL: the next load asks again.
