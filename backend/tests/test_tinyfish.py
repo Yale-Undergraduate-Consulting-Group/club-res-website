@@ -24,6 +24,9 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault('JWT_SECRET', 'tinyfish-adapter-secret-xxxxxxxxxxxxxxxx')
+# These cases repeat queries against different mock answers; the shared
+# search cache is pinned in test_search_layer.py, so it is off here.
+os.environ['WEB_SEARCH_CACHE_TTL_HOURS'] = '0'
 
 
 def tests() -> None:

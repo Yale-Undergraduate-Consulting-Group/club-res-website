@@ -36,7 +36,8 @@ from app.services import roster_watch as R  # noqa: E402
 from app.services import yucgoutreach_discovery as D  # noqa: E402
 from app.services.web_contact_discovery import (  # noqa: E402
     _names_the_company,
-    _title_names_another_employer,
+    current_employer,
+    employer_is_target,
 )
 
 META = "Meta Platforms, Inc."
@@ -51,11 +52,11 @@ TICKERS = {
 def brand_matching() -> None:
     # The brand, not the legal name: people write "at Meta".
     assert _names_the_company("Engineering Manager at Meta", META, None)
-    assert not _title_names_another_employer("Engineering Manager at Meta", META, None)
+    assert employer_is_target(current_employer("Engineering Manager at Meta"), [META], [], None)[0]
     # Whole words: "meta" inside "Metadata" is not the company, by name or by domain.
     assert not _names_the_company("Metadata Engineer", "Meta", None)
     assert not _names_the_company("Metadata Engineer", "Meta", "meta.com")
-    assert _title_names_another_employer("Engineer at Metadata Labs", META, "meta.com")
+    assert not employer_is_target(current_employer("Engineer at Metadata Labs"), [META], [], "meta.com")[0]
     # Accepted over-match, on purpose (see text_names_brand): a one-word brand
     # matches any page using the word. Other gates still decide the lead.
     assert _names_the_company("Apple Bank for Savings", "Apple Inc.", None)

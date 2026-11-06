@@ -11,6 +11,13 @@ from app.services.llm import validate_model
 # permit tens of thousands of calls an hour. Bound raw volume at this multiple
 # of the unit budget to keep a runaway loop from hammering the provider.
 _CALL_CEILING_MULTIPLE = 10
+# What the club has reserved in the rolling hour: (weighted units, calls).
+# Reservations written before weighting existed count as one unit.
+_BEDROCK_HOUR_SQL = """SELECT
+        COALESCE(SUM(COALESCE(json_extract(details_json,'$.quota_weight'),1.0)),0.0),
+        COUNT(*)
+    FROM usage_events WHERE event_type='bedrock_reserved'
+    AND created_at >= datetime('now','-1 hour')"""
 
 
 def reserve_bedrock_invocation(
@@ -49,12 +56,7 @@ def reserve_bedrock_invocation(
         with closing(sqlite3.connect(uri,uri=True,timeout=5,isolation_level=None)) as db:
             try:
                 db.execute('BEGIN IMMEDIATE')
-                # Reservations written before weighting existed count as one unit.
-                spent,calls=db.execute("""SELECT
-                        COALESCE(SUM(COALESCE(json_extract(details_json,'$.quota_weight'),1.0)),0.0),
-                        COUNT(*)
-                    FROM usage_events WHERE event_type='bedrock_reserved'
-                    AND created_at >= datetime('now','-1 hour')""").fetchone()
+                spent,calls=db.execute(_BEDROCK_HOUR_SQL).fetchone()
                 if float(spent)+weight > limit:
                     raise HTTPException(429,'Club inference limit reached. Please try again later.')
                 if int(calls) >= call_ceiling:
@@ -93,6 +95,19 @@ def complete_bedrock_invocation(event_id: int, input_tokens: int | None, output_
     except (sqlite3.Error,ValueError,TypeError):
         # Accounting enrichment must never turn a completed model response into a retry.
         return
+
+
+async def bedrock_hour_share() -> float:
+    """How much of the club's hourly Bedrock budget is already reserved, as a
+    fraction of BEDROCK_CALLS_PER_CLUB_PER_HOUR. The catalog builder stops
+    taking new companies above its share so Studio is never starved."""
+    limit = int(os.getenv('BEDROCK_CALLS_PER_CLUB_PER_HOUR', '200') or 200)
+    db = await get_db()
+    try:
+        row = await (await db.execute(_BEDROCK_HOUR_SQL)).fetchone()
+    finally:
+        await db.close()
+    return float(row[0] or 0.0) / limit if limit > 0 else 1.0
 
 
 async def reserve_generation(user_id: int, model: str | None):

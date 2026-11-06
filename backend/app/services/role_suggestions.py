@@ -20,7 +20,6 @@ import asyncio
 import json
 import logging
 import re
-import time
 from collections import Counter
 from typing import Any
 
@@ -247,15 +246,47 @@ _CACHE_TTL_S = 24 * 3600
 # An empty answer is remembered for less time: it can be a transient
 # upstream failure (Firecrawl returns [] on error), not a real "nobody".
 _EMPTY_CACHE_TTL_S = 3600
-# (company key, query term key) -> (expires at, [(url, title, source)]).
+# Remembered in role_search_cache, one row per (company key, term key), so a
+# restart or another member asking about the same company spends nothing.
 # Keyed on the company name and the term only: the domain never enters the
 # query text, so it cannot change what the search returns - adding it to
 # the key would only turn identical searches into cache misses. Results are
 # public web data, so members share entries; each fetch is charged to the
-# member who made it.
-# ponytail: per-process memory, lost on restart and not shared between
-# workers; move to a table if the app runs several workers.
-_search_cache: dict[tuple[str, str], tuple[float, list[tuple[str, str, str]]]] = {}
+# member who made it. The equivalence mapping is stored the same way under
+# a "map:" term key, so a repeated question costs no assistant allowance.
+
+
+async def _cache_get(company_key: str, term_key: str) -> Any | None:
+    db = await get_db()
+    try:
+        row = await (await db.execute(
+            """SELECT result_json FROM role_search_cache
+               WHERE company_key = ? AND term_key = ?
+                 AND fetched_at > datetime('now', CASE WHEN result_json = '[]' THEN ? ELSE ? END)""",
+            (company_key, term_key, f"-{_EMPTY_CACHE_TTL_S} seconds", f"-{_CACHE_TTL_S} seconds"),
+        )).fetchone()
+    finally:
+        await db.close()
+    return json.loads(row["result_json"]) if row else None
+
+
+async def _cache_put(company_key: str, term_key: str, value: Any) -> None:
+    db = await get_db()
+    try:
+        # Expired rows are never read again; drop them so free-text hint
+        # terms do not accumulate.
+        await db.execute("DELETE FROM role_search_cache WHERE fetched_at <= datetime('now', ?)",
+                         (f"-{_CACHE_TTL_S} seconds",))
+        await db.execute(
+            """INSERT INTO role_search_cache (company_key, term_key, result_json, fetched_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(company_key, term_key) DO UPDATE
+               SET result_json = excluded.result_json, fetched_at = excluded.fetched_at""",
+            (company_key, term_key, json.dumps(value)),
+        )
+        await db.commit()
+    finally:
+        await db.close()
 
 
 def _page_size() -> int:
@@ -283,17 +314,17 @@ async def _linkedin_titles(company: str, term: str, *, user_id: int | None) -> l
     Raises what web_search raises (quota, transport); the caller decides."""
     from app.services.web_fetch import web_search
 
-    key = (_key(company), _key(term))
-    hit = _search_cache.get(key)
-    if hit and hit[0] > time.monotonic():
-        return hit[1]
+    company_key, term_key = _key(company), _key(term)
+    hit = await _cache_get(company_key, term_key)
+    if hit is not None:
+        return [tuple(r) for r in hit]
     results = await web_search(f"{company} {term} site:linkedin.com/in", max_results=_page_size(), user_id=user_id)
     rows: list[tuple[str, str, str]] = []
     for item in results or []:
         title, src = _title_from_item(item, company)
         if title:
             rows.append((str(item.get("url") or ""), title, src))
-    _search_cache[key] = (time.monotonic() + (_CACHE_TTL_S if rows else _EMPTY_CACHE_TTL_S), rows)
+    await _cache_put(company_key, term_key, rows)
     return rows
 
 
@@ -415,36 +446,47 @@ def _parse_hints(hints: str | None) -> list[str]:
     return seen[:6]
 
 
-async def map_equivalents(company: str, hints: str | None, observed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+async def map_equivalents(company: str, hints: str | None, observed: list[dict[str, Any]],
+                          *, user_id: int | None = None) -> list[dict[str, Any]]:
     """Ask the rank model which observed titles correspond to each asked
     role at this company. Constrained to observed titles; anything else in
-    the reply is dropped so the model cannot introduce a title nobody holds."""
+    the reply is dropped so the model cannot introduce a title nobody holds.
+    The reply is shared for a day; only a fresh model call is charged to the
+    member's assistant allowance."""
     asked = _parse_hints(hints)
     if not asked or not observed:
         return []
-    from app.services.llm import complete_json, rank_model_id
-
     allowed = {_key(o["title"]): o["title"] for o in observed[:40]}
-    prompt = (
-        f"Company: {company}\n"
-        f"Titles actually observed at this company (choose ONLY from these, verbatim):\n"
-        + "\n".join(f"- {t}" for t in allowed.values())
-        + "\n\nA member wants to reach these kinds of people:\n"
-        + "\n".join(f"- {a}" for a in asked)
-        + "\n\nFor each asked role, list the observed titles that are the closest equivalent at this company "
-          "(empty list if none fit), and one short note when the company labels the role differently "
-          "or does not appear to have it. JSON only:\n"
-          '{"equivalents":[{"asked":"","at_company":[""],"note":""}]}'
-    )
-    try:
-        data = await asyncio.to_thread(complete_json, prompt, rank_model_id(),
-                                       "You map job-title vocabulary between companies. Never invent titles.")
-    except Exception as exc:
-        logger.info("role equivalence mapping unavailable: %s", exc)
-        return []
-    rows = (data or {}).get("equivalents") if isinstance(data, dict) else None
-    if not isinstance(rows, list):
-        return []
+    company_key, term_key = _key(company), "map:" + "|".join(_key(a) for a in asked)
+    rows = await _cache_get(company_key, term_key)
+    if rows is None:
+        from app.services.generation_policy import reserve_assistant_request
+        from app.services.llm import complete_json, rank_model_id
+
+        if user_id is not None:
+            await reserve_assistant_request(user_id)
+        prompt = (
+            f"Company: {company}\n"
+            f"Titles actually observed at this company (choose ONLY from these, verbatim):\n"
+            + "\n".join(f"- {t}" for t in allowed.values())
+            + "\n\nA member wants to reach these kinds of people:\n"
+            + "\n".join(f"- {a}" for a in asked)
+            + "\n\nFor each asked role, list the observed titles that are the closest equivalent at this company "
+              "(empty list if none fit), and one short note when the company labels the role differently "
+              "or does not appear to have it. JSON only:\n"
+              '{"equivalents":[{"asked":"","at_company":[""],"note":""}]}'
+        )
+        try:
+            data = await asyncio.to_thread(complete_json, prompt, rank_model_id(),
+                                           "You map job-title vocabulary between companies. Never invent titles.")
+        except Exception as exc:
+            logger.info("role equivalence mapping unavailable: %s", exc)
+            return []
+        rows = (data or {}).get("equivalents") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            return []
+        await _cache_put(company_key, term_key, rows)
+    # Filtered on every read: a stored reply can only name titles observed now.
     out: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -490,7 +532,7 @@ async def suggest_roles(*, user_id: int, company: str, domain: str | None, hints
     # screen: the closest equivalent to a typed role can be a rarer title.
     pool = merge_titles(seen, searched, escalated, limit=None)
     roles = pool[:MAX_CHIPS]
-    equivalents = await map_equivalents(company, hints, pool) if (hints or "").strip() else []
+    equivalents = await map_equivalents(company, hints, pool, user_id=user_id) if (hints or "").strip() else []
     return {
         "company": company,
         "roles": roles,

@@ -35,11 +35,21 @@ function shortDate(value?: string | null): string {
   return Number.isNaN(date.getTime()) ? String(value).slice(0, 10) : date.toISOString().slice(0, 10);
 }
 
+/** Why a finished search stopped short of its target, in plain words. */
+const SHORTFALL_REASON: Record<string, string> = {
+  exhausted: 'that is everyone the sources list for them right now',
+  time_budget: 'the search ran out of time; Find more people carries on',
+  round_cap: 'the search used its rounds for this pass; Find more people carries on',
+  search_failed: 'web search was failing, so this is not everyone; try Find more people again shortly',
+};
+
 export default function RecipientPicker({
-  mode, companies, people, selected, onSelectedChange, found, runs, onFind, onFindEverywhere, onAddFound, busy,
+  mode, companies, focused, people, selected, onSelectedChange, found, runs, onFind, onFindEverywhere, onAddFound, busy,
 }: {
   mode: PickerMode;
   companies: ChosenCompany[];
+  /** The company the sheet's search action is for: the lane last pointed at. */
+  focused: ChosenCompany | null;
   people: Contact[];
   selected: number[];
   onSelectedChange: (ids: number[]) => void;
@@ -122,6 +132,14 @@ export default function RecipientPicker({
   const hiddenWritten = people.filter((p) => p.last_sent_at).length;
   const noAddress = people.filter((p) => !isWritable(p)).length;
   const selectable = mode === 'select';
+  // The sheet's one search action, for the focused company. It used to sit
+  // in every company's group header, small and among the counts, where
+  // members looking at the people a search just brought back missed it.
+  const focusKey = focused ? companyKey(focused.name) : '';
+  const focusRun = focused ? runs[focusKey] : undefined;
+  const focusSearching = focusRun && (focusRun.state === 'searching' || focusRun.state === 'queued');
+  const focusHasPeople = Boolean(focused) && (
+    people.some((p) => companyKey(p.company) === focusKey) || (found[focusKey] || []).length > 0);
 
   const setMany = (ids: number[], on: boolean) => {
     const next = new Set(chosen);
@@ -184,6 +202,20 @@ export default function RecipientPicker({
             </>
           )}
           {busy && <span className="text-xs text-slate-500">Loading…</span>}
+          {focused && mode !== 'review' && (
+            <button
+              type="button"
+              disabled={Boolean(focusSearching)}
+              onClick={() => onFind(focused)}
+              className="ui-button ui-button--primary ui-button--sm ml-auto max-w-full truncate"
+              data-testid="sheet-find"
+              title={focusHasPeople ? `Search ${focused.name} again for people not on file yet` : `Search ${focused.name} for people`}
+            >
+              {focusSearching
+                ? (focusRun?.state === 'queued' ? `Queued: ${focused.name}` : `Searching ${focused.name}…`)
+                : `${focusHasPeople ? 'Find more people' : 'Find people'} at ${focused.name}`}
+            </button>
+          )}
         </div>
       </div>
 
@@ -279,28 +311,15 @@ export default function RecipientPicker({
                   <span className="text-sm font-semibold text-deep-navy">{company.name}</span>
                 )}
               </span>
-              <span className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="text-xs text-slate-500">
                 {mode === 'review'
                   ? `${rows.length} recipient${rows.length === 1 ? '' : 's'}`
                   : `${rows.length} on file · ${writable.filter((p) => chosen.has(p.id)).length} selected${
                     group.found.length ? ` · ${group.found.length} found` : ''}`}
-                {selectable && (
-                  <button
-                    type="button"
-                    disabled={Boolean(searching)}
-                    onClick={() => onFind(company)}
-                    className={`ui-button ui-button--sm ${
-                      rows.length === 0 && group.found.length === 0 ? 'ui-button--primary' : 'ui-button--secondary'}`}
-                    title={`Search ${company.name} again for people not on file yet`}
-                  >
-                    {searching ? (run.state === 'queued' ? 'Queued' : 'Searching…')
-                      : rows.length === 0 && group.found.length === 0 ? 'Find people here' : '+ Find more people'}
-                  </button>
-                )}
               </span>
             </div>
 
-            {selectable && run && run.state !== 'idle' && (
+            {mode !== 'review' && run && run.state !== 'idle' && (
               <div className="border-t border-pale-sky px-3 py-2" role="status">
                 <p className={`text-xs ${run.state === 'failed' ? 'text-amber-900' : 'text-slate-600'}`}>
                   {run.message}
@@ -315,6 +334,13 @@ export default function RecipientPicker({
                   )}
                   {run.state === 'failed' && group.found.length ? ' · what it found so far is below' : ''}
                 </p>
+                {run.state === 'done' && run.shortfall && (
+                  <p className="mt-1 text-xs text-amber-900" data-testid="shortfall">
+                    Only {run.shortfall.found} qualified {run.shortfall.found === 1 ? 'person' : 'people'} found
+                    at {company.name}
+                    {SHORTFALL_REASON[run.shortfall.reason] ? ` — ${SHORTFALL_REASON[run.shortfall.reason]}.` : '.'}
+                  </p>
+                )}
                 {searching && (
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-pale-sky/70"
                        role="progressbar" aria-valuenow={Math.round(run.pct)} aria-valuemin={0} aria-valuemax={100}>
@@ -330,7 +356,7 @@ export default function RecipientPicker({
               {rows.length === 0 && group.found.length === 0 && !searching && mode !== 'review' && (
                 <p className="px-3 py-2 text-sm text-slate-500">
                   {selectable
-                    ? 'Nobody here matches what you are looking at. Search this company, import a list, or widen the filters above.'
+                    ? 'Nobody here matches what you are looking at. Find people for this company from its lane, import a list, or widen the filters above.'
                     : 'Nobody on file here yet.'}
                 </p>
               )}
@@ -416,6 +442,12 @@ export default function RecipientPicker({
                             <span className="text-slate-500"> · {person.title || 'no title'}</span>
                             <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">found</span>
+                              {person.groupUnit && (
+                                <span className="rounded-full bg-pale-sky/60 px-2 py-0.5 text-slate-600" data-testid="group-unit"
+                                      title={`Works at ${person.groupUnit}, part of ${company.name}`}>
+                                  {person.groupUnit}
+                                </span>
+                              )}
                               <span className="truncate">{person.email}</span>
                               {person.skippedReason && (
                                 <span className="text-amber-900">not added: {person.skippedReason}</span>

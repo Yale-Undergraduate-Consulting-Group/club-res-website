@@ -25,10 +25,12 @@ async def enqueue_discovery_run(
     max_prospects: int,
     worker_concurrency: int = 4,
     entity: dict[str, Any] | None = None,
+    origin: str = "member",
 ) -> int:
     """Queue one durable company search for a member, enforcing the same
     per-member (one at a time) and club-wide queue limits as the UI. The
-    caller owns the write transaction and commit."""
+    caller owns the write transaction and commit. ``origin='builder'`` marks
+    a catalog builder run, which the drain takes only when no member waits."""
     cap = max(1, min(int(max_prospects), YUCG_MAX_PROSPECTS))
     active = await (await db.execute(
         "SELECT COUNT(*) AS n FROM yucgoutreach_discovery_runs WHERE user_id = ? AND status IN ('queued','running')",
@@ -55,8 +57,8 @@ async def enqueue_discovery_run(
     cur = await db.execute(
         """INSERT INTO yucgoutreach_discovery_runs (
             user_id, company_name, company_domain,
-            max_prospects, worker_concurrency, status, progress_message, research_json
-        ) VALUES (?, ?, ?, ?, ?, 'queued', 'Queued', ?)""",
+            max_prospects, worker_concurrency, status, progress_message, research_json, origin
+        ) VALUES (?, ?, ?, ?, ?, 'queued', 'Queued', ?, ?)""",
         (
             user_id,
             company_name.strip(),
@@ -64,6 +66,7 @@ async def enqueue_discovery_run(
             cap,
             worker_concurrency,
             research,
+            origin,
         ),
     )
     return int(cur.lastrowid)

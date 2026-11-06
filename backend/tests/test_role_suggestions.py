@@ -1,7 +1,10 @@
 """Company-specific role suggestions: grounded in titles the system has
 observed (SEC roster, prior runs, shared contacts), filled from one
 LinkedIn search when thin, and an equivalence mapping that can only pick
-from observed titles - never invent one.
+from observed titles - never invent one. Searches and mappings are stored
+in role_search_cache, so a restart or another member spends nothing.
+
+From backend/: python tests/test_role_suggestions.py
 """
 import asyncio
 import os
@@ -12,6 +15,38 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault('JWT_SECRET', 'role-suggestions-secret-xxxxxxxxxxxxxxxxx')
+
+
+def _sql(statement: str, params: tuple = ()) -> list:
+    from app.database import get_db
+
+    async def go() -> list:
+        db = await get_db()
+        try:
+            rows = await (await db.execute(statement, params)).fetchall()
+            await db.commit()
+            return rows
+        finally:
+            await db.close()
+
+    return asyncio.run(go())
+
+
+def _clear_cache() -> None:
+    _sql("DELETE FROM role_search_cache")
+
+
+def _in_temp_db(fn) -> None:
+    """Run fn against a fresh database with member 1, after a simulated
+    restart (app modules re-imported, so no process memory survives)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ['DATABASE_URL'] = f'sqlite:///{Path(tmp) / "t.db"}'
+        for mod in [m for m in list(sys.modules) if m.startswith('app.')]:
+            del sys.modules[mod]
+        from app.database import init_db
+        asyncio.run(init_db())
+        _sql("INSERT INTO users (id, email, name, is_active) VALUES (1, 'a@yale.edu', 'A', 1)")
+        fn()
 
 
 def tests() -> None:
@@ -169,7 +204,7 @@ def tests() -> None:
         assert 'Healthcare Go-To-Market Lead' in [r['title'] for r in quiet['roles']]
         # Cold cache: 5 distinct observed titles (< threshold 6) -> one fill
         # search, which lifts it to 7 distinct, so no seniority bands.
-        rs._search_cache.clear()
+        _clear_cache()
         with patch('app.services.web_fetch.web_search', fake_search), \
              patch('app.services.web_fetch.web_search_configured', lambda: True), \
              patch('app.services.llm.complete_json', fake_complete_json):
@@ -188,7 +223,7 @@ def tests() -> None:
         async def quota_search(query, max_results=8, user_id=None):
             raise HTTPException(429, 'Web search limit reached. Please try again later.')
 
-        rs._search_cache.clear()
+        _clear_cache()
         with patch('app.services.web_fetch.web_search', quota_search), \
              patch('app.services.web_fetch.web_search_configured', lambda: True):
             limited = asyncio.run(rs.suggest_roles(user_id=1, company='OpenAI', domain='openai.com', hints=None))
@@ -196,7 +231,7 @@ def tests() -> None:
         assert any(r['title'] == 'Member of Technical Staff' for r in limited['roles'])
 
         # --- quota hit part-way: what the earlier queries found is kept ---
-        rs._search_cache.clear()
+        _clear_cache()
         partial_calls: list[str] = []
 
         async def first_then_quota(query, max_results=8, user_id=None):
@@ -283,7 +318,7 @@ def few_titles_top_up_by_band_within_the_page_budget() -> None:
 
     from app.services import role_suggestions as rs
 
-    rs._search_cache.clear()
+    _clear_cache()
     asked: list[tuple[str, int]] = []
 
     async def no_observations(company, domain=None):
@@ -331,8 +366,69 @@ def few_titles_top_up_by_band_within_the_page_budget() -> None:
     assert [r['title'] for r in again['roles']] == titles
 
 
+def stored_answers_survive_a_restart_and_expire() -> None:
+    """A second load of the same company - after a restart, by any member -
+    makes no web search and reserves no allowance; once a row passes its
+    TTL the next load refreshes it."""
+    searches: list[str] = []
+    prompts: list[str] = []
+
+    async def no_observations(company, domain=None):
+        return []
+
+    async def search(query, max_results=8, user_id=None):
+        searches.append(query)
+        return [{'url': f'https://www.linkedin.com/in/p{i}', 'title': f'P{i} - Head of Retail Media {i} - Amazon'}
+                for i in range(8)]
+
+    def model(prompt, model_id=None, system=None):
+        prompts.append(prompt)
+        return {'equivalents': [{'asked': 'ad sales', 'at_company': ['Head of Retail Media 1'], 'note': ''}]}
+
+    def load():
+        from app.services import role_suggestions as live
+        with patch.object(live, 'observed_titles', no_observations), \
+             patch('app.services.web_fetch.web_search_configured', lambda: True), \
+             patch('app.services.web_fetch.web_search', search), \
+             patch('app.services.llm.complete_json', model):
+            return asyncio.run(live.suggest_roles(user_id=1, company='Amazon', domain='amazon.com', hints='ad sales'))
+
+    def reservations() -> int:
+        return _sql("SELECT count(*) AS n FROM usage_events")[0]['n']
+
+    first = load()
+    assert searches == ['Amazon ad sales site:linkedin.com/in',
+                        'Amazon leadership director manager lead site:linkedin.com/in'], searches
+    assert len(prompts) == 1 and reservations() == 1
+    assert first['equivalents'][0]['at_company'] == ['Head of Retail Media 1']
+
+    # Restart: drop every app module so no process memory survives.
+    for mod in [m for m in list(sys.modules) if m.startswith('app.')]:
+        del sys.modules[mod]
+    searches.clear()
+    prompts.clear()
+    second = load()
+    assert searches == [] and prompts == [], (searches, prompts)
+    assert reservations() == 1  # no search slot, no assistant request
+    assert second['roles'] == first['roles'] and second['equivalents'] == first['equivalents']
+
+    # Past the day TTL: the next load asks again.
+    _sql("UPDATE role_search_cache SET fetched_at = datetime('now', '-25 hours')")
+    load()
+    assert len(searches) == 2 and len(prompts) == 1, (searches, prompts)
+
+    # An empty answer lives an hour, a non-empty one a day.
+    from app.services import role_suggestions as live
+    asyncio.run(live._cache_put('acme', 'vp', []))
+    asyncio.run(live._cache_put('acme', 'head of', [['u', 'Head of X', 'search']]))
+    _sql("UPDATE role_search_cache SET fetched_at = datetime('now', '-2 hours') WHERE company_key = 'acme'")
+    assert asyncio.run(live._cache_get('acme', 'vp')) is None
+    assert asyncio.run(live._cache_get('acme', 'head of')) == [['u', 'Head of X', 'search']]
+
+
 if __name__ == '__main__':
     tests()
-    unknown_company_escalates_within_linkedin_not_to_its_website()
-    few_titles_top_up_by_band_within_the_page_budget()
+    _in_temp_db(unknown_company_escalates_within_linkedin_not_to_its_website)
+    _in_temp_db(few_titles_top_up_by_band_within_the_page_budget)
+    _in_temp_db(stored_answers_survive_a_restart_and_expire)
     print('role suggestions: ok')

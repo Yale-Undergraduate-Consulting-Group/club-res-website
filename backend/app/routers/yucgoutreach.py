@@ -7,9 +7,9 @@ import asyncio
 import logging
 import os
 from hmac import compare_digest
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -32,7 +32,7 @@ class YucgOutreachRunCreate(BaseModel):
     # input: enqueue_discovery_run cuts it to the contract and sizes, and the
     # run only uses it to narrow who it keeps and which domain it tries.
     entity: dict[str, Any] | None = None
-    max_prospects: int = Field(250, ge=1, le=800)
+    max_prospects: int = Field(60, ge=1, le=800)  # target count of qualified people, not just a cap
     worker_concurrency: int = Field(4, ge=1, le=16)
 
 
@@ -52,14 +52,18 @@ def _run_to_dict(row: dict) -> dict:
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
         "completed_at": row.get("completed_at"),
+        "origin": row.get("origin") or "member",
     }
 
 
-async def _get_run_for_user(run_id: int, user_id: int) -> dict | None:
+async def _get_run_for_user(run_id: int, user_id: int, *, shared: bool = False) -> dict | None:
+    """The member's own run. ``shared`` also admits catalog builder runs,
+    which every member may read and keep people from, but never delete."""
     db = await get_db()
     try:
         cur = await db.execute(
-            "SELECT * FROM yucgoutreach_discovery_runs WHERE id = ? AND user_id = ?",
+            "SELECT * FROM yucgoutreach_discovery_runs WHERE id = ? AND "
+            + ("(user_id = ? OR origin = 'builder')" if shared else "user_id = ?"),
             (run_id, user_id),
         )
         row = await cur.fetchone()
@@ -105,8 +109,16 @@ async def _kick_discovery_drain() -> None:
 
 
 @router.get("/runs")
-async def list_runs(user: dict = Depends(get_current_user), limit: int = 50):
+async def list_runs(
+    user: dict = Depends(get_current_user),
+    limit: int = 50,
+    companies: list[str] = Query(default=[]),
+):
+    """The member's own runs, newest first, plus - for each of ``companies``
+    the page has open - the newest finished catalog builder run that found
+    anyone, so what the builder found shows for every member."""
     limit = max(1, min(limit, 200))
+    keys = sorted({c.strip().lower() for c in companies if c and c.strip()})[:50]
     db = await get_db()
     try:
         cur = await db.execute(
@@ -114,8 +126,23 @@ async def list_runs(user: dict = Depends(get_current_user), limit: int = 50):
             ORDER BY id DESC LIMIT ?""",
             (user["id"], limit),
         )
-        rows = await cur.fetchall()
-        return [_run_to_dict(row_to_dict(r)) for r in rows]
+        runs = [_run_to_dict(row_to_dict(r)) for r in await cur.fetchall()]
+        if keys:
+            marks = ",".join("?" * len(keys))
+            cur = await db.execute(
+                f"""SELECT * FROM yucgoutreach_discovery_runs
+                    WHERE origin = 'builder' AND status = 'completed' AND prospects_count > 0
+                      AND lower(trim(company_name)) IN ({marks})
+                    ORDER BY id DESC""",
+                tuple(keys),
+            )
+            seen: set[str] = set()
+            for r in await cur.fetchall():
+                key = (r["company_name"] or "").strip().lower()
+                if key not in seen:
+                    seen.add(key)
+                    runs.append(_run_to_dict(row_to_dict(r)))
+        return runs
     finally:
         await db.close()
 
@@ -129,13 +156,11 @@ async def role_suggestions(
 ):
     """Roles observed at this company (prior runs, SEC roster, shared
     contacts, one LinkedIn search) and, when hints are given, the company's
-    equivalents for the roles the member asked for."""
-    from app.services.generation_policy import reserve_assistant_request
+    equivalents for the roles the member asked for. The equivalence mapping
+    charges the assistant allowance only when it calls the model (not on a
+    cached answer); see role_suggestions.map_equivalents."""
     from app.services.role_suggestions import suggest_roles
 
-    if (hints or "").strip():
-        # The equivalence mapping is a model call; use the advisory allowance.
-        await reserve_assistant_request(user["id"])
     return await suggest_roles(user_id=user["id"], company=company, domain=domain, hints=hints)
 
 
@@ -173,15 +198,18 @@ async def browse_register(
     with_officers: bool = False,
     limit: int = 50,
     offset: int = 0,
+    sort: Literal["value", "recent"] = "value",
     user: dict = Depends(get_current_user),
 ):
     """Browse the bulk company register (SEC listed, SEC Form D filers,
-    Companies House) that Find people and the recommender draw from."""
+    Companies House) that Find people and the recommender draw from.
+    Without a query, `sort=value` puts the companies worth reaching first;
+    `sort=recent` is the newest-filing feed."""
     from app.services.company_register import search_register
 
     return await search_register(
         q=q, tier=tier, country=country, sector=sector, min_amount=min_amount,
-        with_officers=with_officers, limit=limit, offset=offset,
+        with_officers=with_officers, limit=limit, offset=offset, sort=sort,
     )
 
 
@@ -272,7 +300,7 @@ async def fetch_register_people(register_id: int, user: dict = Depends(get_curre
 
 @router.get("/runs/{run_id}")
 async def get_run(run_id: int, user: dict = Depends(get_current_user)):
-    row = await _get_run_for_user(run_id, user["id"])
+    row = await _get_run_for_user(run_id, user["id"], shared=True)
     if not row:
         raise HTTPException(404, "Run not found")
     return _run_to_dict(row)
@@ -280,7 +308,7 @@ async def get_run(run_id: int, user: dict = Depends(get_current_user)):
 
 @router.get("/runs/{run_id}/prospects")
 async def list_prospects(run_id: int, user: dict = Depends(get_current_user), limit: int = 500):
-    if not await _get_run_for_user(run_id, user["id"]):
+    if not await _get_run_for_user(run_id, user["id"], shared=True):
         raise HTTPException(404, "Run not found")
     limit = max(1, min(limit, 2000))
     db = await get_db()
@@ -309,7 +337,7 @@ async def import_run_to_contacts(
     user: dict = Depends(get_current_user),
 ):
     """Copy verified YUCG prospects into the main contacts table."""
-    run = await _get_run_for_user(run_id, user["id"])
+    run = await _get_run_for_user(run_id, user["id"], shared=True)
     if not run:
         raise HTTPException(404, "Run not found")
     prospect_ids = body.prospect_ids if body else None
@@ -329,7 +357,7 @@ async def import_run_to_contacts(
 
 @router.get("/runs/{run_id}/export.xlsx")
 async def export_run(run_id: int, user: dict = Depends(get_current_user)):
-    run = await _get_run_for_user(run_id, user["id"])
+    run = await _get_run_for_user(run_id, user["id"], shared=True)
     if not run:
         raise HTTPException(404, "Run not found")
     try:
