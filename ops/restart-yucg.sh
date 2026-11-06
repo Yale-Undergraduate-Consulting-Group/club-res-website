@@ -34,7 +34,7 @@ CONFIG=/etc/yucg/config.json
 valid_config() {
   jq -e '(.email_delivery_enabled | type == "boolean") and (.edge | type == "boolean")
     and (.public_url | type == "string" and startswith("http"))
-    and ([.env, .region, .secret_arn, .catalog_bucket, .documents_bucket, .backups_bucket, .log_group, .bedrock_model_id, .config_parameter]
+    and ([.env, .region, .secret_arn, .catalog_bucket, .documents_bucket, .backups_bucket, .log_group, .config_parameter]
          | all(type == "string" and length > 0))' "$1" >/dev/null
 }
 REGION="$(jq -er .region "$CONFIG")"
@@ -83,14 +83,7 @@ APP_ENV=$APP_ENV
 EMAIL_DELIVERY_ENABLED=$EMAIL_DELIVERY_ENABLED
 DATABASE_URL=sqlite:////data/clientreach.db
 LLM_PROVIDER=bedrock
-BEDROCK_MODEL_ID=$(cfg bedrock_model_id)
-BEDROCK_RANK_MODEL_ID=$(cfg bedrock_model_id)
-BEDROCK_ALLOWED_MODEL_IDS=$(cfg bedrock_model_id)
-BEDROCK_CALLS_PER_CLUB_PER_HOUR=200
-ASSISTANT_REQUESTS_PER_MEMBER_PER_HOUR=15
-ASSISTANT_REQUESTS_PER_CLUB_PER_HOUR=120
-BEDROCK_INPUT_USD_PER_MILLION=1.00
-BEDROCK_OUTPUT_USD_PER_MILLION=5.00
+AI_MONTHLY_BUDGET_USD=50
 AI_REVIEW_WORKERS=2
 INBOX_VERIFY_MODE=mx
 CATALOG_BUCKET=$(cfg catalog_bucket)

@@ -21,7 +21,7 @@ os.environ.setdefault('JWT_SECRET', 'company-entity-secret-xxxxxxxxxxxxxxxxxx')
 
 CONTRACT_KEYS = {'name', 'domain', 'domain_verified', 'linkedin_url', 'source', 'alternatives'}
 PROFILE_KEYS = {'legal_name', 'display_name', 'brand_words', 'hq_country', 'hq_city', 'mail_domain',
-                'mail_domain_evidence', 'alt_mail_domains', 'exclude', 'target_country', 'source'}
+                'mail_domain_evidence', 'alt_mail_domains', 'exclude', 'units', 'target_country', 'source'}
 
 # What Wikidata and GLEIF said for Barclays on 2026-09-22, trimmed.
 WIKI_SEARCH = {'search': [

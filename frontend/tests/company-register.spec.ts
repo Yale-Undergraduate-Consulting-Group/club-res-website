@@ -122,6 +122,27 @@ test('register browses the free public pool and hands a company to Find people',
   await page.screenshot({ path: 'test-results/company-register.png', fullPage: true });
 });
 
+test('browsing opens on the companies worth reaching, with the newest filings one click away', async ({ page }) => {
+  const { calls } = await mockRegister(page);
+  await page.goto('/scraper');
+  await page.getByRole('tab', { name: 'Companies' }).click();
+
+  // A member browsing without a name is looking for a company to reach out
+  // to: the server ranks listed and large companies first by default.
+  const order = page.getByTestId('register-sort');
+  await expect(order.getByRole('button', { name: 'Worth reaching first' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => calls.some(search => search.includes('sort=value'))).toBe(true);
+
+  // The "what is new" feed is still there.
+  await order.getByRole('button', { name: 'Newest filings' }).click();
+  await expect(order.getByRole('button', { name: 'Newest filings' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => calls.some(search => search.includes('sort=recent'))).toBe(true);
+
+  // A typed name ranks by match, so the toggle steps aside.
+  await page.getByLabel('Company or sector').fill('gilgamesh');
+  await expect(order).toHaveCount(0);
+});
+
 test('a listed or UK company with no officers on file can be looked up on demand', async ({ page }) => {
   const { fetched } = await mockRegister(page);
   await page.goto('/scraper');

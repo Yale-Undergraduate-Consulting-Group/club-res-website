@@ -49,7 +49,7 @@ async function mockFlow(page: Page) {
 
 test('role bubbles translate asked roles into the focused company vocabulary, and only add when clicked', async ({ page }) => {
   const mutations = await mockFlow(page);
-  // A link can carry how many people to collect; there is no field for it.
+  // A link can carry how many people to collect; it fills the "How many people" field.
   await page.goto('/scraper?view=company&companies=OpenAI,A24&max=120');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');

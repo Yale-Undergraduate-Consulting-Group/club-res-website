@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
-from app.services.company_email_cache import build_email_for_person_sync, text_names_brand
+from app.services.company_email_cache import build_email_for_person_sync, company_brand_words, text_names_brand
 from app.services.contact_scraper import (
     extract_employee_emails_from_text,
     is_valid_person_contact,
@@ -88,27 +88,33 @@ def _record_search_error(message: str, *, limit: bool) -> None:
         run["first_error"] = message[:300]
 
 
-async def _tavily_search(query: str, max_results: int = 8) -> list[dict[str, Any]]:
+async def _tavily_search(query: str, max_results: int = 8, page: int = 0) -> list[dict[str, Any]]:
+    def start():
+        return _search_once(query, max_results, page=page) if page else _search_once(query, max_results)
+
     run = _SEARCH_RUN.get()
     if run is None:
-        return await _search_once(query, max_results)
-    key = (query, max_results)
+        return await start()
+    key = (query, max_results, page)
     task = run["inflight"].get(key)
     if task is None:
         run["queries"] += 1
-        task = asyncio.ensure_future(_search_once(query, max_results))
+        task = asyncio.ensure_future(start())
         run["inflight"][key] = task
     return list(await task)
 
 
-async def _search_once(query: str, max_results: int) -> list[dict[str, Any]]:
+async def _search_once(query: str, max_results: int, page: int = 0) -> list[dict[str, Any]]:
+    """One search. ``page`` > 0 is a later results page, which only TinyFish
+    serves; elsewhere it finds nothing rather than the first page again."""
     from app.services.web_fetch import web_search_configured, web_search
 
     if web_search_configured():
         from app.services.web_fetch import last_search_failure
 
         try:
-            results = await web_search(query, max_results=max_results)
+            results = await (web_search(query, max_results=max_results, page=page) if page
+                             else web_search(query, max_results=max_results))
             failure = last_search_failure()
             if not results and failure:
                 _record_search_error(failure, limit="limit" in failure.lower() or "429" in failure)
@@ -119,7 +125,7 @@ async def _search_once(query: str, max_results: int) -> list[dict[str, Any]]:
                                  limit=status in (429, 432))
             return []
     key = (os.getenv("TAVILY_API_KEY") or "").strip()
-    if not key:
+    if not key or page:
         return []
     try:
         async with httpx.AsyncClient(timeout=28.0) as client:
@@ -155,13 +161,18 @@ async def _search_once(query: str, max_results: int) -> list[dict[str, Any]]:
     return out
 
 
-async def _tavily_parallel(queries: list[str], max_results: int = 8) -> list[dict[str, Any]]:
+async def _tavily_parallel(queries: list[str | tuple[str, int]], max_results: int = 8) -> list[dict[str, Any]]:
+    """Every query at once, results merged and deduplicated by URL. A query is
+    a string, or (query, results page) for a later page of it."""
     if not queries:
         return []
     sem = asyncio.Semaphore(max(1, WEB_DISCOVERY_WORKERS))
 
-    async def _one(q: str) -> list[dict[str, Any]]:
+    async def _one(item: str | tuple[str, int]) -> list[dict[str, Any]]:
+        q, page = (item, 0) if isinstance(item, str) else item
         async with sem:
+            if page:
+                return await _tavily_search(q, max_results=max_results, page=page)
             return await _tavily_search(q, max_results=max_results)
 
     batches = await asyncio.gather(*[_one(q) for q in queries])
@@ -296,23 +307,187 @@ def _names_the_company(text: str, company_name: str, domain: str | None) -> bool
     return len(base) > 2 and text_names_brand(text, base)
 
 
-#: "CEO & Founding Trainer @ Warner Digital", "Senior Buyer at Amazon" - the
-#: title itself says who they work for.
-EMPLOYER_IN_TITLE = re.compile(r"(?:\bat\b|@)\s+([A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3})")
+# Who the person works for now, read from their own headline.
+#
+# A brand word on a page is not employment. "Amazon" is on every reseller's
+# profile, "Apple" on Apple Bank's, "Alphabet" on a soup company's, and
+# "CEO & Founding Trainer @ Warner Digital" was saved as a Microsoft person
+# because a Microsoft search surfaced him. A LinkedIn result names its owner's
+# current employer ("Name - Title - Employer | LinkedIn", "Title at Employer",
+# "Experience: Employer"), and that employer has to be the target or one of its
+# group units. text_names_brand keeps its broad meaning for the callers that
+# treat it as one piece of evidence; this is the acceptance layer.
+
+#: One-word brands that are everyday words, so a page using the word says
+#: nothing about the company. ponytail: a short hand list; a common-word brand
+#: missing from it gets the looser brand-word check (brands of four letters or
+#: fewer are strict anyway). The upgrade is word frequencies.
+_COMMON_WORD_BRANDS = frozenset({
+    "amazon", "apple", "meta", "target", "visa", "shell", "alphabet", "oracle", "square",
+    "block", "gap", "next", "sage", "unity", "chase", "discover", "delta", "mercury",
+    "coach", "snap", "ring", "slack", "notion", "zoom",
+})
+_LINKEDIN_TAIL = re.compile(r"\s*[-–—|·]\s*linkedin\s*$", re.I)
+_SEGMENT = re.compile(r"\s+[-–—|·•]\s+|\s*[|·•]\s*")
+#: "Senior Buyer at Amazon", "Founding Trainer @ Warner Digital": a capitalised
+#: name after "at"/"@", up to the next separator.
+_AT_EMPLOYER = re.compile(r"(?:\bat\s+|@\s*)([A-Z0-9][^|·•\n;]*?)\s*(?=$|[|·•\n;]|\s[-–—]\s|,\s|\.\s|\.$)")
+_EXPERIENCE = re.compile(r"\bExperience:\s*([^·|\n]+?)\s*(?=$|[·|\n]|\.\s)")
+#: A role the person no longer holds: "ex-Google", "Previously at Meta".
+_PAST = re.compile(r"\b(?:ex-|former(?:ly)?\b|previously\b|prev\.|past\b|retired\b)", re.I)
+_NOT_EMPLOYER = frozenset({"work", "large", "scale", "home"})
+#: Words that make a headline segment a job, not an employer.
+_TITLE_WORD = re.compile(
+    r"\b(ceo|cfo|coo|cto|cio|cmo|chief|president|founder|co-founder|owner|partner|vp|svp|evp|avp|"
+    r"head|director|manager|lead|principal|officer|engineer|developer|sde|architect|analyst|scientist|"
+    r"designer|buyer|recruiter|specialist|associate|consultant|advisor|adviser|coordinator|"
+    r"representative|administrator|executive|intern|student|counsel|attorney|controller|treasurer|"
+    r"secretary|chair|chairman|member|staff|fellow|researcher|strategist|accountant|product|"
+    r"marketing|sales|operations|program|project|account|trainer|teller)\b",
+    re.I,
+)
 
 
-def _title_names_another_employer(role: str, company_name: str, domain: str | None) -> bool:
-    """A stored Microsoft contact reading "David Warner II - CEO & Founding
-    Trainer @ Warner Digital" is how a LinkedIn snippet for somebody else's
-    employee ends up in this company's list. The title names the employer;
-    believe it over the search that surfaced the page."""
-    for match in EMPLOYER_IN_TITLE.finditer(role or ""):
-        named = match.group(1).strip().rstrip(".,")
-        if not named or named.lower() in {"work", "large", "scale", "home"}:
-            continue
-        if not _names_the_company(named, company_name, domain):
-            return True
-    return False
+def ambiguous_brand(name: str) -> bool:
+    """A one-word brand that is also an everyday word or very short: Amazon,
+    Apple, Meta, Target, Visa, IBM. Its people need employer or domain evidence."""
+    words = company_brand_words(name or "")
+    return len(words) == 1 and (words[0] in _COMMON_WORD_BRANDS or len(words[0]) <= 4)
+
+
+def _core(name: str) -> str:
+    """An employer as comparable words: "Amazon.com, Inc." and "Amazon (US)"
+    are both "amazon"; "Apple Bank for Savings" stays itself."""
+    words = company_brand_words(name or "")
+    while len(words) > 1 and words[-1] in _EMPLOYER_TAIL:
+        words.pop()
+    return " ".join(words)
+
+
+def _not_past(text: str, start: int) -> bool:
+    return not _PAST.search(text[max(0, start - 25):start])
+
+
+def current_employer(title: str, content: str = "", *, profile: bool = False, drop_first: bool = False) -> str:
+    """The employer a headline says this person works for now, or "".
+
+    Anywhere: "Title at X" / "Title @ X". On the person's own profile result
+    also "Name - Title - X | LinkedIn", "Experience: X" in the snippet, and
+    "Title, X". ``drop_first`` drops the leading name segment of a page title.
+    """
+    head = _LINKEDIN_TAIL.sub("", title or "").strip()
+    parts = [p.strip() for p in _SEGMENT.split(head) if p and p.strip()]
+    if drop_first:
+        parts = parts[1:]
+    # Places ("London", "Seattle, Washington, United States") are not employers.
+    parts = [p for p in parts if _TITLE_WORD.search(p) or not text_countries(p)]
+    for p in parts:
+        for m in _AT_EMPLOYER.finditer(p):
+            named = m.group(1).strip().rstrip(".,")
+            if named and named.lower() not in _NOT_EMPLOYER and _not_past(p, m.start()):
+                return named
+    if not profile:
+        return ""
+    plain = [p for p in parts if not _TITLE_WORD.search(p) and not _PAST.search(p)]
+    if plain:
+        return plain[-1]
+    m = _EXPERIENCE.search(content or "")
+    if m:
+        return m.group(1).strip()
+    for m in _AT_EMPLOYER.finditer(content or ""):
+        named = m.group(1).strip().rstrip(".,")
+        if named and named.lower() not in _NOT_EMPLOYER and _not_past(content, m.start()):
+            return named
+    if len(parts) == 1 and "," in parts[0]:
+        right = parts[0].rsplit(",", 1)[1].strip()
+        if right and not _TITLE_WORD.search(right) and not text_countries(right):
+            return right
+    return ""
+
+
+def employer_is_target(
+    employer: str, targets: list[str], units: list[dict[str, Any]], domain: str | None,
+) -> tuple[bool, str | None]:
+    """(the employer is the target or one of its group units, that unit's name).
+
+    An ambiguous brand has to BE the employer ("Amazon", "Amazon.com, Inc."),
+    not merely appear in it ("Acme (Amazon reseller)", "Alphabet Soup Co.",
+    "Apple Bank for Savings"). Other brands keep the brand-word rule, so "The
+    Walt Disney Company" still names Disney. A unit has to be the employer, or
+    lead it ("Whole Foods Market" for the unit "Whole Foods")."""
+    core = _core(employer)
+    if not core:
+        return False, None
+    plain = re.sub(r"\([^)]*\)", " ", employer)
+    base = (normalize_domain(domain or "") or "").split(".")[0]
+    if len(base) > 2 and core == base:
+        return True, None
+    for target in targets:
+        if ambiguous_brand(target):
+            want = _core(target)
+            # An acronym firm leads its divisions ("IBM Consulting", "KPMG
+            # Advisory", "EY-Parthenon"); an everyday word must stand alone.
+            if core == want or (want not in _COMMON_WORD_BRANDS and core.startswith(want + " ")):
+                return True, None
+        elif text_names_brand(plain, target):
+            return True, None
+    for unit in units:
+        for phrase in [unit.get("name") or "", *(unit.get("aliases") or [])]:
+            want = _core(phrase)
+            if want and (core == want or (" " in want and core.startswith(want + " "))):
+                return True, (unit.get("name") or "").strip()
+    return False, None
+
+
+def _strong_evidence(text: str, targets: list[str], domain: str | None) -> bool:
+    """More than a brand word: the company's domain, or its full multi-word
+    name ("Goldman Sachs", "Barclays PLC"), printed on the page."""
+    dom = normalize_domain(domain or "")
+    if dom and re.search(rf"(?<![a-z0-9-]){re.escape(dom)}(?![a-z0-9-])", (text or "").lower()):
+        return True
+    words = _norm_words(text)
+    return any(len(p.split()) >= 2 and f" {p} " in words for p in map(_entity_phrase, targets))
+
+
+def target_names(company_name: str, entity: dict[str, Any] | None) -> list[str]:
+    """Every name the run's company goes by: as typed, and the entity's brand
+    and legal name (typing "Alphabet" means Google's people too)."""
+    names = [company_name, *((entity or {}).get(k) or "" for k in ("display_name", "legal_name"))]
+    return list(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+
+
+def entity_units(entity: dict[str, Any] | None) -> list[dict[str, Any]]:
+    return [u for u in (entity or {}).get("units") or [] if isinstance(u, dict) and (u.get("name") or "").strip()]
+
+
+def person_employer_check(
+    name: str, title: str, page: dict[str, Any], company_name: str, domain: str | None,
+    entity: dict[str, Any] | None, affiliation: str,
+) -> tuple[bool, str | None, str | None]:
+    """(keep, skip reason, group unit) for one person against who they work for.
+
+    ``title`` is what was read as their job; ``page`` the result it came from.
+    A named employer decides. With none, the person's own profile and every
+    lead for an ambiguous brand need the company's domain or full name on the
+    page; an ambiguous brand's bare press mention is never a lead."""
+    page_title = str(page.get("title") or "")
+    content = str(page.get("content") or "")
+    url = str(page.get("url") or "")
+    own_profile = bool(LINKEDIN_IN_URL.search(url)) and _name_agrees_with_profile(name, url)
+    targets = target_names(company_name, entity)
+    units = entity_units(entity)
+    strict = ambiguous_brand((entity or {}).get("display_name") or company_name)
+    employer = current_employer(title, content if own_profile else "", profile=own_profile,
+                                drop_first=bool(title) and title == page_title)
+    if employer:
+        ok, unit = employer_is_target(employer, targets, units, domain)
+        return (True, None, unit) if ok else (False, "other_employer", None)
+    if strict and affiliation == "press_mention":
+        return False, None, None
+    if affiliation == "linkedin_profile" or (strict and affiliation != "company_site"):
+        if not _strong_evidence(f"{page_title}\n{content}", targets, domain):
+            return False, "no_employer", None
+    return True, None, None
 
 
 def _host_is_company(url: str, domain: str | None) -> bool:
@@ -324,8 +499,9 @@ def _host_is_company(url: str, domain: str | None) -> bool:
     return host == dom or host.endswith("." + dom)
 
 
-def _mention_affiliation(near: str, role: str, company_name: str, domain: str | None) -> str:
-    """What a page that is not the company's, and not a profile, can prove.
+def _mention_affiliation(near: str, role: str) -> str:
+    """What a page that is not the company's, and not a profile, can prove,
+    once the caller has seen the company named in ``near``.
 
     ``press_appointment`` - it names the company, a job, and says the company
     took this person on ("Chewy has hired Priya Raman - Director of Supply
@@ -334,7 +510,7 @@ def _mention_affiliation(near: str, role: str, company_name: str, domain: str | 
     near the name. Shown as a lead, never given an invented mailbox.
     ``""``                - no tie at all; not a lead.
     """
-    if not (_names_the_company(near, company_name, domain) and COMPANY_ROLE_HINT.search(role)):
+    if not COMPANY_ROLE_HINT.search(role):
         return ""
     return "press_appointment" if EMPLOYMENT_PHRASE.search(near) else "press_mention"
 
@@ -367,6 +543,12 @@ CAPTIVE_ACRONYM = re.compile(r"(?<![A-Za-z])(?:GSC|GCC)(?![A-Za-z])")
 _LEGAL_TAIL = frozenset({
     "private", "pvt", "limited", "ltd", "plc", "llc", "inc", "corp", "corporation",
     "company", "co", "gmbh", "sa", "ag", "llp", "lp", "bv", "nv",
+})
+#: What an employer's name carries besides the company (see _core): legal
+#: form, ".com", and the region a team writes after it ("HSBC UK", "KPMG US").
+_EMPLOYER_TAIL = _LEGAL_TAIL | frozenset({
+    "com", "group", "holdings", "global", "international", "worldwide",
+    "us", "usa", "uk", "emea", "apac", "americas", "europe",
 })
 
 #: Where a profile says it is. Two-letter LinkedIn subdomains are countries
@@ -542,6 +724,7 @@ def _extract_people_from_results(
     *,
     entity: dict[str, Any] | None = None,
     skips: dict[str, dict[str, str]] | None = None,
+    seen_keys: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Names from search results, each carrying why it is believed to work here.
 
@@ -553,8 +736,20 @@ def _extract_people_from_results(
     * ``press_mention``    - a page that names them, a job title, and the
       company close together. Enough to show to a member, not enough to invent
       a mailbox from.
+
+    ``group_unit`` names the group company a person works at when it is not
+    the target itself (AWS for Amazon). ``seen_keys`` carries the people an
+    earlier round already read, so a later round only returns new ones.
     """
-    seen_keys: set[str] = set()
+    seen_keys = seen_keys if seen_keys is not None else set()
+    targets = target_names(company_name, entity)
+    units = entity_units(entity)
+
+    def names_target(text: str) -> bool:
+        """The page names the company under any of its names, or a unit."""
+        return (any(_names_the_company(text, n, domain) for n in targets)
+                or any(text_names_brand(text, p) for u in units for p in [u["name"], *(u.get("aliases") or [])]))
+
     people: list[dict[str, Any]] = []
     # The result being read. Its URL is the original one: the country in
     # in.linkedin.com is gone once the link is rewritten to www below.
@@ -587,9 +782,11 @@ def _extract_people_from_results(
         # the exact shape the open web keeps offering.
         if PUBLIC_OFFICE_TITLE.search(f"{title} {discovery_context}"):
             return
-        # The title naming a different employer outranks the search that found
-        # the page: it is the page saying where this person actually works.
-        if _title_names_another_employer(title, company_name, domain):
+        # The employer the person's own words name outranks the search that
+        # found the page: it is the page saying where they actually work.
+        keep, reason, unit = person_employer_check(name, title, page, company_name, domain, entity, affiliation)
+        if not keep:
+            note_skip(skips, reason, name)
             return
         keep, reason = entity_gate(page.get("title", ""), page.get("content", ""),
                                    page.get("url", ""), email, entity)
@@ -609,6 +806,7 @@ def _extract_people_from_results(
                 "source_url": source_url.strip(),
                 "discovery_context": discovery_context.strip()[:400],
                 "affiliation": affiliation,
+                "group_unit": unit,
             }
         )
 
@@ -636,7 +834,7 @@ def _extract_people_from_results(
         page_affiliation = ""
         if on_company_site:
             page_affiliation = "company_site"
-        elif url_match and _names_the_company(f"{title}\n{content}", company_name, domain):
+        elif url_match and names_target(f"{title}\n{content}"):
             page_affiliation = "linkedin_profile"
 
         slug_name = _slug_to_name(li_match.group(1)) if li_match else None
@@ -645,7 +843,7 @@ def _extract_people_from_results(
                 start = max(0, li_match.start() - MENTION_WINDOW)
                 near = content[start:li_match.end() + MENTION_WINDOW]
                 link_affiliation = (
-                    "linkedin_profile" if _names_the_company(near, company_name, domain) else ""
+                    "linkedin_profile" if names_target(near) else ""
                 )
             else:
                 link_affiliation = page_affiliation
@@ -686,7 +884,7 @@ def _extract_people_from_results(
             role = m.group(2)
             near = blob[max(0, m.start() - MENTION_WINDOW):m.end() + MENTION_WINDOW]
             affiliation = (page_evidence_for(m.group(1), role)
-                           or _mention_affiliation(near, role, company_name, domain))
+                           or (_mention_affiliation(near, role) if names_target(near) else ""))
             if not affiliation:
                 continue
             add_person(
@@ -700,7 +898,7 @@ def _extract_people_from_results(
             # and the page still has to be saying what they do there.
             after = blob[m.end():m.end() + 60]
             affiliation = page_evidence_for(m.group(1), title)
-            if not affiliation and _names_the_company(after, company_name, domain):
+            if not affiliation and names_target(after):
                 affiliation = (
                     "press_appointment"
                     if EMPLOYMENT_PHRASE.search(blob[max(0, m.start() - MENTION_WINDOW):m.end() + MENTION_WINDOW])
@@ -736,6 +934,8 @@ async def discover_contacts_from_web(
     on_progress: ProgressHook = None,
     entity: dict[str, Any] | None = None,
     skips: dict[str, dict[str, str]] | None = None,
+    queries: list[str | tuple[str, int]] | None = None,
+    seen: dict[str, set[str]] | None = None,
 ) -> list[dict]:
     """
     Search the web for named employees (LinkedIn, press, directories).
@@ -743,7 +943,9 @@ async def discover_contacts_from_web(
 
     ``entity`` is the run's entity profile: it adds searches aimed at the
     target entity and drops people entity_gate rejects, noting them in
-    ``skips``.
+    ``skips``. ``queries`` replaces the first wave with a later round's
+    (query, results page) list; ``seen`` ({"urls", "names"}) is shared across a
+    run's rounds so a page or a person is read once.
     """
     company = (company_name or "").strip()
     if not company:
@@ -758,59 +960,19 @@ async def discover_contacts_from_web(
         if on_progress:
             await on_progress(msg, pct)
 
-    # Every query is one round trip, and they all run at once, so the cost of
-    # the wave is its slowest query rather than their sum. What decides how
-    # many reachable people come back is how many different places are asked:
-    # profiles, the company's own pages, appointment notices, and the places
-    # addresses are actually published.
-    queries = [
-        f'{company} leadership OR executives site:linkedin.com/in',
-        f'{company} employees VP OR Director OR Manager site:linkedin.com/in',
-        f'"{company}" team member site:linkedin.com/in',
-        f'{company} CEO OR CFO OR CTO OR "head of" site:linkedin.com/in',
-        f'"{company}" senior manager OR director biography',
-        f'"{company}" press release appointed OR joins OR named',
-        # People are reachable when a page prints their address or the company
-        # publishes who does what, so ask for those pages directly.
-        f'"{company}" "our team" OR "leadership team" OR "meet the team"',
-        f'"{company}" spokesperson OR "media contact" OR "press contact" email',
-        f'"{company}" conference speaker OR panelist OR webinar "{company}"',
-    ]
-    hints = (title_hints or "").strip()
-    if hints:
-        queries[0:0] = [
-            f'{company} {hints} site:linkedin.com/in',
-            f'"{company}" {hints} email OR contact OR LinkedIn',
-            # The hint as the company would write it on its own pages.
-            f'"{company}" "{hints.split(",")[0].strip()}" site:{dom}' if dom else f'"{company}" "{hints.split(",")[0].strip()}"',
-        ]
-    if dom:
-        queries.extend(
-            [
-                f'"{company}" "@{dom}" email employee',
-                f'site:linkedin.com/in "{company}" {dom.split(".")[0]}',
-                f'site:{dom} team OR leadership OR people OR about',
-                f'"@{dom}" contact OR email -jobs -careers',
-            ]
-        )
-    # Searches aimed at the entity itself: its home city and its legal name.
-    # They take the places of the two broadest queries, so the run asks no
-    # more questions than before. The negative terms keep sibling entities
-    # out of the results where the engine honours them; entity_gate is what
-    # guarantees it.
-    targeted = _entity_queries(company, hints, entity)
-    if targeted:
-        dropped = (f'"{company}" team member site:linkedin.com/in',
-                   f'"{company}" conference speaker OR panelist OR webinar "{company}"')
-        queries = [q for q in queries if q not in dropped[: len(targeted)]] + targeted
-
-    await emit(f"Running {len(queries)} web searches at once…", 15)
-    all_results = await _tavily_parallel(queries, max_results=SEARCH_PAGE_RESULTS)
+    batch = queries if queries is not None else first_wave_queries(company, dom, title_hints, entity)
+    await emit(f"Running {len(batch)} web searches at once…", 15)
+    all_results = await _tavily_parallel(batch, max_results=SEARCH_PAGE_RESULTS)
     if cancel_event and cancel_event.is_set():
         return []
+    if seen is not None:
+        urls = seen.setdefault("urls", set())
+        all_results = [r for r in all_results if not r.get("url") or r["url"] not in urls]
+        urls.update(r["url"] for r in all_results if r.get("url"))
 
     people = _extract_people_from_results(
         all_results, company, dom or None, entity=entity, skips=skips,
+        seen_keys=seen.setdefault("names", set()) if seen is not None else None,
     )[: max_people * 3]
 
     contacts: list[dict] = []
@@ -843,6 +1005,7 @@ async def discover_contacts_from_web(
             "source_url": p.get("source_url"),
             "discovery_context": p.get("discovery_context"),
             "affiliation_evidence": affiliation,
+            "group_unit": p.get("group_unit"),
             "_email_verified": email_verified,
         }
         row["confidence"] = confidence_for_contact_dict(
@@ -859,24 +1022,140 @@ async def discover_contacts_from_web(
     return contacts
 
 
-def _entity_queries(company: str, hints: str, entity: dict[str, Any] | None) -> list[str]:
+#: A search engine reads a long query as a sentence, so exclusion terms stop
+#: being added once a query reaches this length.
+_QUERY_MAX_CHARS = 240
+
+
+def search_brand(company: str, entity: dict[str, Any] | None) -> str:
+    """The name searches use: the reviewed entity's own brand when the member
+    typed another of its names ("Alphabet" searches "Google")."""
+    display = ((entity or {}).get("display_name") or "").strip()
+    if display and (entity or {}).get("source") == "override" and _entity_phrase(display) != _entity_phrase(company):
+        return display
+    return company
+
+
+def _negatives(entity: dict[str, Any] | None, brand: str) -> list[str]:
+    """-"excluded entity" terms. Never one that shrinks to the brand itself,
+    which would exclude every page about the company."""
+    own = set(company_brand_words(brand))
+    out: list[str] = []
+    for x in (entity or {}).get("exclude") or []:
+        phrase = _entity_phrase(x.get("name") or "") if isinstance(x, dict) else ""
+        if phrase and not set(phrase.split()) <= own:
+            out.append(f'-"{phrase}"')
+    return out
+
+
+def _with_negatives(query: str, negatives: list[str]) -> str:
+    for neg in negatives:
+        if len(query) + 1 + len(neg) > _QUERY_MAX_CHARS:
+            break
+        query = f"{query} {neg}"
+    return query
+
+
+def first_wave_queries(
+    company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
+) -> list[str]:
+    """The first round of a run's web searches.
+
+    Every query is one round trip, and they all run at once, so the cost of
+    the wave is its slowest query rather than their sum. What decides how many
+    reachable people come back is how many different places are asked:
+    profiles, the company's own pages, appointment notices, and the places
+    addresses are actually published. The company is quoted everywhere: bare,
+    "Target" and "Shell" are words, not companies."""
+    brand = search_brand(company, entity)
+    queries = [
+        f'"{brand}" leadership OR executives site:linkedin.com/in',
+        f'"{brand}" employees VP OR Director OR Manager site:linkedin.com/in',
+        f'"{brand}" team member site:linkedin.com/in',
+        f'"{brand}" CEO OR CFO OR CTO OR "head of" site:linkedin.com/in',
+        f'"{brand}" senior manager OR director biography',
+        f'"{brand}" press release appointed OR joins OR named',
+        # People are reachable when a page prints their address or the company
+        # publishes who does what, so ask for those pages directly.
+        f'"{brand}" "our team" OR "leadership team" OR "meet the team"',
+        f'"{brand}" spokesperson OR "media contact" OR "press contact" email',
+        f'"{brand}" conference speaker OR panelist OR webinar',
+    ]
+    hints = (title_hints or "").strip()
+    if hints:
+        first_hint = hints.split(",")[0].strip()
+        queries[0:0] = [
+            f'"{brand}" {hints} site:linkedin.com/in',
+            f'"{brand}" {hints} email OR contact OR LinkedIn',
+            # The hint as the company would write it on its own pages.
+            f'"{brand}" "{first_hint}" site:{dom}' if dom else f'"{brand}" "{first_hint}"',
+        ]
+    if dom:
+        queries.extend(
+            [
+                f'"{brand}" "@{dom}" email employee',
+                f'site:linkedin.com/in "{brand}" {dom.split(".")[0]}',
+                f'site:{dom} team OR leadership OR people OR about',
+                f'"@{dom}" contact OR email -jobs -careers',
+            ]
+        )
+    # Searches aimed at the entity itself: its home city and its legal name.
+    # They take the places of the two broadest queries, so the run asks no
+    # more questions than before. The negative terms keep sibling entities
+    # out of the results where the engine honours them; entity_gate is what
+    # guarantees it.
+    targeted = _entity_queries(brand, hints, entity)
+    if targeted:
+        dropped = (f'"{brand}" team member site:linkedin.com/in',
+                   f'"{brand}" conference speaker OR panelist OR webinar')
+        queries = [q for q in queries if q not in dropped[: len(targeted)]] + targeted
+    if brand != company:
+        # The name as typed too: a holding's own staff write "Alphabet".
+        queries.append(f'"{company}" site:linkedin.com/in')
+    negatives = _negatives(entity, brand)
+    return list(dict.fromkeys(_with_negatives(q, negatives) for q in queries))
+
+
+#: Title and seniority words a later round pairs with the quoted company, so a
+#: round asks what the first wave did not.
+ROUND_TITLE_VARIANTS = ("director", "vice president", "manager", "head of", "engineer", "analyst",
+                        "senior manager", "principal", "lead", "associate")
+
+
+def round_query_pool(
+    company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
+) -> list[tuple[str, int]]:
+    """Every (query, results page) a run's later rounds may ask, best first:
+    the next page of the first wave's profile searches, title and seniority
+    variants, the HQ city with a few titles, then the group units. None of them
+    is a first-wave query, so no round repeats one. At most ~25 searches."""
+    brand = search_brand(company, entity)
+    negatives = _negatives(entity, brand)
+    first = first_wave_queries(company, dom, title_hints, entity)
+    pool = [(q, 1) for q in first if "site:linkedin.com/in" in q]
+    pool += [(_with_negatives(f'"{brand}" "{t}" site:linkedin.com/in', negatives), 0)
+             for t in ROUND_TITLE_VARIANTS]
+    city = ((entity or {}).get("hq_city") or "").strip()
+    if city:
+        pool += [(_with_negatives(f'"{brand}" "{city}" "{t}" site:linkedin.com/in', negatives), 0)
+                 for t in ("director", "manager", "engineer", "analyst")]
+    pool += [(f'"{u["name"]}" "{brand}" site:linkedin.com/in', 0) for u in entity_units(entity)[:5]]
+    asked = {(q, 0) for q in first}
+    return [item for item in dict.fromkeys(pool) if item not in asked]
+
+
+def _entity_queries(brand: str, hints: str, entity: dict[str, Any] | None) -> list[str]:
     """At most two searches for the target entity: brand plus its home city,
     and its legal name with the roles asked for."""
     if not entity:
         return []
-    brand = (entity.get("display_name") or company).strip()
-    negatives = " ".join(
-        f'-"{_entity_phrase(x.get("name") or "")}"'
-        for x in (entity.get("exclude") or [])[:2]
-        if isinstance(x, dict) and _entity_phrase(x.get("name") or "")
-    )
     out: list[str] = []
     city = (entity.get("hq_city") or "").strip()
     if city:
-        out.append(f'"{brand}" "{city}" site:linkedin.com/in {negatives}'.strip())
+        out.append(f'"{brand}" "{city}" site:linkedin.com/in')
     legal = (entity.get("legal_name") or "").strip()
-    if legal and _entity_phrase(legal) != _entity_phrase(company):
-        out.append(f'"{legal}" {hints or "director OR head"} site:linkedin.com/in {negatives}'.strip())
+    if legal and _entity_phrase(legal) != _entity_phrase(brand):
+        out.append(f'"{legal}" {hints or "director OR head"} site:linkedin.com/in')
     return out
 
 

@@ -1,6 +1,7 @@
 import PageHeader from '../components/PageHeader';
 import Invitations from '../components/Invitations';
 import ContactMaintenance from '../components/admin/ContactMaintenance';
+import CatalogBuilderCard from '../components/admin/CatalogBuilderCard';
 import { useEffect, useState, Fragment } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import QRCode from 'qrcode';
@@ -873,6 +874,8 @@ export default function Admin() {
             <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-2">Assistant knowledge</h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">The shared Assistant uses the same private document register as Projects. Access is checked for every retrieval, and Amazon Bedrock receives only the short source excerpts needed for an answer.</p>
           </div>
+
+          <CatalogBuilderCard />
 
           <div className="surface-card rounded-xl p-6">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">

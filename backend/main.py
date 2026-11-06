@@ -40,6 +40,7 @@ from app.services.company_register import drain_company_register
 from app.services.roster_watch import drain_roster_queue, enroll_prospect_companies
 from app.services.roster_email import drain_roster_emails, drain_roster_verification
 from app.services.roster_adjudicate import drain_roster_adjudication
+from app.services.catalog_builder import builder_tick
 
 # CORS: use CORS_ORIGINS env (comma-separated) when going public; default localhost for dev
 _default_origins = [
@@ -61,6 +62,17 @@ async def lifespan(app: FastAPI):
         "interval",
         seconds=10,
         id="company_discovery_queue",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Catalog builder: off until an admin turns it on. Each tick queues at
+    # most one company, and only when no builder run is open and the club is
+    # under the builder's share of search and AI budgets.
+    scheduler.add_job(
+        builder_tick,
+        "interval",
+        seconds=60,
+        id="catalog_builder",
         max_instances=1,
         coalesce=True,
     )

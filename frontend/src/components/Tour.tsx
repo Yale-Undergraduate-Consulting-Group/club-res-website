@@ -52,7 +52,7 @@ const STOPS: Stop[] = [
     route: '/scraper?view=company',
     target: '[data-testid="company-lanes"]',
     title: 'Where each company stands',
-    body: 'One lane per company: people found, people ticked, all merging into one campaign. "+ Find more people" searches that company again.',
+    body: 'One lane per company: people found, people ticked, all merging into one campaign. "Find more people" on a lane, or at the top of the people list for the company you are looking at, searches that company again until it has as many people as you asked for.',
   },
   {
     route: '/scraper?view=company',

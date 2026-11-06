@@ -20,7 +20,9 @@ async def _user_from_db(user_id: int) -> dict | None:
         row = row_to_dict(await cursor.fetchone())
         if not row:
             return None
-        if row.get("is_active") == 0:
+        # The catalog builder's account (role 'system') owns background runs
+        # and is never a person: no session or key resolves to it.
+        if row.get("is_active") == 0 or row.get("role") == "system":
             return None
         return {
             "id": row["id"],
@@ -59,7 +61,7 @@ async def _resolve_user(
             row = await cursor.fetchone()
             if row:
                 row = row_to_dict(row)
-                if row.get("is_active") == 0:
+                if row.get("is_active") == 0 or row.get("role") == "system":
                     return None
                 await db.execute(
                     "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?",

@@ -70,6 +70,21 @@ export type FirecrawlStatus = {
   firecrawl: BackendProbeStatus;
   effective: { fetch: WebProbeResult; search: WebProbeResult; note: string };
 };
+/** The background catalog builder, as the admin card shows it. */
+export type CatalogBuilderStatus = {
+  enabled: boolean;
+  paused_reason: string | null;
+  current_company: string | null;
+  current_status: string | null;
+  current_progress: string | null;
+  companies_done_today: number;
+  people_found_today: number;
+  companies_done_total: number;
+  searches_last_hour: number | null;
+  searches_last_day: number | null;
+  ai_share: number | null;
+  limits: { searches_per_hour: number; searches_per_day: number; ai_share: number; recrawl_days: number };
+};
 
 
 export type RoleSuggestion = { title: string; count: number; source: 'roster' | 'run' | 'catalog' | 'jobs' | 'search' };
@@ -92,9 +107,15 @@ export type DiscoveryRun = {
   progress_pct?: number | null;
   progress_message?: string | null;
   prospects_count?: number | null;
+  /** The qualified-people target the run keeps searching towards. */
   max_prospects?: number | null;
+  /** JSON text; `shortfall` is present only when the run ended below its target. */
+  research_json?: string | null;
   error_message?: string | null;
   created_at?: string | null;
+  /** 'builder' when the club's catalog builder ran it: readable by every
+   *  member, deletable by none. */
+  origin?: 'member' | 'builder' | string;
 };
 /** A person a run found, before anyone chose to put them on file. */
 export type DiscoveryProspect = {
@@ -110,6 +131,9 @@ export type DiscoveryProspect = {
   ai_verdict?: string | null;
   ai_reason?: string | null;
   score?: number | null;
+  /** JSON text; `group_unit` names the group business the person works in
+   *  (AWS under Amazon), absent when they are at the target itself. */
+  evidence_json?: string | null;
 };
 export type ImportOutcome = {
   prospect_id: number;
@@ -307,6 +331,9 @@ export type EntityProfile = {
   alt_mail_domains: { domain: string; country: string | null }[];
   exclude: { name: string; country: string | null; domains: string[]; kind: 'subsidiary' | 'captive' | 'region' }[];
   target_country: string | null;
+  /** Group businesses whose staff count as the company's own (AWS, Whole
+   *  Foods under Amazon). Passed back to the run untouched. */
+  units?: { name: string; country: string | null; domain: string | null }[];
   source: string;
 };
 
@@ -1091,6 +1118,12 @@ export const api = {
         URL.revokeObjectURL(url);
       },
       firecrawlStatus: () => fetchApi<FirecrawlStatus>('/api/admin/operations/firecrawl-status'),
+      catalogBuilder: () => fetchApi<CatalogBuilderStatus>('/api/admin/operations/catalog-builder'),
+      setCatalogBuilder: (enabled: boolean) =>
+        fetchApi<CatalogBuilderStatus>('/api/admin/operations/catalog-builder', {
+          method: 'PUT',
+          body: JSON.stringify({ enabled }),
+        }),
     },
   },
   outreach: {
@@ -1229,7 +1262,7 @@ export const api = {
     releaseInbox: (releaseId: number) => fetchApi<InboxItem[]>(`/api/yucg/releases/${releaseId}/inbox`),
   },
   yucgoutreach: {
-    register: (params: { q?: string; tier?: string; country?: string; sector?: string; min_amount?: number; with_officers?: boolean; limit?: number; offset?: number }, signal?: AbortSignal) => {
+    register: (params: { q?: string; tier?: string; country?: string; sector?: string; min_amount?: number; with_officers?: boolean; limit?: number; offset?: number; sort?: 'value' | 'recent' }, signal?: AbortSignal) => {
       const search = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') search.set(key, String(value)); });
       return fetchApi<{ items: RegisterCompany[]; total: number; limit: number; offset: number }>(`/api/yucgoutreach/register?${search.toString()}`, signal ? { signal } : undefined);
@@ -1270,8 +1303,13 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    listRuns: (limit?: number) =>
-      fetchApi<DiscoveryRun[]>(`/api/yucgoutreach/runs?limit=${limit ?? 50}`),
+    /** The member's own runs, plus the catalog builder's newest finished run
+     *  for each of `companies` (the companies the page has open). */
+    listRuns: (limit?: number, companies: string[] = []) => {
+      const q = new URLSearchParams({ limit: String(limit ?? 50) });
+      companies.forEach((c) => q.append('companies', c));
+      return fetchApi<DiscoveryRun[]>(`/api/yucgoutreach/runs?${q.toString()}`);
+    },
     getRun: (id: number) => fetchApi<DiscoveryRun>(`/api/yucgoutreach/runs/${id}`),
     listProspects: (runId: number, limit = 800) =>
       fetchApi<DiscoveryProspect[]>(`/api/yucgoutreach/runs/${runId}/prospects?limit=${limit}`),

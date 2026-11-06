@@ -269,14 +269,14 @@ def slot_wait() -> None:
         try:
             started = time.monotonic()
             try:
-                llm._bedrock_text("brief", llm.default_model_id(), None)
+                llm.complete_text("brief", llm.default_model_id())
                 raise AssertionError("ran without a slot")
             except HTTPException as exc:
                 assert exc.status_code == 429
             assert time.monotonic() - started >= 0.25, "gave up without waiting"
             # A slot that frees during the wait is taken.
             threading.Timer(0.1, llm._inference_slots.release).start()
-            assert llm._bedrock_text("brief", llm.default_model_id(), None) == "ok"
+            assert llm.complete_text("brief", llm.default_model_id()) == "ok"
         finally:
             for _ in range(llm.INFERENCE_SLOTS - 1):
                 llm._inference_slots.release()
@@ -372,10 +372,13 @@ async def barclays_run_end_to_end() -> None:
     assert skipped["other_entity"]["examples"] == ["Priya Sharma"], skipped
     assert set(skipped["other_country"]["examples"]) == {"Rahul Verma", "Arjun Patel", "Michael Brown"}, skipped
     assert set(skipped["not_a_person"]["examples"]) == {"Plc Barclays", "West London"}, skipped
+    # Asked for 25 (the column's default); the later rounds found nobody new.
     assert row["progress_message"] == (
         "Done — 2 saved · 7 skipped (1 other Barclays entities, 3 outside UK, "
-        "1 at other mail domains, 2 not people)"
+        "1 at other mail domains, 2 not people) · 2 of 25 qualified people (no more found)"
     ), row["progress_message"]
+    research = json.loads(row["research_json"])
+    assert research["shortfall"] == {"target": 25, "found": 2, "reason": "exhausted"}, research
     remembered = remember.await_args.args[2]
     assert {c["name"] for c in remembered} == {"James Carter", "Emma Wilson"}, remembered
 
