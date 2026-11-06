@@ -687,7 +687,8 @@ async def get_team(user: dict = Depends(get_current_user)):
         cursor = await db.execute(
             """SELECT u.id, u.email, u.name, u.picture, u.role,
                (SELECT ll.created_at FROM login_log ll WHERE ll.user_id = u.id ORDER BY ll.created_at DESC LIMIT 1) as last_seen
-               FROM users u WHERE COALESCE(u.is_active, 1) = 1 ORDER BY u.name, u.email"""
+               FROM users u WHERE COALESCE(u.is_active, 1) = 1 AND COALESCE(u.role, 'standard') != 'system'
+               ORDER BY u.name, u.email"""
         )
         rows = await cursor.fetchall()
         users = [row_to_dict(r) for r in rows]

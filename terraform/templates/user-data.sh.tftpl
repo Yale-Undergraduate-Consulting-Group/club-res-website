@@ -17,7 +17,6 @@
 #   public_url              https://<cloudfront domain> (edge) or http://localhost:8000;
 #                           "" in this first-boot copy on the edge, because the
 #                           distribution is created after the box; the SSM copy has it
-#   bedrock_model_id        Bedrock inference profile the app invokes
 #   email_delivery_enabled  JSON bool; true only in prod
 #   edge                    JSON bool; true: publish 0.0.0.0:80->8000 for the VPC
 #                           origin; false: 127.0.0.1:8000 for SSM port forwarding

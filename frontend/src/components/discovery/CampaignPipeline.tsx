@@ -35,9 +35,11 @@ type Step = 1 | 2 | 3;
 const MAX_COMPANIES_PER_CAMPAIGN = 500;
 /** Chips drawn before the row collapses to a count. */
 const CHIP_WINDOW = 24;
-/** People one search collects unless the member says otherwise. Enough for
- *  a team, not the whole payroll. */
+/** Qualified people one search keeps going for unless the member says
+ *  otherwise. Enough for a team, not the whole payroll. */
 const DEFAULT_MAX_PROSPECTS = 60;
+/** The server's ceiling (YUCG_MAX_PROSPECTS), restated for the input. */
+const MAX_PROSPECTS = 800;
 const IDLE: CompanyRun = { state: 'idle', pct: 0, message: '' };
 /** Searches that start by themselves in one sitting. Past this, a lane
  *  offers the search instead: the hourly limit is shared with everything
@@ -247,7 +249,7 @@ export type StageState = {
 };
 
 function clampProspects(raw: number): number {
-  return Number.isFinite(raw) ? Math.min(800, Math.max(25, raw)) : DEFAULT_MAX_PROSPECTS;
+  return Number.isFinite(raw) && raw > 0 ? Math.min(MAX_PROSPECTS, Math.max(1, Math.round(raw))) : DEFAULT_MAX_PROSPECTS;
 }
 
 export default function CampaignPipeline({ onStage }: { onStage?: (state: StageState) => void }) {
@@ -307,9 +309,13 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   const [level, setLevel] = useState<Exclude<Level, 'unknown'>>('working');
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
-  const [maxProspects] = useState(() => (
-    params.get('max') ? clampProspects(Number(params.get('max'))) : DEFAULT_MAX_PROSPECTS
+  // The goal a search keeps going for: it stops at this many qualified
+  // people, or sooner only when the company has no more to find. Kept as
+  // text while typing so clearing the box to retype is not fought.
+  const [maxText, setMaxText] = useState(() => String(
+    params.get('max') ? clampProspects(Number(params.get('max'))) : DEFAULT_MAX_PROSPECTS,
   ));
+  const maxProspects = clampProspects(Number(maxText));
   const searchTitles = titleHints.trim() || LEVEL_TITLES[level];
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [resolving, setResolving] = useState(0);
@@ -527,8 +533,8 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   const searchOptionsRef = useRef({ titleHints: searchTitles, maxProspects });
   useEffect(() => { searchOptionsRef.current = { titleHints: searchTitles, maxProspects }; }, [searchTitles, maxProspects]);
 
-  // One search, from wherever it is asked for: the lane, the group header in
-  // the sheet, or on its own when a company arrives with nobody on file.
+  // One search, from wherever it is asked for: the lane, the sheet header for
+  // the focused company, or on its own when a company arrives with nobody on file.
   const findPeople = useCallback((company: ChosenCompany) => {
     setFocusedKey(companyKey(company.name));
     void startRun(company, () => searchOptionsRef.current);
@@ -701,6 +707,26 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               />
             )}
           </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600" htmlFor="pipeline-max">How many people</label>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                id="pipeline-max"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_PROSPECTS}
+                value={maxText}
+                onChange={(e) => setMaxText(e.target.value)}
+                onBlur={() => setMaxText(String(maxProspects))}
+                aria-describedby="pipeline-max-hint"
+                className="w-24 rounded-lg border border-pale-sky px-3 py-2 text-sm text-deep-navy"
+              />
+              <span id="pipeline-max-hint" className="text-xs text-slate-500">
+                per company. A search keeps going until it has this many, or the company has no more.
+              </span>
+            </div>
+          </div>
           {focused && (
             <div data-testid="focused-company" data-company={focused.name}>
               <RoleSuggestionBubbles
@@ -828,6 +854,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               found={found}
               runs={runs}
               onFind={findPeople}
+              focused={focused}
               onFindEverywhere={(company) => {
                 setWhere(company.name, '*');
                 findPeople({ ...company, targetCountry: '*' });

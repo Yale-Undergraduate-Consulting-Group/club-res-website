@@ -508,11 +508,15 @@ def is_role_based_local_part(local: str) -> bool:
         return True
     if any(low.startswith(f"{p}-") or low.startswith(f"{p}_") for p in ROLE_EMAIL_PREFIXES):
         return True
-    # Compound boxes: contactapple, productfeedback, aboutapple, …
+    # Compound boxes: contactapple, productfeedback, contactus, …
+    # A short prefix only counts when the rest is itself an inbox word, so real
+    # names that start with one (mainak, newsome, jobson) stay people.
     for p in sorted(ROLE_EMAIL_PREFIXES, key=len, reverse=True):
         if len(p) >= 4 and low.startswith(p) and len(low) > len(p):
             rest = re.sub(r"[^a-z]", "", low[len(p):])
-            if rest and len(rest) >= 2:
+            if rest in ROLE_EMAIL_PREFIXES or rest in {"us", "team", "desk", "line", "box", "dept"}:
+                return True
+            if len(p) >= 6 and len(rest) >= 2:
                 return True
     # Any segment of first.last / first_last is a role token → department inbox
     segments = [s for s in re.split(r"[._+-]", low) if s]

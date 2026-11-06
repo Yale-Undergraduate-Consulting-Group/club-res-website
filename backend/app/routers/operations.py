@@ -83,13 +83,38 @@ async def firecrawl_status(admin: dict = Depends(get_current_admin)):
     fetch_started = time.monotonic()
     effective_page = await fetch_page("https://example.com", user_id=admin["id"])
     search_started = time.monotonic()
-    effective_results = await web_search("hello world", max_results=3, user_id=admin["id"])
+    # A per-check query: web_search caches answers, and a cached "hello world"
+    # would report search healthy during an outage.
+    effective_results = await web_search(f"hello world {int(time.time())}", max_results=3, user_id=admin["id"])
     result["effective"] = {
         "fetch": {"ok": effective_page is not None, "duration_s": round(time.monotonic() - fetch_started, 2)},
         "search": {"ok": len(effective_results) > 0, "duration_s": round(time.monotonic() - search_started, 2), "result_count": len(effective_results)},
         "note": "This is what the discovery pipeline actually gets right now - TinyFish first, then Firecrawl.",
     }
     return result
+
+
+# --- Catalog builder (admin only): on/off and what it is doing ---
+class CatalogBuilderToggle(BaseModel):
+    enabled: bool
+
+
+@router.get("/catalog-builder")
+async def catalog_builder_status(admin: dict = Depends(get_current_admin)):
+    from app.services.catalog_builder import builder_status
+
+    return await builder_status()
+
+
+@router.put("/catalog-builder")
+async def toggle_catalog_builder(payload: CatalogBuilderToggle, admin: dict = Depends(get_current_admin)):
+    from app.services.audit_service import log_audit
+    from app.services.catalog_builder import ENABLED_KEY, builder_status, set_builder_enabled
+
+    await set_builder_enabled(payload.enabled)
+    await log_audit(admin["id"], "catalog_builder_toggle", "setting", ENABLED_KEY,
+                    "Turned the catalog builder " + ("on" if payload.enabled else "off"))
+    return await builder_status()
 
 
 # --- Usage events (admin only) ---

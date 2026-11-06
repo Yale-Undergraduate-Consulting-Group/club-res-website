@@ -29,6 +29,9 @@ the frontend):
   mail_domain: str or None; mail_domain_evidence: int ("@domain" citations)
   alt_mail_domains: [{"domain", "country"}]
   exclude: [{"name", "country", "domains": [str], "kind": subsidiary|captive|region}]
+  units: [{"name", "country", "domain", "aliases": [str]}] - group companies and
+         operating brands whose people count as the target's (AWS and Whole
+         Foods under Amazon, YouTube under Google), tagged group_unit on a person
   target_country: ISO-2, "*" (any country) or None; defaults to hq_country
   source: override|wikidata|gleif|register|heuristic
 """
@@ -223,10 +226,12 @@ def _brand_words(name: str) -> list[str]:
 # --- the reviewed override table ----------------------------------------
 
 def _o(legal: str, display: str, country: str, city: str, mail: str, *,
-       alt: tuple = (), exclude: tuple = (), aliases: tuple = (), target: str | None = None) -> dict[str, Any]:
+       alt: tuple = (), exclude: tuple = (), aliases: tuple = (), target: str | None = None,
+       units: tuple = ()) -> dict[str, Any]:
     return {
         "legal_name": legal, "display_name": display, "hq_country": country, "hq_city": city,
         "mail_domain": mail, "alt": alt, "exclude": exclude, "aliases": aliases, "target": target,
+        "units": units,
     }
 
 
@@ -239,6 +244,8 @@ def _o(legal: str, display: str, country: str, city: str, mail: str, *,
 # mails from the parent's domain (Goldman Sachs Services India uses gs.com)
 # lists no domain, so the parent's domain is never excluded by accident; its
 # name is still there for filtering people.
+# units entries: (name, ISO country, domain or None, aliases). Kept short: the
+# brands a member searching the group means too, never every legal child.
 # target="*": a network of member firms (the Big Four, the strategy houses),
 # where the HQ country says nothing about where a member's contacts sit.
 ENTITY_OVERRIDES: dict[str, dict[str, Any]] = {
@@ -341,16 +348,28 @@ ENTITY_OVERRIDES: dict[str, dict[str, Any]] = {
     "bain": _o("Bain & Company, Inc.", "Bain & Company", "US", "Boston", "bain.com",
                aliases=("bain company", "bain and company"), target="*"),
     "microsoft": _o("Microsoft Corporation", "Microsoft", "US", "Redmond", "microsoft.com",
-                    exclude=(("Microsoft India Development Center", "IN", (), "captive"),)),
+                    exclude=(("Microsoft India Development Center", "IN", (), "captive"),),
+                    units=(("LinkedIn", "US", "linkedin.com", ()), ("GitHub", "US", "github.com", ()))),
+    # Searching the holding (Alphabet) searches the operating brand: the alias
+    # resolves to this row, whose display name the run queries.
     "google": _o("Google LLC", "Google", "US", "Mountain View", "google.com",
-                 aliases=("alphabet", "google llc", "alphabet inc")),
+                 aliases=("alphabet", "google llc", "alphabet inc"),
+                 units=(("Alphabet", "US", "abc.xyz", ()), ("YouTube", "US", "youtube.com", ()),
+                        ("DeepMind", "GB", "deepmind.com", ("Google DeepMind",)),
+                        ("Waymo", "US", "waymo.com", ()), ("Verily", "US", "verily.com", ("Verily Life Sciences",)))),
     # Checked 2026-09-22 (RocketReach, mailsfinder): meta.com; fb.com is the
     # pre-rename domain still seen on older records.
     "meta": _o("Meta Platforms, Inc.", "Meta", "US", "Menlo Park", "meta.com",
-               alt=(("fb.com", None),), aliases=("meta platforms", "facebook")),
+               alt=(("fb.com", None),), aliases=("meta platforms", "facebook"),
+               units=(("Facebook", "US", "facebook.com", ()), ("Instagram", "US", "instagram.com", ()),
+                      ("WhatsApp", "US", "whatsapp.com", ()), ("Reality Labs", "US", None, ()))),
     "amazon": _o("Amazon.com, Inc.", "Amazon", "US", "Seattle", "amazon.com",
                  exclude=(("Amazon Development Centre India", "IN", (), "captive"),),
-                 aliases=("amazon com", "aws", "amazon web services")),
+                 aliases=("amazon com", "aws", "amazon web services"),
+                 units=(("AWS", "US", None, ("Amazon Web Services",)),
+                        ("Whole Foods Market", "US", "wholefoodsmarket.com", ("Whole Foods",)),
+                        ("Zappos", "US", "zappos.com", ()), ("Twitch", "US", "twitch.tv", ()),
+                        ("Audible", "US", "audible.com", ()), ("Ring", "US", "ring.com", ()))),
     "apple": _o("Apple Inc.", "Apple", "US", "Cupertino", "apple.com"),
     "ibm": _o("International Business Machines Corporation", "IBM", "US", "Armonk", "ibm.com",
               exclude=(("IBM India", "IN", (), "subsidiary"),),
@@ -397,6 +416,10 @@ def _exclude_item(name: str, country: str | None, domains, kind: str) -> dict[st
     return {"name": name, "country": country, "domains": list(domains), "kind": kind}
 
 
+def _unit_item(name: str, country: str | None, domain: str | None, aliases=()) -> dict[str, Any]:
+    return {"name": name, "country": country, "domain": domain, "aliases": list(aliases)}
+
+
 def _parent_from_override(entry: dict[str, Any]) -> dict[str, Any]:
     return {
         "legal_name": entry["legal_name"], "display_name": entry["display_name"],
@@ -405,6 +428,7 @@ def _parent_from_override(entry: dict[str, Any]) -> dict[str, Any]:
         "mail_domain": entry["mail_domain"], "mail_domain_evidence": 0,
         "alt_mail_domains": [{"domain": d, "country": c} for d, c in entry["alt"]],
         "exclude": [_exclude_item(*ex) for ex in entry["exclude"]],
+        "units": [_unit_item(*u) for u in entry["units"]],
         "target_country": entry["target"] or entry["hq_country"],
         "source": "override",
     }
@@ -419,7 +443,7 @@ def subsidiary_profile(parent: dict[str, Any], item: dict[str, Any]) -> dict[str
         "legal_name": item["name"], "display_name": item["name"], "brand_words": _brand_words(item["name"]),
         "hq_country": item.get("country"), "hq_city": None,
         "mail_domain": domains[0] if domains else parent.get("mail_domain"),
-        "mail_domain_evidence": 0, "alt_mail_domains": [], "exclude": [],
+        "mail_domain_evidence": 0, "alt_mail_domains": [], "exclude": [], "units": [],
         "target_country": item.get("country") or parent.get("target_country"),
         "source": parent.get("source") or "heuristic",
     }
@@ -445,7 +469,7 @@ def heuristic_profile(name: str) -> dict[str, Any]:
     return {
         "legal_name": text, "display_name": text, "brand_words": _brand_words(text),
         "hq_country": None, "hq_city": None, "mail_domain": None, "mail_domain_evidence": 0,
-        "alt_mail_domains": [], "exclude": [], "target_country": None, "source": "heuristic",
+        "alt_mail_domains": [], "exclude": [], "units": [], "target_country": None, "source": "heuristic",
     }
 
 
@@ -658,6 +682,27 @@ def _merge_excludes(brand: str, hq_country: str | None, own_domains: set[str], *
                 continue
             out[key] = _exclude_item(item["name"][:200], country, domains, _kind_for(item["name"]))
     return list(out.values())[:30]
+
+
+def _merge_units(display: str, hq_country: str | None, *groups) -> list[dict[str, Any]]:
+    """Children in the HQ's own country: group companies whose people a member
+    searching the parent still means (they used to be dropped here). GLEIF
+    writes names in capitals, so those are title-cased for the tag a person
+    carries."""
+    own = _norm(display)
+    out: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        for item in group:
+            name = str(item.get("name") or "").strip()
+            country = (item.get("country") or "").upper() or None
+            if not name or not hq_country or country != hq_country or _SKIP_CHILD.search(name):
+                continue
+            key = _norm(name) or name.lower()
+            if key == own or key in out:
+                continue
+            domain = next((d for d in item.get("domains") or [] if d), None)
+            out[key] = _unit_item((name.title() if name.isupper() else name)[:200], country, domain)
+    return list(out.values())[:20]
 
 
 async def _register_row(name: str) -> dict[str, Any] | None:
@@ -875,8 +920,9 @@ async def _resolve(text: str, *, user_id: int | None) -> tuple[dict[str, Any], b
                        source="wikidata" if wiki else "gleif")
         websites = list((wiki or {}).get("websites") or [])
         own = {registrable_domain(w) for w in websites}
-        profile["exclude"] = _merge_excludes(display, hq_country, own, (wiki or {}).get("subs") or [],
-                                             (gleif or {}).get("children") or [])
+        groups = ((wiki or {}).get("subs") or [], (gleif or {}).get("children") or [])
+        profile["exclude"] = _merge_excludes(display, hq_country, own, *groups)
+        profile["units"] = _merge_units(display, hq_country, *groups)
     else:
         row = await _register_row(text)
         if row:
@@ -911,8 +957,9 @@ def _host(value: Any) -> str | None:
 
 def sanitize_entity(raw: Any) -> dict[str, Any] | None:
     """An EntityProfile sent back by a member's browser, cut to the contract
-    and to sizes a run can carry. It is member input: it only ever narrows
-    who a run keeps and which domain it tries, and nothing else reads it."""
+    and to sizes a run can carry. It is member input: it narrows who a run
+    keeps and which domain it tries, and its units only admit people whose own
+    headline names that unit, each tagged with it; nothing else reads it."""
     if not isinstance(raw, dict):
         return None
     alt = []
@@ -929,6 +976,15 @@ def sanitize_entity(raw: Any) -> dict[str, Any] | None:
             "domains": [h for h in (_host(d) for d in domains[:5]) if h],
             "kind": e.get("kind") if e.get("kind") in KINDS else "subsidiary",
         })
+    units = []
+    for u in (raw.get("units") or [])[:20] if isinstance(raw.get("units"), list) else []:
+        if not isinstance(u, dict) or not _s(u.get("name")):
+            continue
+        aliases = u.get("aliases") if isinstance(u.get("aliases"), list) else []
+        units.append({
+            "name": _s(u.get("name")), "country": _country(u.get("country")), "domain": _host(u.get("domain")),
+            "aliases": [a for a in (_s(x) for x in aliases[:5]) if a],
+        })
     words = raw.get("brand_words") if isinstance(raw.get("brand_words"), list) else []
     try:
         evidence = max(0, min(int(raw.get("mail_domain_evidence") or 0), 100))
@@ -939,7 +995,7 @@ def sanitize_entity(raw: Any) -> dict[str, Any] | None:
         "brand_words": [w for w in (_s(x, 60).lower() for x in words[:10]) if w],
         "hq_country": _country(raw.get("hq_country")), "hq_city": _s(raw.get("hq_city"), 100) or None,
         "mail_domain": _host(raw.get("mail_domain")), "mail_domain_evidence": evidence,
-        "alt_mail_domains": alt, "exclude": exclude,
+        "alt_mail_domains": alt, "exclude": exclude, "units": units,
         "target_country": _country(raw.get("target_country"), star=True),
         "source": raw.get("source") if raw.get("source") in SOURCES else "heuristic",
     }

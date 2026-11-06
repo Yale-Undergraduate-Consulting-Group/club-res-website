@@ -29,6 +29,9 @@ export default function CompanyRegister() {
   const [tier, setTier] = useState('');
   const [sector, setSector] = useState('');
   const [withOfficers, setWithOfficers] = useState(false);
+  // Browsing without a query: biggest/most reachable companies first, or the
+  // newest-filing feed. A typed query always ranks by match, then size.
+  const [sort, setSort] = useState<'value' | 'recent'>('value');
   const [items, setItems] = useState<RegisterCompany[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<RegisterSummary | null>(null);
@@ -55,6 +58,7 @@ export default function CompanyRegister() {
           tier: tier || undefined,
           sector: sector || undefined,
           with_officers: withOfficers || undefined,
+          sort,
           limit: 40,
         }, controller.signal);
         setItems(Array.isArray(page?.items) ? page.items : []);
@@ -69,7 +73,7 @@ export default function CompanyRegister() {
       }
     }, 300);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [q, tier, sector, withOfficers]);
+  }, [q, tier, sector, withOfficers, sort]);
 
   const loadPeople = useCallback(async (id: number) => {
     if (people[id]) return;
@@ -177,10 +181,30 @@ export default function CompanyRegister() {
             </select>
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={withOfficers} onChange={(event) => setWithOfficers(event.target.checked)} />
-          Only companies with officers already named on a filing
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={withOfficers} onChange={(event) => setWithOfficers(event.target.checked)} />
+            Only companies with officers already named on a filing
+          </label>
+          {!q.trim() && (
+            <div className="flex items-center gap-1 text-xs" role="group" aria-label="Order companies by" data-testid="register-sort">
+              <span className="text-slate-500 mr-1">Order:</span>
+              {([['value', 'Worth reaching first'], ['recent', 'Newest filings']] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={sort === id}
+                  onClick={() => setSort(id)}
+                  className={`rounded-full border px-3 py-1 font-medium ${
+                    sort === id ? 'border-deep-navy bg-deep-navy text-white' : 'border-pale-sky bg-white text-deep-navy'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-700">{error}</p>}

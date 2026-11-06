@@ -61,8 +61,10 @@ async def list_users(admin: dict = Depends(get_current_admin)):
     """List all users. Admin only."""
     db = await get_db()
     try:
+        # The catalog builder's system account is not a member to manage.
         cursor = await db.execute(
-            "SELECT id, email, name, picture, role, is_active, created_at FROM users ORDER BY created_at"
+            "SELECT id, email, name, picture, role, is_active, created_at FROM users"
+            " WHERE COALESCE(role, 'standard') != 'system' ORDER BY created_at"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -177,9 +179,9 @@ async def update_user_role(user_id: int, payload: UserRoleUpdate, admin: dict = 
         raise HTTPException(400, "Cannot demote yourself")
     db = await get_db()
     try:
-        cursor = await db.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+        cursor = await db.execute("SELECT email, role FROM users WHERE id = ?", (user_id,))
         row = await cursor.fetchone()
-        if not row:
+        if not row or row["role"] == "system":
             raise HTTPException(404, "User not found")
         await db.execute("UPDATE users SET role = ? WHERE id = ?", (payload.role, user_id))
         await db.commit()
@@ -196,9 +198,9 @@ async def update_user_status(user_id: int, payload: UserStatusUpdate, admin: dic
         raise HTTPException(400, "Cannot deactivate yourself")
     db = await get_db()
     try:
-        cursor = await db.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+        cursor = await db.execute("SELECT email, role FROM users WHERE id = ?", (user_id,))
         row = await cursor.fetchone()
-        if not row:
+        if not row or row["role"] == "system":
             raise HTTPException(404, "User not found")
         await db.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if payload.is_active else 0, user_id))
         await db.commit()

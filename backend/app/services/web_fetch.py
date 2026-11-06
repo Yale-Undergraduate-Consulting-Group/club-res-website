@@ -28,8 +28,10 @@ later - it is never required.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+from collections import deque
 from contextvars import ContextVar
 import re
 import time
@@ -38,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from app.database import get_db
 from app.services.discovery_gate import discovery_job
 from app.services.generation_policy import reserve_firecrawl_call, reserve_tinyfish_call
 
@@ -48,6 +51,11 @@ _MONID_SEARCH_TIMEOUT_S = 20.0
 _MONID_FETCH_TIMEOUT_S = 45.0
 _MONID_POLL_ATTEMPTS = 5
 _MONID_POLL_INTERVAL_S = 2.0
+# A search that is not finished on the first answer is usually finished a
+# moment later; polling it every 2s added up to 2s to each such query of a
+# run. Same ~10s ceiling, checked four times as often.
+_MONID_SEARCH_POLL_ATTEMPTS = 20
+_MONID_SEARCH_POLL_INTERVAL_S = 0.5
 
 
 @dataclass(frozen=True)
@@ -74,6 +82,138 @@ def web_search_configured() -> bool:
     so a gate does not need editing again the next time the backend layer
     order changes."""
     return tinyfish_configured() or firecrawl_configured()
+
+
+# --- Search pacing, usage and cache --------------------------------------
+# One process serves every member, Find run and the builder, so this module
+# state is the club-wide view of Monid's published free-tier search limit.
+
+_SEARCH_PACER_WINDOW_S = 60.0
+#: Monotonic start times of the Monid searches inside the current window.
+_search_slots: deque[float] = deque()
+_EMPTY_SEARCH_CACHE_TTL_S = 6 * 3600.0
+_SEARCH_USAGE_KEEP_S = 2 * 86400.0
+_SEARCH_PRUNE_BATCH = 500
+
+
+def _searches_per_window() -> int:
+    try:
+        return max(1, int(os.getenv("MONID_SEARCHES_PER_MINUTE", "30")))
+    except ValueError:
+        return 30
+
+
+def _search_cache_ttl_s() -> float:
+    """WEB_SEARCH_CACHE_TTL_HOURS=0 turns the cache off."""
+    try:
+        return max(0.0, float(os.getenv("WEB_SEARCH_CACHE_TTL_HOURS", "168"))) * 3600
+    except ValueError:
+        return 168 * 3600.0
+
+
+async def _await_search_slot() -> None:
+    """Wait until one more Monid search fits the sliding window, then take
+    the slot. Waiting, not failing: a burst of Find queries queues for a few
+    seconds instead of drawing 429s that read as "search is down". Check and
+    take happen with no await between them, so one event loop needs no lock.
+    ponytail: in-memory window - a restart may allow one extra burst inside
+    the first minute; hour/day budgets come from web_search_usage instead."""
+    while True:
+        now = time.monotonic()
+        while _search_slots and now - _search_slots[0] >= _SEARCH_PACER_WINDOW_S:
+            _search_slots.popleft()
+        if len(_search_slots) < _searches_per_window():
+            _search_slots.append(now)
+            return
+        await asyncio.sleep(_search_slots[0] + _SEARCH_PACER_WINDOW_S - now)
+
+
+async def _record_search_usage() -> None:
+    """One row per real upstream search call. Bookkeeping never fails a
+    search: without the table (no init_db) the call is simply not counted."""
+    now = time.time()
+    try:
+        db = await get_db()
+        try:
+            await db.execute("INSERT INTO web_search_usage (at) VALUES (?)", (now,))
+            await db.execute(
+                "DELETE FROM web_search_usage WHERE id IN "
+                "(SELECT id FROM web_search_usage WHERE at < ? LIMIT ?)",
+                (now - _SEARCH_USAGE_KEEP_S, _SEARCH_PRUNE_BATCH),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+    except Exception as exc:  # best-effort bookkeeping
+        logger.warning("web_search usage not recorded: %s: %s", type(exc).__name__, exc)
+
+
+async def search_usage_last_hour(seconds: float = 3600) -> int:
+    """Real upstream searches (Monid pages and Firecrawl calls, cache hits
+    excluded) in the last ``seconds``; rows are kept two days, so a 24h
+    window works too. Raises if the usage table is unreadable - a budget
+    check must not read an outage as an unused budget."""
+    db = await get_db()
+    try:
+        cur = await db.execute("SELECT COUNT(*) FROM web_search_usage WHERE at >= ?",
+                               (time.time() - seconds,))
+        row = await cur.fetchone()
+    finally:
+        await db.close()
+    return int(row[0]) if row else 0
+
+
+def _search_cache_key(query: str) -> str:
+    """Whitespace and case collapsed; operators (site:, OR, quotes) kept."""
+    return " ".join(query.split()).lower()
+
+
+async def _search_cache_get(key: str, page: int, max_results: int) -> list[dict[str, Any]] | None:
+    try:
+        db = await get_db()
+        try:
+            cur = await db.execute(
+                "SELECT results_json FROM web_search_cache "
+                "WHERE query_key = ? AND page = ? AND max_results = ? AND expires_at > ?",
+                (key, page, max_results, time.time()),
+            )
+            row = await cur.fetchone()
+        finally:
+            await db.close()
+        return json.loads(row[0]) if row else None
+    except Exception as exc:  # a cache miss, never a failed search
+        logger.warning("web_search cache read skipped: %s: %s", type(exc).__name__, exc)
+        return None
+
+
+async def _search_cache_put(key: str, page: int, max_results: int,
+                            results: list[dict[str, Any]]) -> None:
+    """Only successful answers reach here. An empty one is kept 6h: "nothing
+    found" is worth re-asking sooner than a list of hits."""
+    ttl = _search_cache_ttl_s()
+    if not results:
+        ttl = min(ttl, _EMPTY_SEARCH_CACHE_TTL_S)
+    now = time.time()
+    try:
+        db = await get_db()
+        try:
+            await db.execute(
+                "DELETE FROM web_search_cache WHERE id IN "
+                "(SELECT id FROM web_search_cache WHERE expires_at <= ? LIMIT ?)",
+                (now, _SEARCH_PRUNE_BATCH),
+            )
+            await db.execute(
+                """INSERT INTO web_search_cache (query_key, page, max_results, results_json, expires_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(query_key, page, max_results) DO UPDATE
+                   SET results_json = excluded.results_json, expires_at = excluded.expires_at""",
+                (key, page, max_results, json.dumps(results), now + ttl),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+    except Exception as exc:  # the search itself already succeeded
+        logger.warning("web_search cache write skipped: %s: %s", type(exc).__name__, exc)
 
 
 # --- TinyFish, via Monid ------------------------------------------------
@@ -194,7 +334,8 @@ def _extract_site_operators(query: str) -> tuple[str, str, str]:
 _TINYFISH_SEARCH_PAGE_SIZE = 8  # observed results per page across every live call this session
 
 
-async def _tinyfish_web_search(query: str, max_results: int, *, user_id: int | None = None) -> list[dict[str, Any]] | None:
+async def _tinyfish_web_search(query: str, max_results: int, *, user_id: int | None = None,
+                               start_page: int = 0) -> list[dict[str, Any]] | None:
     """Returns None on failure (caller falls back to Firecrawl) and a list
     (possibly empty) on success - a real empty result is trusted, not
     treated as a failure to fall back from. TinyFish's search API has no
@@ -215,28 +356,33 @@ async def _tinyfish_web_search(query: str, max_results: int, *, user_id: int | N
     if exclude_domains:
         base_params["exclude_domains"] = exclude_domains
 
-    max_pages = min(11, max(1, -(-max(1, max_results) // _TINYFISH_SEARCH_PAGE_SIZE)))
+    start_page = max(0, min(int(start_page or 0), 10))
+    max_pages = min(11 - start_page, max(1, -(-max(1, max_results) // _TINYFISH_SEARCH_PAGE_SIZE)))
     started = time.monotonic()
     out: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     async with httpx.AsyncClient(timeout=_MONID_SEARCH_TIMEOUT_S) as client:
-        for page in range(max_pages):
+        for page in range(start_page, start_page + max_pages):
             if user_id is not None:
                 await reserve_tinyfish_call(user_id)
             params = dict(base_params)
             if page:
                 params["page"] = page
+            # The request goes out right after its slot; counting comes after,
+            # so a slow usage write never bunches requests past the window.
+            await _await_search_slot()
             output = await _monid_run(
                 client, api_key, "/search", query_params=params,
-                poll_attempts=_MONID_POLL_ATTEMPTS, poll_interval_s=_MONID_POLL_INTERVAL_S,
+                poll_attempts=_MONID_SEARCH_POLL_ATTEMPTS, poll_interval_s=_MONID_SEARCH_POLL_INTERVAL_S,
             )
+            await _record_search_usage()
             if output is None:
-                if page == 0:
+                if page == start_page:
                     return None
                 break
             results = output.get("results")
             if not isinstance(results, list):
-                if page == 0:
+                if page == start_page:
                     logger.warning("tinyfish web_search malformed response for %r: %r", query, output)
                     return None
                 break
@@ -262,7 +408,7 @@ async def _tinyfish_web_search(query: str, max_results: int, *, user_id: int | N
             if len(out) >= max_results or not added:
                 break
     logger.info("tinyfish web_search %d results for %r in %.2fs (%d page(s))",
-                 len(out), query, time.monotonic() - started, page + 1)
+                 len(out), query, time.monotonic() - started, page + 1 - start_page)
     return out
 
 
@@ -339,6 +485,7 @@ async def _firecrawl_web_search(query: str, max_results: int, *, user_id: int | 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     payload: dict[str, Any] = {"query": query, "limit": max(1, min(20, max_results))}
 
+    await _record_search_usage()
     started = time.monotonic()
     async with discovery_job():
         try:
@@ -360,6 +507,7 @@ async def _firecrawl_web_search(query: str, max_results: int, *, user_id: int | 
     results = data.get("data") if isinstance(data, dict) else None
     if not isinstance(results, list):
         logger.warning("firecrawl web_search malformed response for %r: %r", query, data)
+        _last_search_failure.set("Firecrawl malformed response")
         return []
     out: list[dict[str, Any]] = []
     for item in results:
@@ -414,20 +562,37 @@ def last_search_failure() -> str | None:
     return _last_search_failure.get()
 
 
-async def web_search(query: str, max_results: int = 8, *, user_id: int | None = None) -> list[dict[str, Any]]:
+async def web_search(query: str, max_results: int = 8, *, user_id: int | None = None,
+                     page: int = 0) -> list[dict[str, Any]]:
     """Web search. Tries TinyFish first, then Firecrawl. Returns [] when
     neither is configured. A genuine empty result from TinyFish is trusted
-    and returned as-is, not treated as a reason to fall back to Firecrawl."""
+    and returned as-is, not treated as a reason to fall back to Firecrawl.
+
+    ``page`` > 0 asks for a later results page. Only TinyFish pages, so a later
+    page never falls back to Firecrawl's first page of the same query.
+
+    Answers are read through the shared web_search_cache first; a hit spends
+    no search, no quota and no pacer slot. Failures are never cached."""
     _last_search_failure.set(None)
+    key = _search_cache_key(query or "")
+    use_cache = bool(key) and _search_cache_ttl_s() > 0
+    if use_cache:
+        cached = await _search_cache_get(key, page, max_results)
+        if cached is not None:
+            return cached
     reason = None
     if tinyfish_configured():
-        results = await _tinyfish_web_search(query, max_results, user_id=user_id)
+        results = await _tinyfish_web_search(query, max_results, user_id=user_id, start_page=page)
         if results is not None:
+            if use_cache:
+                await _search_cache_put(key, page, max_results, results)
             return results
         reason = "TinyFish gave no answer"
-    if firecrawl_configured():
+    if firecrawl_configured() and not page:
         results = await _firecrawl_web_search(query, max_results, user_id=user_id)
         if results or _last_search_failure.get() is None:
+            if use_cache:
+                await _search_cache_put(key, page, max_results, results)
             return results
         reason = _last_search_failure.get()
     if reason:

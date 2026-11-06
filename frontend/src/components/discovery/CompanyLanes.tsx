@@ -142,7 +142,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                   actions after it - in the same place on every row. */}
               <span className={`shrink-0 sm:w-44 truncate text-xs tabular-nums ${
                 lane.run.state === 'failed' ? 'text-amber-800' : active ? 'text-deep-navy' : 'text-slate-500'}`}
-                    title={stateText(lane) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
+                    title={(active && lane.run.message ? lane.run.message : stateText(lane)) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
                     data-testid="lane-state">
                 {stateText(lane)}
                 {lane.ticked > 0 ? ` · ${lane.ticked} ticked` : ''}
@@ -164,7 +164,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                   className={`ui-button ui-button--sm sm:h-7 sm:min-h-0! sm:py-0! ${lane.found > 0 ? 'ui-button--secondary' : 'ui-button--primary'}`}
                   title={lane.found > 0 ? `Search ${lane.company} again for more people` : `Search ${lane.company} for people`}
                 >
-                  {active ? 'Searching…' : lane.found > 0 ? '+ Find more people' : 'Find people'}
+                  {active ? 'Searching…' : lane.found > 0 ? 'Find more people' : 'Find people'}
                 </button>
                 {runId !== undefined && (
                   <details className="relative sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100 open:opacity-100"
@@ -183,13 +183,17 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                       >
                         Export .xlsx
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(runId)}
-                        className="block w-full rounded-md px-2 py-1 text-left text-xs text-red-700 hover:bg-red-50"
-                      >
-                        Delete run
-                      </button>
+                      {/* The catalog builder's run belongs to the club: anyone
+                          may export or keep from it, nobody deletes it. */}
+                      {!lane.run.shared && (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(runId)}
+                          className="block w-full rounded-md px-2 py-1 text-left text-xs text-red-700 hover:bg-red-50"
+                        >
+                          Delete run
+                        </button>
+                      )}
                     </div>
                   </details>
                 )}

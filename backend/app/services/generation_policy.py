@@ -1,16 +1,36 @@
-"""Reserve draft requests transactionally before paid inference; store no prompt text."""
+"""Charge model calls to the club's monthly AI budget; store no prompt text."""
 import os
 import json
 import sqlite3
 from contextlib import closing
 from fastapi import HTTPException
 from app.database import get_db
-from app.services.llm import validate_model
 
-# Cheap models weigh a fraction of a unit, so a weighted budget alone would
-# permit tens of thousands of calls an hour. Bound raw volume at this multiple
-# of the unit budget to keep a runaway loop from hammering the provider.
-_CALL_CEILING_MULTIPLE = 10
+DEFAULT_MONTHLY_BUDGET_USD = 50.0
+# Spend this calendar month (UTC): the provider-reported cost of finished calls,
+# and the worst-case estimate of calls still running or of uncertain outcome.
+_MONTH_SPEND_SQL = """SELECT COALESCE(SUM(COALESCE(
+        json_extract(details_json,'$.cost_usd'),
+        json_extract(details_json,'$.estimated_cost_usd'),0)),0.0)
+    FROM usage_events WHERE event_type='bedrock_reserved'
+    AND created_at >= strftime('%Y-%m-01 00:00:00','now')"""
+
+
+def monthly_budget_usd() -> float:
+    try:
+        budget = float(os.getenv('AI_MONTHLY_BUDGET_USD', str(DEFAULT_MONTHLY_BUDGET_USD)))
+        if not 0 <= budget <= 100_000:
+            raise ValueError()
+    except ValueError as exc:
+        raise HTTPException(503, 'AI budget configuration is invalid') from exc
+    return budget
+
+
+def _connect():
+    from app.database import sqlite_file_path
+    # mode=rw refuses to invent an empty database when its durable mount is absent.
+    uri = sqlite_file_path().resolve().as_uri() + '?mode=rw'
+    return closing(sqlite3.connect(uri, uri=True, timeout=5, isolation_level=None))
 
 
 def reserve_bedrock_invocation(
@@ -20,52 +40,33 @@ def reserve_bedrock_invocation(
     estimated_input_tokens: int | None = None,
     max_output_tokens: int | None = None,
 ) -> int:
-    """Charge every paid attempt, including ranking/fanout, across worker processes.
+    """Reserve a call's worst-case cost against the month before the call is made.
 
-    The budget is denominated in Haiku-class units rather than raw calls, so a
-    cheap triage fanout cannot consume the hour that member-facing generation
-    needs. A separate call ceiling still bounds request volume, since a runaway
-    loop of cheap calls is a throttling and cost risk even when each is nearly
-    free.
-
-    This synchronous boundary runs in inference threads and never nests an event
-    loop. Failed/uncertain provider calls retain reservations to avoid undercounts.
+    The worst case (estimated input plus the full output allowance) is what the
+    reservation holds until the provider reports the real token counts, so
+    concurrent calls across worker processes cannot overrun the budget. This
+    synchronous boundary runs in inference threads and never nests an event loop.
     """
-    from app.database import is_postgres, sqlite_file_path
-    from app.services.llm import model_quota_weight
+    from app.database import is_postgres
+    from app.services.llm import cost_usd
     if is_postgres():
-        raise HTTPException(503,'Paid inference requires a verified transactional quota store')
+        raise HTTPException(503, 'Paid inference requires a verified transactional quota store')
+    budget = monthly_budget_usd()
+    estimate = cost_usd(model, estimated_input_tokens or 0, max_output_tokens or 0)
     try:
-        limit=int(os.getenv('BEDROCK_CALLS_PER_CLUB_PER_HOUR','200'))
-        if not 0 <= limit <= 2000:
-            raise ValueError()
-    except ValueError as exc:
-        raise HTTPException(503,'Paid inference quota configuration is invalid') from exc
-    weight=model_quota_weight(model)
-    call_ceiling=limit*_CALL_CEILING_MULTIPLE
-    try:
-        # mode=rw refuses to invent an empty database when its durable mount is absent.
-        uri=sqlite_file_path().resolve().as_uri()+'?mode=rw'
-        with closing(sqlite3.connect(uri,uri=True,timeout=5,isolation_level=None)) as db:
+        with _connect() as db:
             try:
                 db.execute('BEGIN IMMEDIATE')
-                # Reservations written before weighting existed count as one unit.
-                spent,calls=db.execute("""SELECT
-                        COALESCE(SUM(COALESCE(json_extract(details_json,'$.quota_weight'),1.0)),0.0),
-                        COUNT(*)
-                    FROM usage_events WHERE event_type='bedrock_reserved'
-                    AND created_at >= datetime('now','-1 hour')""").fetchone()
-                if float(spent)+weight > limit:
-                    raise HTTPException(429,'Club inference limit reached. Please try again later.')
-                if int(calls) >= call_ceiling:
-                    raise HTTPException(429,'Club inference request rate reached. Please try again later.')
+                spent = float(db.execute(_MONTH_SPEND_SQL).fetchone()[0] or 0.0)
+                if spent + estimate > budget:
+                    raise HTTPException(429, "The club's AI budget for this month is used up.")
                 cursor = db.execute("""INSERT INTO usage_events(user_id,event_type,resource_type,details_json)
-                    VALUES(?,'bedrock_reserved',?,?)""",(user_id,purpose,json.dumps({
-                        'model_id':model,
-                        'quota_weight':weight,
-                        'estimated_input_tokens':estimated_input_tokens,
-                        'max_output_tokens':max_output_tokens,
-                        'status':'reserved',
+                    VALUES(?,'bedrock_reserved',?,?)""", (user_id, purpose, json.dumps({
+                        'model_id': model,
+                        'estimated_input_tokens': estimated_input_tokens,
+                        'max_output_tokens': max_output_tokens,
+                        'estimated_cost_usd': estimate,
+                        'status': 'reserved',
                     })))
                 db.commit()
                 return int(cursor.lastrowid)
@@ -73,91 +74,57 @@ def reserve_bedrock_invocation(
                 if db.in_transaction:
                     db.rollback()
     except sqlite3.Error as exc:
-        raise HTTPException(503,'Paid inference quota could not be recorded') from exc
+        raise HTTPException(503, 'Paid inference could not be recorded') from exc
 
 
 def complete_bedrock_invocation(event_id: int, input_tokens: int | None, output_tokens: int | None) -> None:
-    """Attach provider token counts to a reservation without storing prompts or responses."""
-    from app.database import is_postgres, sqlite_file_path
+    """Replace the reserved estimate with the cost the provider's token counts imply."""
+    from app.database import is_postgres
+    from app.services.llm import cost_usd
     if is_postgres():
         return
     try:
-        uri=sqlite_file_path().resolve().as_uri()+'?mode=rw'
-        with closing(sqlite3.connect(uri,uri=True,timeout=5,isolation_level=None)) as db:
-            row=db.execute("SELECT details_json FROM usage_events WHERE id=? AND event_type='bedrock_reserved'",(event_id,)).fetchone()
+        with _connect() as db:
+            row = db.execute("SELECT details_json FROM usage_events WHERE id=? AND event_type='bedrock_reserved'", (event_id,)).fetchone()
             if not row:
                 return
-            details=json.loads(row[0] or '{}')
-            details.update({'input_tokens':input_tokens,'output_tokens':output_tokens,'status':'completed'})
-            db.execute('UPDATE usage_events SET details_json=? WHERE id=?',(json.dumps(details),event_id))
-    except (sqlite3.Error,ValueError,TypeError):
+            details = json.loads(row[0] or '{}')
+            details.update({'input_tokens': input_tokens, 'output_tokens': output_tokens, 'status': 'completed'})
+            if input_tokens is not None and output_tokens is not None:
+                details['cost_usd'] = cost_usd(details.get('model_id') or '', int(input_tokens), int(output_tokens))
+            db.execute('UPDATE usage_events SET details_json=? WHERE id=?', (json.dumps(details), event_id))
+    except (sqlite3.Error, ValueError, TypeError):
         # Accounting enrichment must never turn a completed model response into a retry.
         return
 
 
-async def reserve_generation(user_id: int, model: str | None):
-    validate_model(model)
-    member_limit = min(100, max(1, int(os.getenv('DRAFTS_PER_MEMBER_PER_HOUR', '20'))))
-    club_limit = min(2000, max(1, int(os.getenv('DRAFTS_PER_CLUB_PER_HOUR', '200'))))
-    db = await get_db()
-    try:
-        await db.execute('BEGIN IMMEDIATE')
-        row = await (await db.execute("""SELECT count(*) AS total,
-            coalesce(sum(CASE WHEN user_id = ? THEN 1 ELSE 0 END), 0) AS member
-            FROM usage_events WHERE event_type = 'draft_reserved'
-            AND created_at >= datetime('now', '-1 hour')""", (user_id,))).fetchone()
-        if row['total'] >= club_limit or row['member'] >= member_limit:
-            raise HTTPException(429, 'Draft generation limit reached. Please try again later.')
-        cur = await db.execute("INSERT INTO usage_events(user_id,event_type,resource_type) VALUES(?,'draft_reserved','email')", (user_id,))
-        await db.commit()
-        return cur.lastrowid
-    finally:
-        await db.close()
-
-
-async def release_generation(reservation_id: int | None):
-    """Give back a draft the model never wrote.
-
-    A reservation is taken before the call so a burst cannot overrun the hour.
-    When the call is then refused before reaching the model - every inference
-    slot busy, the provider throttling - nothing was spent, and keeping the
-    reservation charged the member a draft for nothing: a batch of twenty
-    could exhaust the hour on refusals alone.
-    """
-    if not reservation_id:
+def release_bedrock_invocation(event_id: int) -> None:
+    """Drop a reservation for a call the provider refused before any inference."""
+    from app.database import is_postgres
+    if is_postgres():
         return
+    try:
+        with _connect() as db:
+            db.execute("DELETE FROM usage_events WHERE id=? AND event_type='bedrock_reserved'", (event_id,))
+    except sqlite3.Error:
+        return  # a kept reservation over-counts; it never under-counts
+
+
+async def bedrock_budget_share() -> float:
+    """The fraction of this month's AI budget already spent or reserved. The
+    catalog builder stops taking new companies above its share so member work
+    keeps the rest."""
+    budget = monthly_budget_usd()
     db = await get_db()
     try:
-        await db.execute("DELETE FROM usage_events WHERE id = ? AND event_type = 'draft_reserved'", (reservation_id,))
-        await db.commit()
+        row = await (await db.execute(_MONTH_SPEND_SQL)).fetchone()
     finally:
         await db.close()
-
-
-async def reserve_assistant_request(user_id: int):
-    """Apply a smaller per-member allowance before building or sending document context."""
-    try:
-        member_limit=min(100,max(1,int(os.getenv('ASSISTANT_REQUESTS_PER_MEMBER_PER_HOUR','15'))))
-        club_limit=min(1000,max(1,int(os.getenv('ASSISTANT_REQUESTS_PER_CLUB_PER_HOUR','120'))))
-    except ValueError as exc:
-        raise HTTPException(503,'Assistant quota configuration is invalid') from exc
-    db=await get_db()
-    try:
-        await db.execute('BEGIN IMMEDIATE')
-        row=await (await db.execute("""SELECT count(*) AS total,
-            coalesce(sum(CASE WHEN user_id=? THEN 1 ELSE 0 END),0) AS member
-            FROM usage_events WHERE event_type='assistant_reserved'
-            AND created_at>=datetime('now','-1 hour')""",(user_id,))).fetchone()
-        if row['total']>=club_limit or row['member']>=member_limit:
-            raise HTTPException(429,'Assistant limit reached. Please try again later.')
-        await db.execute("INSERT INTO usage_events(user_id,event_type,resource_type) VALUES(?,'assistant_reserved','assistant')",(user_id,))
-        await db.commit()
-    finally:
-        await db.close()
+    return float(row[0] or 0.0) / budget if budget > 0 else 1.0
 
 
 async def reserve_firecrawl_call(user_id: int):
-    """Same allowance shape as reserve_assistant_request: 15/hr/member, 120/hr club.
+    """15 calls/hr/member and 120/hr for the club.
 
     Per the Firecrawl expansion plan (docs/FIRECRAWL-SEARCH-EXPANSION-PLAN.md,
     section 1.6): the OCI VM is a shared 2 OCPU/12GB box already serving another

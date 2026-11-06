@@ -141,7 +141,7 @@ test('passing the pointer over a lane does not focus it, and each lane shows its
 
   // The search is visible without hovering, and names what it does.
   await page.mouse.move(0, 0);
-  await expect(a24.getByRole('button', { name: '+ Find more people' })).toBeVisible();
+  await expect(a24.getByRole('button', { name: 'Find more people' })).toBeVisible();
   await expect(neon.getByRole('button', { name: 'Find people' })).toBeVisible();
 });
 
@@ -155,11 +155,35 @@ test('a company in the sheet folds to its header and opens again', async ({ page
 
   await group.getByRole('button', { name: 'Hide people at A24' }).click();
   await expect(group.getByText('Jean Bartik')).toBeHidden();
-  // The header keeps the count, the tick-all box and the search.
+  // The header keeps the count and the tick-all box.
   await expect(group.getByText('2 on file · 2 selected')).toBeVisible();
   await expect(group.getByRole('checkbox', { name: 'Select everyone at A24' })).toBeChecked();
-  await expect(group.getByRole('button', { name: '+ Find more people' })).toBeVisible();
 
   await group.getByRole('button', { name: 'Show people at A24' }).click();
   await expect(group.getByText('Jean Bartik')).toBeVisible();
+});
+
+test('Find more people sits on the lane and at the top of the people sheet, once per company', async ({ page }) => {
+  // It used to be a small button inside every company's group header, among
+  // the counts, where members looking at fresh results missed it. Now it is
+  // on each lane and, for the company in focus, in the sheet's pinned header
+  // - on a phone too, where the lanes sit below the steps.
+  await mockLanes(page);
+  await page.goto('/scraper?view=company&companies=A24,NEON');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  const header = pipeline.getByTestId('sheet-header');
+  const sheetFind = header.getByTestId('sheet-find');
+  await expect(sheetFind).toBeVisible();
+  await expect(sheetFind).toHaveText('Find more people at A24');
+  await expect(sheetFind).toHaveClass(/ui-button--primary/);
+  // No second copy inside the group headers.
+  await expect(pipeline.getByTestId('recipient-picker').locator('[data-company]').getByRole('button', { name: /Find (more )?people/ })).toHaveCount(0);
+
+  // The sheet's action follows the lane in focus.
+  await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
+  await expect(sheetFind).toHaveText('Find people at NEON');
+  const box = await sheetFind.boundingBox();
+  const viewport = page.viewportSize();
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((viewport?.width ?? 0) + 1);
 });

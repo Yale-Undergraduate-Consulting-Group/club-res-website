@@ -7,12 +7,23 @@ data "aws_ssm_parameter" "al2023" {
 }
 
 locals {
-  bedrock_inference_profile = "arn:aws:bedrock:${var.aws_region}:${local.account_id}:inference-profile/${local.bedrock_model_id}"
-  # The US cross-region inference profile routes to any of these regions.
-  bedrock_foundation_models = [
-    for region in ["us-east-1", "us-east-2", "us-west-2"] :
-    "arn:aws:bedrock:${region}::foundation-model/anthropic.claude-haiku-5-5"
+  # Must match TIERS in backend/app/services/llm.py: each tier's newest model and
+  # the older one that stands in while AWS has not enabled the newest for the account.
+  bedrock_models = [
+    "anthropic.claude-haiku-5-5", "anthropic.claude-haiku-4-5-20251001-v1:0",
+    "anthropic.claude-sonnet-5-5", "anthropic.claude-sonnet-4-6",
+    "anthropic.claude-opus-5-5", "anthropic.claude-opus-4-6-v1",
   ]
+  bedrock_inference_profiles = [
+    for model in local.bedrock_models :
+    "arn:aws:bedrock:${var.aws_region}:${local.account_id}:inference-profile/us.${model}"
+  ]
+  # A US cross-region inference profile routes to any of these regions.
+  bedrock_foundation_models = flatten([
+    for region in ["us-east-1", "us-east-2", "us-west-2"] : [
+      for model in local.bedrock_models : "arn:aws:bedrock:${region}::foundation-model/${model}"
+    ]
+  ])
 }
 
 resource "aws_cloudwatch_log_group" "app" {
@@ -131,10 +142,10 @@ resource "aws_iam_role_policy" "box" {
         Resource = "${aws_cloudwatch_log_group.app.arn}:*"
       },
       {
-        Sid      = "InvokeHaiku"
+        Sid      = "InvokeClaude"
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-        Resource = concat([local.bedrock_inference_profile], local.bedrock_foundation_models)
+        Resource = concat(local.bedrock_inference_profiles, local.bedrock_foundation_models)
       },
     ]
   })

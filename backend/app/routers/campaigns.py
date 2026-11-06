@@ -439,11 +439,9 @@ async def draft_group_template(payload: DraftGroupTemplate, user: dict = Depends
     """
     from starlette.concurrency import run_in_threadpool
 
-    from app.services.generation_policy import reserve_generation
     from app.services.ollama_email_service import generate_group_template
 
     async def write(companies: list[str], notes: str) -> tuple[str, str]:
-        await reserve_generation(user["id"], None)
         try:
             return await run_in_threadpool(
                 generate_group_template,

@@ -16,7 +16,8 @@ from fastapi import HTTPException
 from app.database import init_db, get_db
 from app.services import llm, email_verifier as verifier
 from app.services.delivery_policy import require_delivery_enabled
-from app.services.generation_policy import reserve_generation, reserve_bedrock_invocation
+from app.services.generation_policy import reserve_bedrock_invocation
+from botocore.exceptions import ClientError
 import dns.resolver
 
 
@@ -115,15 +116,15 @@ async def tests():
         factory.return_value.converse.assert_called()
     with patch.dict(os.environ, {'LLM_PROVIDER': 'bedrock'}), patch('boto3.client') as factory:
         factory.return_value.converse.return_value = {'output': {'message': {'content': [{'text': 'draft'}]}}}
-        assert llm._bedrock_text('brief', llm.default_model_id(), 'system') == 'draft'
+        assert llm.complete_text('brief', llm.default_model_id(), 'system') == 'draft'
         try:
-            llm._bedrock_text('x' * 24001, llm.default_model_id(), None)
+            llm.complete_text('x' * 24001, llm.default_model_id())
             raise AssertionError('Oversized prompt accepted')
         except HTTPException as error:
             assert error.status_code == 413
         with patch.object(llm, '_inference_slots', MagicMock(acquire=MagicMock(return_value=False))):
             try:
-                llm._bedrock_text('brief', llm.default_model_id(), None)
+                llm.complete_text('brief', llm.default_model_id())
                 raise AssertionError('Concurrency guard bypassed')
             except HTTPException as error:
                 assert error.status_code == 429
@@ -136,101 +137,59 @@ async def tests():
             except HTTPException as result:
                 assert result.status_code == (429 if isinstance(error, HTTPException) else 502)
     await init_db()
-    db = await get_db()
-    await db.execute("INSERT INTO users(id,email) VALUES(1,'a@yale.edu'),(2,'b@yale.edu')")
-    await db.commit()
-    await db.close()
-    with patch.dict(os.environ, {'DRAFTS_PER_MEMBER_PER_HOUR': '1', 'DRAFTS_PER_CLUB_PER_HOUR': '2'}):
-        results = await asyncio.gather(*(reserve_generation(1, llm.default_model_id()) for _ in range(3)), return_exceptions=True)
-        granted = [result for result in results if isinstance(result, int)]
-        assert len(granted) == 1
-        assert all(isinstance(result, int) or isinstance(result, HTTPException) and result.status_code == 429 for result in results)
-        await reserve_generation(2, llm.default_model_id())
-    # A draft refused before reaching the model is given back, so a busy slot
-    # cannot spend the member's hour.
-    from app.services.generation_policy import release_generation
-    with patch.dict(os.environ, {'DRAFTS_PER_MEMBER_PER_HOUR': '1', 'DRAFTS_PER_CLUB_PER_HOUR': '100'}):
-        db = await get_db()
-        await db.execute("INSERT INTO users(id,email) VALUES(3,'c@yale.edu')")
-        await db.commit()
-        await db.close()
-        held = await reserve_generation(3, llm.default_model_id())
-        try:
-            await reserve_generation(3, llm.default_model_id())
-            raise AssertionError('second draft allowed past a limit of one')
-        except HTTPException as exc:
-            assert exc.status_code == 429
-        await release_generation(held)
-        assert isinstance(await reserve_generation(3, llm.default_model_id()), int)
-    # Calls outside draft routes (recommendations/ranking) share the paid-call cap.
     async def reset_paid():
         db=await get_db()
         await db.execute("DELETE FROM usage_events WHERE event_type='bedrock_reserved'")
         await db.commit()
         await db.close()
+    # One call's worst case (2,048 output tokens on Haiku 5.5) fits a budget of
+    # 0.0015 USD; a second does not, whichever caller makes it.
+    one_call = {'AI_MONTHLY_BUDGET_USD': '0.0015'}
     await reset_paid()
-    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','BEDROCK_CALLS_PER_CLUB_PER_HOUR':'1'}),patch('boto3.client') as factory:
+    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock',**one_call}),patch('boto3.client') as factory:
         factory.return_value.converse.return_value={'output':{'message':{'content':[{'text':'{"rank":1}'}]}}}
         assert llm.complete_json('private ranking prompt',llm.rank_model_id())=={'rank':1}
         assert factory.call_args.kwargs['config'].retries['total_max_attempts']==1
         factory.reset_mock()
         try:
             llm.complete_json('another ranking request',llm.rank_model_id())
-            raise AssertionError('Alternate caller bypassed paid-call quota')
+            raise AssertionError('Second caller bypassed the monthly budget')
         except HTTPException as exc:
             assert exc.status_code==429
-        factory.assert_not_called()
+        factory.return_value.converse.assert_not_called()
     await reset_paid()
-    with patch.dict(os.environ,{'BEDROCK_CALLS_PER_CLUB_PER_HOUR':'1'}):
-        attempts=await asyncio.gather(*(asyncio.to_thread(reserve_bedrock_invocation,llm.rank_model_id()) for _ in range(8)),return_exceptions=True)
+    with patch.dict(os.environ,one_call):
+        attempts=await asyncio.gather(*(asyncio.to_thread(reserve_bedrock_invocation,llm.rank_model_id(),None,'rank',1,2048) for _ in range(8)),return_exceptions=True)
         assert sum(isinstance(item,int) for item in attempts)==1
         assert all(isinstance(item,int) or isinstance(item,HTTPException) and item.status_code==429 for item in attempts)
-    # The budget is spend, not calls: a cheap triage fanout must not consume the
-    # hour that member-facing generation needs. Flat counting blocked the third
-    # call here regardless of which model made it.
+    # Spend is dollars: many cheap calls fit where one expensive call does not.
     await reset_paid()
-    with patch.dict(os.environ,{'BEDROCK_CALLS_PER_CLUB_PER_HOUR':'2'}):
-        cheap=[reserve_bedrock_invocation('us.amazon.nova-micro-v1:0') for _ in range(15)]
-        assert all(isinstance(item,int) for item in cheap),'cheap triage exhausted the club budget'
-        assert isinstance(reserve_bedrock_invocation(llm.default_model_id()),int),\
-            'Studio was starved by cheap calls worth a fraction of its cost'
+    with patch.dict(os.environ,{'AI_MONTHLY_BUDGET_USD':'0.05'}):
+        cheap=[reserve_bedrock_invocation(llm.rank_model_id(),None,'rank',1000,1000) for _ in range(20)]
+        assert all(isinstance(item,int) for item in cheap),'cheap calls exhausted the budget'
         try:
-            reserve_bedrock_invocation(llm.default_model_id())
-            raise AssertionError('Weighted budget did not stop the expensive tier')
+            reserve_bedrock_invocation(llm.TIERS['deep'][0],None,'draft',1000,4096)
+            raise AssertionError('An Opus call larger than the remaining budget was allowed')
         except HTTPException as exc:
             assert exc.status_code==429
-    # An unrecognised model is charged the member-facing rate, never treated as
-    # free, so enabling a model cannot silently bypass the budget.
+    # An unrecognised model is charged as the most expensive one, never as free.
+    assert llm.cost_usd('some-unpriced-model',1000,1000) >= llm.cost_usd(llm.TIERS['deep'][-1],1000,1000)
+    # Last month's spend does not count against this month.
     await reset_paid()
-    with patch.dict(os.environ,{'BEDROCK_CALLS_PER_CLUB_PER_HOUR':'1'}):
-        assert isinstance(reserve_bedrock_invocation('some-unpriced-model'),int)
-        try:
-            reserve_bedrock_invocation('some-unpriced-model')
-            raise AssertionError('Unpriced model billed as free')
-        except HTTPException as exc:
-            assert exc.status_code==429
-    # Raw volume stays bounded even when every call is nearly free.
-    await reset_paid()
-    with patch.dict(os.environ,{'BEDROCK_CALLS_PER_CLUB_PER_HOUR':'1'}):
-        reserved=0
-        blocked=0
-        for _ in range(14):
-            try:
-                reserve_bedrock_invocation('us.amazon.nova-micro-v1:0')
-                reserved+=1
-            except HTTPException as exc:
-                assert exc.status_code==429
-                blocked+=1
-        # 1 unit / 0.05 per call would allow 20, so the ceiling is what bites.
-        assert reserved==10,f'call ceiling did not bound cheap volume: {reserved}'
-        assert blocked==4
+    db=await get_db()
+    await db.execute("""INSERT INTO usage_events(event_type,resource_type,details_json,created_at)
+        VALUES('bedrock_reserved','rank','{"cost_usd": 999}',datetime('now','start of month','-1 day'))""")
+    await db.commit()
+    await db.close()
+    with patch.dict(os.environ,one_call):
+        assert isinstance(reserve_bedrock_invocation(llm.rank_model_id(),None,'rank',1,2048),int)
     # Independent interpreters contend against the same durable SQLite record.
     await reset_paid()
     worker="""
 from fastapi import HTTPException
 from app.services.generation_policy import reserve_bedrock_invocation
 try:
- reserve_bedrock_invocation('test-model')
+ reserve_bedrock_invocation('us.anthropic.claude-haiku-5-5',None,'rank',1,2048)
  print('reserved')
 except HTTPException as exc:
  assert exc.status_code==429
@@ -242,11 +201,18 @@ except HTTPException as exc:
         output,error=await process.communicate()
         assert process.returncode==0,error.decode()
         return output.decode().strip()
-    with patch.dict(os.environ,{'BEDROCK_CALLS_PER_CLUB_PER_HOUR':'1'}):
+    with patch.dict(os.environ,one_call):
         outcomes=await asyncio.gather(*(contender() for _ in range(4)))
         assert outcomes.count('reserved')==1 and outcomes.count('blocked')==3
+    # A finished call is charged what its tokens cost, not the worst case: two
+    # worst-case Haiku 5.5 reservations (about 0.0011 USD each) would not fit
+    # 0.002 USD together. A call of uncertain outcome keeps its worst case.
     await reset_paid()
-    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','BEDROCK_CALLS_PER_CLUB_PER_HOUR':'2'}),patch('boto3.client') as factory:
+    finished={'output':{'message':{'content':[{'text':'done'}]}},'usage':{'inputTokens':10,'outputTokens':20}}
+    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','AI_MONTHLY_BUDGET_USD':'0.002'}),patch('boto3.client') as factory:
+        factory.return_value.converse.return_value=finished
+        assert llm.complete_text('private prompt',llm.rank_model_id())=='done'
+        assert llm.complete_text('private prompt',llm.rank_model_id())=='done','finished call kept its worst-case charge'
         factory.return_value.converse.side_effect=TimeoutError('Acceptance unknown')
         try:
             llm.complete_text('private prompt',llm.rank_model_id())
@@ -254,24 +220,61 @@ except HTTPException as exc:
         except HTTPException as exc:
             assert exc.status_code==503
         factory.return_value.converse.side_effect=None
-        factory.return_value.converse.return_value={'output':{'message':{'content':[{'text':'second'}]}}}
-        assert llm.complete_text('private prompt',llm.rank_model_id())=='second','Exception leaked semaphore slot'
         factory.reset_mock()
         try:
             llm.complete_text('private prompt',llm.rank_model_id())
             raise AssertionError('Failed provider request was not counted')
         except HTTPException as exc:
             assert exc.status_code==429
-        factory.assert_not_called()
+        factory.return_value.converse.assert_not_called()
     db=await get_db()
     records=await (await db.execute("SELECT user_id,details_json FROM usage_events WHERE event_type='bedrock_reserved'")).fetchall()
-    assert len(records)==2 and all(r['user_id'] is None and 'private prompt' not in r['details_json'] for r in records)
+    assert len(records)==3 and all(r['user_id'] is None and 'private prompt' not in r['details_json'] for r in records)
     await db.close()
-    for configured in ('bad','-1','2001'):
-        with patch.dict(os.environ,{'BEDROCK_CALLS_PER_CLUB_PER_HOUR':configured}):
+    # Provider errors never leak inference slots.
+    await reset_paid()
+    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','AI_MONTHLY_BUDGET_USD':'10'}),patch('boto3.client') as factory,patch.object(llm,'SLOT_WAIT_SEC',0.1):
+        factory.return_value.converse.side_effect=TimeoutError('Acceptance unknown')
+        for _ in range(llm.INFERENCE_SLOTS+1):
+            try:
+                llm.complete_text('private prompt',llm.rank_model_id())
+            except HTTPException as exc:
+                assert exc.status_code==503
+        factory.return_value.converse.side_effect=None
+        factory.return_value.converse.return_value=finished
+        assert llm.complete_text('private prompt',llm.rank_model_id())=='done','Exception leaked semaphore slot'
+    # A model AWS has not enabled for the account steps down to the tier's older
+    # model, is not charged, and is skipped on later calls; any other failure does not fall back.
+    await reset_paid()
+    gated=ClientError({'Error':{'Code':'AccessDeniedException','Message':'anthropic.claude-sonnet-5-5 is not available for this account.'}},'Converse')
+    newest,older=llm.TIERS['write']
+    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','AI_MONTHLY_BUDGET_USD':'10'}),patch('boto3.client') as factory,patch.dict(llm._gated_until,clear=True):
+        answered={'output':{'message':{'content':[{'text':'fallback'}]}},'usage':{'inputTokens':5,'outputTokens':5}}
+        factory.return_value.converse.side_effect=lambda **kw: (_ for _ in ()).throw(gated) if kw['modelId']==newest else answered
+        used=[]
+        assert llm.complete_text('brief',newest,on_model=used.append)=='fallback' and used==[older]
+        assert [c.kwargs['modelId'] for c in factory.return_value.converse.call_args_list]==[newest,older]
+        factory.return_value.converse.reset_mock()
+        assert llm.complete_text('brief',newest)=='fallback'
+        assert [c.kwargs['modelId'] for c in factory.return_value.converse.call_args_list]==[older],'gated model retried at once'
+    db=await get_db()
+    charged=[r['details_json'] for r in await (await db.execute("SELECT details_json FROM usage_events WHERE event_type='bedrock_reserved'")).fetchall()]
+    await db.close()
+    assert len(charged)==2 and all(older in d for d in charged),'gated attempt was charged'
+    await reset_paid()
+    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','AI_MONTHLY_BUDGET_USD':'10'}),patch('boto3.client') as factory,patch.dict(llm._gated_until,clear=True):
+        factory.return_value.converse.side_effect=ClientError({'Error':{'Code':'ThrottlingException','Message':'Too many tokens'}},'Converse')
+        try:
+            llm.complete_text('brief',newest)
+            raise AssertionError('Throttling silently fell back to an older model')
+        except HTTPException as exc:
+            assert exc.status_code==503
+        assert factory.return_value.converse.call_count==1
+    for configured in ('bad','-1','100001'):
+        with patch.dict(os.environ,{'AI_MONTHLY_BUDGET_USD':configured}):
             try:
                 reserve_bedrock_invocation(llm.rank_model_id())
-                raise AssertionError('Invalid quota configuration accepted')
+                raise AssertionError('Invalid budget configuration accepted')
             except HTTPException as exc:
                 assert exc.status_code==503
     with patch('app.database.is_postgres',return_value=True):
@@ -287,7 +290,7 @@ except HTTPException as exc:
             raise AssertionError('Provider called without durable quota')
         except HTTPException as exc:
             assert exc.status_code==503
-        factory.assert_not_called()
+        factory.return_value.converse.assert_not_called()
     print('Environment, Bedrock, generation concurrency, DNS and SMTP safety passed')
 
 
