@@ -83,10 +83,11 @@ def tests() -> None:
             assert str(request.url) == 'https://api.monid.ai/v1/run'
             import json
             body = json.loads(request.content)
-            assert body == {"provider": "tinyfish", "endpoint": "/fetch",
+            # The free endpoint: the paid /fetch answers 402 on an empty wallet.
+            assert body == {"provider": "tinyfish", "endpoint": "/free/fetch",
                              "input": {"body": {"urls": ["https://acme.com"], "links": True}}}
             return httpx.Response(200, json={
-                "runId": "01TEST", "provider": "tinyfish", "endpoint": "/fetch", "status": "COMPLETED",
+                "runId": "01TEST", "provider": "tinyfish", "endpoint": "/free/fetch", "status": "COMPLETED",
                 "output": {"results": [{"url": "https://acme.com", "final_url": "https://acme.com",
                                          "title": "Acme", "text": "# Acme\nWe make things.",
                                          "links": ["https://acme.com/about"]}], "errors": []},
@@ -143,6 +144,8 @@ def tests() -> None:
         def search_handler(request: httpx.Request) -> httpx.Response:
             import json
             body = json.loads(request.content)
+            # The free endpoint: the paid /search answers 402 on an empty wallet.
+            assert body["endpoint"] == "/free/search", body
             assert body["input"]["queryParams"] == {"query": "Acme CEO"}
             return httpx.Response(200, json={
                 "runId": "01TEST", "status": "COMPLETED",

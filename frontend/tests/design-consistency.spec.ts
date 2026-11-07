@@ -36,10 +36,12 @@ async function mockAll(page: Page) {
 test('canonical buttons render at exactly one of the two system sizes', async ({ page }) => {
   await mockAll(page);
   await page.goto('/');
-  await page.waitForSelector('button.ui-button', { timeout: 10000 });
+  // Only rendered buttons have a size: the header's Log out is hidden on phones,
+  // where it lives in the menu drawer instead.
+  await page.waitForSelector('button.ui-button:visible', { timeout: 10000 });
 
   const measured = await page.evaluate(() =>
-    [...document.querySelectorAll('button.ui-button')].map((b) => {
+    [...document.querySelectorAll('button.ui-button')].filter((b) => b.getClientRects().length > 0).map((b) => {
       const style = getComputedStyle(b);
       return {
         text: (b.textContent || '').trim().slice(0, 30),
