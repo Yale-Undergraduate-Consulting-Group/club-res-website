@@ -135,6 +135,19 @@ def _build_message(
     return msg
 
 
+async def _sender_name(user_id: int, from_name: Optional[str], sign_off: SignOff | None = None) -> str:
+    """The name the recipient sees in From: the member's own, the same one
+    their sign-off prints (Profile sign-off name, else their Google name).
+    Mail goes out from the member's Gmail, so it reads as from them, never
+    from "YUCG Outreach". With no name on file it is the bare address."""
+    name = (from_name or "").strip() or (sign_off.name if sign_off else "")
+    if not name:
+        from app.services.settings_service import load_sign_off
+
+        name = (await load_sign_off(user_id)).name
+    return (name or "").strip()
+
+
 async def send_via_gmail_api(
     user_id: int,
     to_email: str,
@@ -150,7 +163,8 @@ async def send_via_gmail_api(
     require_delivery_enabled()
     validate_recipient(to_email)
     validate_header(subject)
-    validate_header(from_name or "")
+    from_name = await _sender_name(user_id, from_name)
+    validate_header(from_name)
     result = await get_valid_access_token(user_id)
     if not result:
         raise DeliveryNotAttemptedError(
@@ -162,7 +176,7 @@ async def send_via_gmail_api(
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = formataddr((from_name or "YUCG Outreach", from_email))
+    msg["From"] = formataddr((from_name, from_email))
     msg["To"] = to_email
     msg.attach(MIMEText(full_body, "plain", "utf-8"))
     if attachments:
@@ -222,7 +236,8 @@ async def send_via_gmail_api_multipart(
     require_delivery_enabled()
     validate_recipient(to_email)
     validate_header(subject)
-    validate_header(from_name or "")
+    from_name = await _sender_name(user_id, from_name, sign_off)
+    validate_header(from_name)
     result = await get_valid_access_token(user_id)
     if not result:
         raise DeliveryNotAttemptedError(
@@ -236,7 +251,7 @@ async def send_via_gmail_api_multipart(
 
     msg = _build_message(
         subject,
-        formataddr((from_name or "YUCG Outreach", from_email)),
+        formataddr((from_name, from_email)),
         to_email,
         full_body,
         html_body,
@@ -285,7 +300,8 @@ async def send_via_gmail_api_with_tracking(
     require_delivery_enabled()
     validate_recipient(to_email)
     validate_header(subject)
-    validate_header(from_name or "")
+    from_name = await _sender_name(user_id, from_name, sign_off)
+    validate_header(from_name)
     result = await get_valid_access_token(user_id)
     if not result:
         raise DeliveryNotAttemptedError(
@@ -325,7 +341,7 @@ async def send_via_gmail_api_with_tracking(
 
     msg = _build_message(
         subject,
-        formataddr((from_name or "YUCG Outreach", from_email)),
+        formataddr((from_name, from_email)),
         to_email,
         full_body,
         html_body,
