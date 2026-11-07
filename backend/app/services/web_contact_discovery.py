@@ -210,6 +210,46 @@ async def _tavily_parallel(queries: list[str | tuple[str, int]], max_results: in
 _LINKEDIN_DEDUP_SUFFIX_RE = re.compile(r"(?=[0-9a-f]*\d)[0-9a-f]{5,10}$", re.I)
 
 
+_PRONOUNS = frozenset({"she", "her", "hers", "he", "him", "his", "they", "them", "theirs", "ze", "zir"})
+
+
+#: Words that name a team or function, never part of a person's name.
+_DEPARTMENT_WORD = re.compile(
+    r"\b(design|brand|comms|communications|marketing|sales|operations|product|engineering|finance|"
+    r"legal|retail|creative|content|social|media|paid|search|growth|analytics|data|partnerships|"
+    r"strategy|merchandising|supply|people|talent|recruiting|support|customer|insights|research|"
+    r"technology|digital|ecommerce|e-commerce|events|pr|hr|it)\b",
+    re.I,
+)
+
+
+def _department_then_person(name: str, title: str) -> tuple[str, str] | None:
+    """("Kristin White", "Brand Comms") for name="Brand Comms", title="kristin
+    white"; () when the name is a department but the other side is not a usable
+    person's name; None when the pair reads as a person and their job.
+
+    The title must look like a person and carry no job word, so "Russell
+    Brand - Comedian" and "Jordan Search - Director" stay as they are."""
+    other = re.sub(r"\s+", " ", (title or "").strip())
+    if not _DEPARTMENT_WORD.search(name or "") or not other or _TITLE_WORD.search(other):
+        return None
+    words = re.findall(r"[A-Za-z][A-Za-z'.-]*", other)
+    if not 2 <= len(words) <= 3 or len(other) > 40:
+        return None
+    person = " ".join(w[:1].upper() + w[1:] for w in words)
+    return (person, name) if looks_like_person_name(person) else ()
+
+
+def department_name(name: str, title: str = "") -> bool:
+    """Whether a "name" is a team heading rather than a person: every word is
+    a function word ("Paid Search", "Brand Comms"), or it names a function and
+    the title beside it is a person's name ("Eyewear Design" / "Bo Z.")."""
+    words = re.findall(r"[A-Za-z]+", name or "")
+    if words and all(_DEPARTMENT_WORD.fullmatch(w) for w in words):
+        return True
+    return _department_then_person(name, title) is not None
+
+
 def _slug_to_name(slug: str) -> str | None:
     """LinkedIn appends a short auto-generated suffix to a profile slug when
     the readable one is already taken - either as its own hyphenated segment
@@ -225,7 +265,9 @@ def _slug_to_name(slug: str) -> str | None:
         parts.pop()
     if parts:
         parts[-1] = re.sub(r"\d+$", "", parts[-1]) or parts[-1]
-    parts = [p for p in parts if p and not p.isdigit()]
+    # Pronouns people add to their profile name ("rebia-ruiz-she-her") are not
+    # part of it: kept, "Rebia Ruiz She" became a contact called Rebia She.
+    parts = [p for p in parts if p and not p.isdigit() and p.lower() not in _PRONOUNS]
     if len(parts) < 2:
         return None
     name = " ".join(p.capitalize() for p in parts[:3])
@@ -785,6 +827,15 @@ def _extract_people_from_results(
         name = _clean_person_name(name.strip())
         if not affiliation:
             return
+        # A team page lists "Brand Comms - Kristin White": the department, then
+        # the person. Read as "Name - Title" that is a contact called Brand Comms
+        # with an invented brand.comms@ address. The person is the right side;
+        # when it is not a usable name ("Bo Z."), nobody is saved.
+        flipped = _department_then_person(name, title)
+        if flipped is not None:
+            if not flipped:
+                return
+            name, title = flipped
         if not looks_like_person_name(name, company_name):
             return
         # A page describing itself: "Choose People", "Activity Image",
