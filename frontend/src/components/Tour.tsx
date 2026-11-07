@@ -34,7 +34,7 @@ const STOPS: Stop[] = [
     route: '/scraper?view=register',
     target: '[data-section="company-register"]',
     title: '1 · Companies',
-    body: 'The public register: about 215,000 companies with their sector and filings. Tick the ones worth approaching and press "Find people and write to them".',
+    body: 'The public register: about 200,000 companies, one entry each, with their sector and the filings behind them. Tick the ones worth approaching and press "Find people and write to them".',
   },
   {
     route: '/scraper?view=company',

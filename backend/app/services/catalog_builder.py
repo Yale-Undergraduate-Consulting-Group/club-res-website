@@ -143,19 +143,32 @@ async def _active_run(db) -> dict[str, Any] | None:
 async def _next_company(db, recrawl: str) -> dict[str, Any] | None:
     """The first register company in target order that nobody has crawled
     within the recrawl window, by the builder's own record or by any run
-    under the same company key the Find page groups by."""
+    under the same company key the Find page groups by. Hidden rows (funds,
+    acquisition vehicles, IRS group returns) are never picked, and a company
+    whose other record was crawled is already done: the register is one
+    entry per company, so the builder works one company at a time too. The
+    name returned is the public one ("Apple"), which is what Find resolves
+    best; runs recorded under either the public or the legal name count."""
     for where in _TARGET_ORDER:
         row = await (await db.execute(
-            f"""SELECT id, company_name, company_domain FROM company_register
+            f"""SELECT id, COALESCE(display_name, company_name) AS company_name, company_domain
+                FROM company_register
                 WHERE {where}
+                  AND hidden_reason IS NULL
                   AND NOT EXISTS (SELECT 1 FROM catalog_builder_companies b
                                   WHERE b.register_id = company_register.id
                                     AND b.crawled_at >= datetime('now', ?))
+                  AND NOT EXISTS (SELECT 1 FROM catalog_builder_companies b
+                                  JOIN company_register r2 ON r2.id = b.register_id
+                                  WHERE r2.entity_key = company_register.entity_key
+                                    AND b.crawled_at >= datetime('now', ?))
                   AND NOT EXISTS (SELECT 1 FROM yucgoutreach_discovery_runs d
-                                  WHERE lower(trim(d.company_name)) = lower(trim(company_register.company_name))
+                                  WHERE lower(trim(d.company_name)) IN
+                                        (lower(trim(company_register.company_name)),
+                                         lower(trim(COALESCE(company_register.display_name, company_register.company_name))))
                                     AND d.created_at >= datetime('now', ?))
                 ORDER BY {REGISTER_VALUE_ORDER} LIMIT 1""",
-            (recrawl, recrawl),
+            (recrawl, recrawl, recrawl),
         )).fetchone()
         if row:
             return dict(row)

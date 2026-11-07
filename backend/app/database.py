@@ -898,6 +898,40 @@ async def init_db():
             await db.commit()
         except Exception:
             pass
+        # Derived by services/register_names.derive: the public name, the key
+        # that makes rows of one company one entry, and why a row is left out
+        # of browsing. Additive and nullable, so the previous release (which
+        # neither writes nor reads them) keeps working beside this one; rows it
+        # inserts stay NULL until the leader's backfill job derives them.
+        for col, col_type in [
+            ("display_name", "TEXT"),
+            ("entity_key", "TEXT"),
+            ("hidden_reason", "TEXT"),
+            ("derived_version", "INTEGER"),
+            # Companies House statutory size band as a rank (0 group, 1 full,
+            # 2 medium, 3 anything else), so the company list orders by it
+            # from the index instead of reading every row's JSON.
+            ("size_rank", "INTEGER"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE company_register ADD COLUMN {col} {col_type}")
+                await db.commit()
+            except Exception:
+                pass
+        await db.executescript("""
+            -- The company list groups by entity_key and orders by aggregates of
+            -- these columns, so the index holds all of them: one pass over the
+            -- index answers a page and its count without touching the table.
+            CREATE INDEX IF NOT EXISTS idx_company_register_entity ON company_register(
+                entity_key, hidden_reason, tier, country, size_rank, prominence_rank,
+                employees, officer_count, last_event_at, last_event_amount);
+            CREATE INDEX IF NOT EXISTS idx_company_register_display ON company_register(display_name COLLATE NOCASE);
+            -- Members and the pipeline name a company by its legal name as often
+            -- as by its public name; the lookups compare lower(trim(...)).
+            CREATE INDEX IF NOT EXISTS idx_company_register_legal_key ON company_register((lower(trim(company_name))));
+            CREATE INDEX IF NOT EXISTS idx_company_register_derived ON company_register(derived_version);
+        """)
+        await db.commit()
 
         for col, col_type in [
             ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),

@@ -196,20 +196,24 @@ async def browse_register(
     sector: str | None = None,
     min_amount: float | None = None,
     with_officers: bool = False,
+    include_hidden: bool = False,
     limit: int = 50,
     offset: int = 0,
     sort: Literal["value", "recent"] = "value",
     user: dict = Depends(get_current_user),
 ):
-    """Browse the bulk company register (SEC listed, SEC Form D filers,
-    Companies House) that Find people and the recommender draw from.
+    """Browse the company register (SEC listed, SEC Form D filers, Form 5500
+    employers, IRS nonprofits, Companies House) that Find people and the
+    recommender draw from: one entry per company under its public name, the
+    records behind it counted but not listed (see `/register/records`).
     Without a query, `sort=value` puts the companies worth reaching first;
-    `sort=recent` is the newest-filing feed."""
-    from app.services.company_register import search_register
+    `sort=recent` is the newest-filing feed. Investment funds, acquisition
+    vehicles and IRS group returns are left out unless `include_hidden`."""
+    from app.services.company_register import browse_register as browse
 
-    return await search_register(
+    return await browse(
         q=q, tier=tier, country=country, sector=sector, min_amount=min_amount,
-        with_officers=with_officers, limit=limit, offset=offset, sort=sort,
+        with_officers=with_officers, include_hidden=include_hidden, limit=limit, offset=offset, sort=sort,
     )
 
 
@@ -218,6 +222,24 @@ async def register_stats(user: dict = Depends(get_current_user)):
     from app.services.company_register import register_summary
 
     return await register_summary()
+
+
+@router.get("/register/records")
+async def register_company_records(key: str, user: dict = Depends(get_current_user)):
+    """The records log of one company (an `entity_key` from the list): a line
+    per stored record, with its source, date, state and the legal name as
+    filed."""
+    from app.services.company_register import register_records
+
+    return await register_records(key)
+
+
+@router.get("/register/entity-people")
+async def register_company_people(key: str, user: dict = Depends(get_current_user)):
+    """Everyone named on any record of one company, once each."""
+    from app.services.company_register import register_entity_people
+
+    return await register_entity_people(key)
 
 
 class RegisterLoad(BaseModel):
@@ -267,21 +289,6 @@ async def load_register(payload: RegisterLoad, request: Request):
         await _record_ingest(payload.source, payload.batch, len(payload.companies), written, "ok",
                              f"loaded off-box, {attached} people")
     return {"ok": True, "written": written, "people": attached}
-
-
-@router.get("/register/{register_id}/people")
-async def register_people(register_id: int, user: dict = Depends(get_current_user)):
-    """Officers named on this company's own filings - evidence, not guesses."""
-    db = await get_db()
-    try:
-        rows = await (await db.execute(
-            """SELECT full_name, relationship, observed_at, source_url
-               FROM company_register_people WHERE register_id = ? ORDER BY full_name""",
-            (register_id,),
-        )).fetchall()
-        return [row_to_dict(r) for r in rows]
-    finally:
-        await db.close()
 
 
 @router.post("/register/{register_id}/people")
