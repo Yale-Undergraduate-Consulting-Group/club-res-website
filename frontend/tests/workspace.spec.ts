@@ -169,6 +169,31 @@ test('campaign deletion confirmation contains keyboard focus', async ({ page }) 
   await expect(deleteButton).toBeFocused();
 });
 
+test('data arriving while the delete confirmation is open does not move focus', async ({ page }) => {
+  let releaseDispatches: () => void = () => {};
+  const dispatchesHeld = new Promise<void>(resolve => { releaseDispatches = resolve; });
+  await page.route('**/api/campaigns/1', async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { ...campaigns[0], readiness: { ready: true, issues: [] }, counts: {}, contacts: [] } });
+  });
+  await page.route('**/api/campaigns/1/dispatches', async route => {
+    await dispatchesHeld;
+    return route.fulfill({ json: [{ id: 1, status: 'sent', created_at: '2026-11-01T00:00:00Z' }] });
+  });
+  await page.goto('/campaigns/1');
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Delete campaign?' });
+  await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  const confirm = dialog.getByRole('button', { name: 'Delete campaign', exact: true });
+  await expect(confirm).toBeFocused();
+  const arrived = page.waitForResponse('**/api/campaigns/1/dispatches');
+  releaseDispatches();
+  await arrived;
+  await page.waitForTimeout(300);
+  await expect(confirm).toBeFocused();
+});
+
 test('studio workbench fills the desktop viewport instead of leaving a short generator column', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop');
   await page.goto('/studio');
