@@ -405,14 +405,19 @@ MAX_DRAFTED_COMPANIES = 12
 
 
 async def _company_notes(db, companies: list[str]) -> dict[str, str]:
-    """What the club already decided about each company, from the register."""
+    """What the club already decided about each company, from the register.
+
+    A company is named here by the public name the register shows ("Apple")
+    or by the legal name it was filed under ("Apple Inc."); both find it."""
     names = [c.strip() for c in companies if c.strip()]
     if not names:
         return {}
+    marks = ','.join('?' * len(names))
     rows = await (await db.execute(
-        f"""SELECT company_name, sector_label, metadata_json FROM company_register
-            WHERE LOWER(TRIM(company_name)) IN ({','.join('?' * len(names))})""",
-        [n.lower() for n in names],
+        f"""SELECT company_name, display_name, sector_label, metadata_json FROM company_register
+            WHERE LOWER(TRIM(company_name)) IN ({marks})
+               OR display_name COLLATE NOCASE IN ({marks})""",
+        [n.lower() for n in names] + names,
     )).fetchall()
     notes: dict[str, str] = {}
     for row in rows:
@@ -426,6 +431,8 @@ async def _company_notes(db, companies: list[str]) -> dict[str, str]:
         text = ". ".join(p.strip() for p in parts if p and str(p).strip())
         if text:
             notes.setdefault(row["company_name"].strip().lower(), text)
+            if row["display_name"]:
+                notes.setdefault(row["display_name"].strip().lower(), text)
     return notes
 
 

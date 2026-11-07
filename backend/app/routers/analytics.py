@@ -121,11 +121,13 @@ async def _sector_split(db, user_id: int | None) -> list[dict]:
     scope = "AND c.owner_id = ?" if user_id else ""
     args = [user_id] if user_id else []
     rows = await (await db.execute(
-        f"""SELECT COALESCE(NULLIF(TRIM(r.sector_label), ''), 'Unclassified') AS sector,
+        f"""SELECT COALESCE(NULLIF(TRIM(COALESCE(r.sector_label, l.sector_label)), ''), 'Unclassified') AS sector,
                    COUNT(DISTINCT c.id) AS n
             FROM contacts c
             LEFT JOIN company_register r
-              ON LOWER(TRIM(r.company_name)) = LOWER(TRIM(c.company))
+              ON r.display_name = TRIM(c.company) COLLATE NOCASE
+            LEFT JOIN company_register l
+              ON r.id IS NULL AND LOWER(TRIM(l.company_name)) = LOWER(TRIM(c.company))
             WHERE TRIM(COALESCE(c.company, '')) <> '' {scope}
             GROUP BY sector ORDER BY n DESC LIMIT 8""",
         args,
@@ -454,11 +456,13 @@ async def get_breakdown(user: dict | None = Depends(get_current_user_optional)):
             "note": "Where the club's contacts are, using the public register's classification.",
             "chart": "pie",
             "rows": await _rows(db, """
-                SELECT COALESCE(NULLIF(TRIM(r.sector_label), ''), 'Unclassified') AS label,
+                SELECT COALESCE(NULLIF(TRIM(COALESCE(r.sector_label, l.sector_label)), ''), 'Unclassified') AS label,
                        COUNT(DISTINCT c.id) AS value
                 FROM contacts c
                 LEFT JOIN company_register r
-                  ON LOWER(TRIM(r.company_name)) = LOWER(TRIM(c.company))
+                  ON r.display_name = TRIM(c.company) COLLATE NOCASE
+                LEFT JOIN company_register l
+                  ON r.id IS NULL AND LOWER(TRIM(l.company_name)) = LOWER(TRIM(c.company))
                 WHERE TRIM(COALESCE(c.company, '')) <> ''
                 GROUP BY label ORDER BY value DESC LIMIT 10"""),
         })

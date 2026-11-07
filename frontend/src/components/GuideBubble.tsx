@@ -23,7 +23,7 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
     guide: {
       title: 'Find contacts',
       steps: [
-        'Companies is the index: 215,000 companies from public registers. Tick any, then "Find people and write to them".',
+        'Companies is the index: about 200,000 companies from public records, one entry each. Tick any, then "Find people and write to them".',
         'Find people runs three steps in order — choose companies, choose who gets it, then hand them to Drafts to write to each.',
         'Step 2 is where people come from: search again, import a spreadsheet, or queue deep research.',
         'Board seats and the very senior are never ticked for you: they rarely answer a cold email.',

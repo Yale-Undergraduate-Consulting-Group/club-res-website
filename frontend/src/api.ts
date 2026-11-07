@@ -190,27 +190,58 @@ export type OutcomeSplit = {
   awaiting: number; reply_rate: number;
 };
 
+/** One company in the register: every record filed under its public name, folded into one entry. */
 export type RegisterCompany = {
+  entity_key: string;
+  /** A register row to ask about this company (officer lookup, targets); the legal name is on the records. */
+  id: number;
+  display_name: string;
+  legal_name: string;
+  country: string;
+  kinds: ('us_public' | 'us_private' | 'us_employer' | 'us_nonprofit' | 'uk' | 'club_targets')[];
+  locations: string[];
+  record_count: number;
+  officer_count: number;
+  working_count: number;
+  company_domain?: string | null;
+  sector_label?: string | null;
+  last_event_at?: string | null;
+  hidden_reason?: string | null;
+  /** A listed or UK row with no people on file, which its own register can be asked about. */
+  lookup_id?: number | null;
+  match_level?: number | null;
+  claimed_by?: string | null;
+};
+export type RegisterRecord = {
   id: number;
   source: string;
-  tier: 'us_public' | 'us_private' | 'us_employer' | 'us_nonprofit' | 'uk';
-  country: string;
-  company_name: string;
-  company_domain?: string | null;
-  sector_code?: string | null;
-  sector_label?: string | null;
+  source_label: string;
+  tier: string;
+  legal_name: string;
   region?: string | null;
-  employees?: number | null;
-  employees_source?: string | null;
-  last_event_at?: string | null;
-  last_event_amount?: number | null;
-  last_event_kind?: string | null;
+  date?: string | null;
+  detail: string[];
+  url?: string | null;
   officer_count: number;
-  working_count?: number;
-  claimed_by?: string | null;
-  metadata?: { revenue_range?: string | null; ticker?: string | null; city?: string | null; year_of_inc?: string | null; size_band?: string | null; account_category?: string | null; incorporated?: string | null; buys_outside_advice?: string | null; why_attractive?: string | null; target_role_title?: string | null; first_message_angle?: string | null; yale_hook?: string | null };
+};
+export type RegisterRecords = {
+  entity_key: string;
+  display_name?: string | null;
+  hidden_reason?: string | null;
+  total: number;
+  records: RegisterRecord[];
+};
+export type RegisterPerson = {
+  full_name: string;
+  relationship?: string | null;
+  person_level?: string | null;
+  observed_at?: string | null;
+  source_url?: string | null;
 };
 export type RegisterSummary = {
+  companies: number;
+  with_people: number;
+  pending: number;
   tiers: { tier: string; country: string; n: number; with_officers: number }[];
   sectors: { sector: string; n: number }[];
   recent_ingests: { source: string; batch_key: string; rows_written: number; status: string; detail?: string | null; completed_at?: string }[];
@@ -1262,14 +1293,15 @@ export const api = {
     releaseInbox: (releaseId: number) => fetchApi<InboxItem[]>(`/api/yucg/releases/${releaseId}/inbox`),
   },
   yucgoutreach: {
-    register: (params: { q?: string; tier?: string; country?: string; sector?: string; min_amount?: number; with_officers?: boolean; limit?: number; offset?: number; sort?: 'value' | 'recent' }, signal?: AbortSignal) => {
+    register: (params: { q?: string; tier?: string; country?: string; sector?: string; min_amount?: number; with_officers?: boolean; include_hidden?: boolean; limit?: number; offset?: number; sort?: 'value' | 'recent' }, signal?: AbortSignal) => {
       const search = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') search.set(key, String(value)); });
       return fetchApi<{ items: RegisterCompany[]; total: number; limit: number; offset: number }>(`/api/yucgoutreach/register?${search.toString()}`, signal ? { signal } : undefined);
     },
     registerSummary: () => fetchApi<RegisterSummary>('/api/yucgoutreach/register/summary'),
+    registerRecords: (key: string) => fetchApi<RegisterRecords>(`/api/yucgoutreach/register/records?key=${encodeURIComponent(key)}`),
+    registerPeople: (key: string) => fetchApi<RegisterPerson[]>(`/api/yucgoutreach/register/entity-people?key=${encodeURIComponent(key)}`),
     fetchRegisterPeople: (id: number) => fetchApi<{ ok: boolean; attached?: number; officer_count?: number; cached?: boolean; note?: string; error?: string }>(`/api/yucgoutreach/register/${id}/people`, { method: 'POST' }),
-    registerPeople: (id: number) => fetchApi<{ full_name: string; relationship?: string | null; observed_at?: string | null; source_url?: string | null }[]>(`/api/yucgoutreach/register/${id}/people`),
     roleSuggestions: (params: { company: string; domain?: string; hints?: string }, signal?: AbortSignal) => {
       const q = new URLSearchParams({ company: params.company });
       if (params.domain) q.set('domain', params.domain);
