@@ -133,6 +133,28 @@ def the_headline_employer_decides() -> None:
     ]:
         assert fit_level(title) == level, (title, fit_level(title))
 
+    # Seen live: a team page listing "Department - Person" was saved as people
+    # called Eyewear Design, Brand Comms and Paid Search, with invented
+    # addresses; and a profile link with pronouns became "Rebia She".
+    assert W._department_then_person("Brand Comms", "kristin white") == ("Kristin White", "Brand Comms")
+    assert W._department_then_person("Paid Search", "Connor Hale") == ("Connor Hale", "Paid Search")
+    # "Grant" is on the shared not-a-name list, so this live row is dropped rather than flipped.
+    assert W._department_then_person("Paid Search", "Connor Grant") == ()
+    assert W._department_then_person("Eyewear Design", "Bo Z.") == ()   # no usable name: nobody saved
+    assert W._department_then_person("Russell Brand", "Comedian") is None
+    assert W._department_then_person("Jordan Search", "Director of Operations") is None
+    assert W._department_then_person("Krista Potter", "Director of Product Management") is None
+    for heading, title in (("Eyewear Design", "Bo Z."), ("Brand Comms", "kristin white"), ("Paid Search", "")):
+        assert W.department_name(heading, title), heading
+    assert not W.department_name("Kristin White", "Brand Comms")
+    assert not W.department_name("Matt Singer", "Director of Art & Curation")
+    assert W._slug_to_name("rebia-ruiz-she-her-1549a467") == "Rebia Ruiz"
+    assert W._slug_to_name("krista-potter-25b76b8") == "Krista Potter"
+    rows = [{"name": "Brand Comms", "title": "kristin white", "email": "brand.comms@amazon.com"},
+            {"name": "Krista Potter", "title": "Director of Product", "email": "krista.potter@amazon.com"}]
+    kept = D._gate_rows(rows, D._entity_from_spec({}, "Amazon"), {}, "Amazon")
+    assert [r["name"] for r in kept] == ["Krista Potter"], kept
+
     # The units survive the browser round trip.
     assert sanitize_entity(AMAZON)["units"][0] == {
         "name": "AWS", "country": "US", "domain": None, "aliases": ["Amazon Web Services"]}
