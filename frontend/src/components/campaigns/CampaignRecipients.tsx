@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, EmptyState, Notice, StatusBadge } from '../ui/Primitives';
+import { Button, Chip, EmptyState, Notice, StatusBadge } from '../ui/Primitives';
 import { sanitizeRichText } from '../../lib/richText';
 import { trackingTime } from '../../lib/trackingTime';
 import { eventLabels, hasEvent, matchesTracking, type CampaignRecipient, type TrackingFilter } from '../../lib/campaignTracking';
@@ -44,13 +44,11 @@ export default function CampaignRecipients({
   const [editBody, setEditBody] = useState('');
   const [actionError, setActionError] = useState('');
   return <section aria-labelledby="recipients-title" className="space-y-4">
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" aria-label="Filter recipients by activity">
-      {filters.map(item => <button key={item.key} type="button" aria-pressed={filter === item.key}
-        onClick={() => setFilter(item.key)}
-        className={`surface-card rounded-xl p-4 text-left border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steel-blue ${filter === item.key ? 'border-steel-blue bg-pale-sky/20' : 'border-transparent hover:border-pale-sky'}`}>
-        <span className="block text-xs text-slate-600">{item.label}</span>
-        <span className="block mt-1 text-2xl font-semibold text-deep-navy tabular-nums">{contacts.filter(contact => matchesTracking(contact, item.key)).length}</span>
-      </button>)}
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Filter recipients by activity">
+      {filters.map(item => <Chip key={item.key} selected={filter === item.key} onClick={() => setFilter(item.key)}>
+        <span>{item.label}</span>
+        <span className="tabular-nums opacity-80">{contacts.filter(contact => matchesTracking(contact, item.key)).length}</span>
+      </Chip>)}
     </div>
     {actionError && <Notice tone="danger">{actionError}</Notice>}
     <div className="surface-card rounded-xl overflow-hidden">

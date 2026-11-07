@@ -62,7 +62,7 @@ _STOP_LABEL = {
     "round_cap": "search round limit reached",
     "search_failed": "web search failing",
 }
-# Searches per run, against TinyFish's free tier (500/hour for the whole club):
+# Searches per run, against the shared TinyFish/Monid request pace and wallet:
 # the first wave asks at most 17 web queries plus 1 company-meta query (the
 # seeds reading shares the first one). Later rounds draw from round_query_pool
 # (at most ~25 queries), at most DISCOVERY_MAX_ROUNDS x DISCOVERY_ROUND_QUERIES
@@ -482,11 +482,11 @@ def _skipped_clause(skipped: dict[str, dict[str, Any]], entity: dict[str, Any]) 
 
 
 def _search_unavailable(errors: dict[str, Any] | None) -> str:
-    """The line a run shows when no web search answered at all."""
+    """The line a run shows when no web search answered at all: one plain
+    sentence, never the provider's own error text."""
     if not errors or not errors.get("all_failed"):
         return ""
-    return "web search unavailable (limit reached)" if errors.get("limit_reached") \
-        else "web search unavailable (provider error)"
+    return str(errors.get("message") or "People search is temporarily unavailable. Try again later.")
 
 
 async def _run_update(
@@ -1044,7 +1044,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 f"No contacts saved. Website {n_site} · roster {len(roster_contacts)} · web {n_web}"
                 + (f" ({roster_note})" if roster_note else "")
                 + _skipped_clause(skipped, entity)
-                + (f". {unavailable}." if unavailable
+                + (f". {unavailable}" if unavailable
                    else ". Large-company sites rarely publish person emails; officers appear when the SEC fetch succeeds.")
             ),
             prospects_count=0,

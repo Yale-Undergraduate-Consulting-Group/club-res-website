@@ -68,10 +68,11 @@ def name_tests() -> None:
     assert derive('Fidelity Inc', 'US').display_name == 'Fidelity'
     assert derive('Alphabet Inc.', 'US').display_name == 'Alphabet'
     assert derive('Barclays Bank PLC', 'GB').display_name == 'Barclays'
-    # The curated legal name matches exactly, ending included: Target
-    # Corporation is Target; a small "Target Inc" keeps its own (suffix-stripped)
-    # name, which suffix stripping makes "Target" as well, but never borrows a
-    # different curated name.
+    # The curated legal name matches exactly, ending included, and a one-word
+    # nickname never borrows a curated name ("Citi Trends" is not Citi). Known
+    # limit: the same public name in the same country is one entry, so a small
+    # "Target Inc" shares Target Corporation's entry; the log keeps both legal names.
+    assert derive('Target Inc', 'US').entity_key == derive('Target Corporation', 'US').entity_key
     assert derive('Target Corporation', 'US').display_name == 'Target'
     assert derive('Citigroup Inc.', 'US').display_name == 'Citi'
     assert derive('Citi Trends Inc', 'US').display_name == 'Citi Trends'

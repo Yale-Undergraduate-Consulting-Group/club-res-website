@@ -70,6 +70,16 @@ export type FirecrawlStatus = {
   firecrawl: BackendProbeStatus;
   effective: { fetch: WebProbeResult; search: WebProbeResult; note: string };
 };
+/** Monid as the last real call left it; no call is made to read it. */
+export type SearchProviderHealth = {
+  configured: boolean;
+  state: 'unconfigured' | 'unknown' | 'working' | 'out_of_credit' | 'auth' | 'rate_limited' | 'timeout' | 'failing';
+  last_ok_at: number | null;
+  last_failure_at: number | null;
+  /** Seconds calls are still being held back after a refusal. */
+  paused_for_s: number;
+  message: string | null;
+};
 /** The background catalog builder, as the admin card shows it. */
 export type CatalogBuilderStatus = {
   enabled: boolean;
@@ -127,6 +137,10 @@ export type DiscoveryProspect = {
   title?: string | null;
   company?: string | null;
   linkedin_url?: string | null;
+  /** The page a search found them on, when it has one. */
+  contact_profile_url?: string | null;
+  /** What their title makes them, as the contacts list says it. */
+  person_level?: string | null;
   contact_source?: string | null;
   ai_verdict?: string | null;
   ai_reason?: string | null;
@@ -1149,6 +1163,7 @@ export const api = {
         URL.revokeObjectURL(url);
       },
       firecrawlStatus: () => fetchApi<FirecrawlStatus>('/api/admin/operations/firecrawl-status'),
+      searchProviderHealth: () => fetchApi<{ monid: SearchProviderHealth }>('/api/admin/operations/search-provider-health'),
       catalogBuilder: () => fetchApi<CatalogBuilderStatus>('/api/admin/operations/catalog-builder'),
       setCatalogBuilder: (enabled: boolean) =>
         fetchApi<CatalogBuilderStatus>('/api/admin/operations/catalog-builder', {

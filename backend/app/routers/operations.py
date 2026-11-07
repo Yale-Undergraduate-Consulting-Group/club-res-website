@@ -23,6 +23,18 @@ YUCG_ALT = "E8EEF4"
 
 
 
+# --- Search provider health (admin only): what the last real call showed ---
+@router.get("/search-provider-health")
+async def search_provider_health(admin: dict = Depends(get_current_admin)):
+    """Monid (the TinyFish search/fetch broker) as the last real call left it:
+    configured / working / out of credit / key refused / rate limited / failing.
+    Makes no call itself - a probe would spend the wallet it reports on - so
+    `unknown` means nothing has run since the app started."""
+    from app.services.web_fetch import monid_health
+
+    return {"monid": monid_health()}
+
+
 # --- Web search/fetch self-test (admin only, self-service debugging) ---
 @router.get("/firecrawl-status")
 async def firecrawl_status(admin: dict = Depends(get_current_admin)):

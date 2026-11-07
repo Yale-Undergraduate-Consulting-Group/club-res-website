@@ -23,6 +23,10 @@ from app.services.contact_scraper import (
     confidence_for_contact_dict,
 )
 from app.services.linkedin_scraper import extract_linkedin_profile_slug
+from app.services.web_fetch import (
+    FAILING, OUT_OF_CREDIT, PROVIDER_KIND_RANK, PROVIDER_MEMBER_MESSAGE, RATE_LIMITED, TIMEOUT,
+    classify_provider_status,
+)
 
 ProgressHook = Optional[Callable[[str, float], Awaitable[None]]]
 
@@ -57,7 +61,7 @@ _SEARCH_RUN: ContextVar[dict[str, Any] | None] = ContextVar("web_search_run", de
 
 
 def begin_search_run() -> tuple[dict[str, Any], Token]:
-    run: dict[str, Any] = {"queries": 0, "failed": 0, "first_error": None, "limit": False, "inflight": {}}
+    run: dict[str, Any] = {"queries": 0, "failed": 0, "first_error": None, "limit": False, "kind": None, "inflight": {}}
     return run, _SEARCH_RUN.set(run)
 
 
@@ -66,24 +70,34 @@ def end_search_run(token: Token) -> None:
 
 
 def search_errors_summary(run: dict[str, Any] | None) -> dict[str, Any] | None:
-    """research_json["search_errors"], or None when every query answered."""
+    """research_json["search_errors"], or None when every query answered.
+    ``kind`` is the worst provider failure seen (web_fetch.PROVIDER_KIND_RANK)
+    and ``message`` the one sentence a member is shown for it; ``all_failed``
+    says no query answered, so an empty result means the search could not run,
+    not that nobody was found."""
     if not run or not run.get("failed"):
         return None
+    kind = run.get("kind") or FAILING
     return {
         "count": run["failed"],
         "queries": run["queries"],
         "first_message": run.get("first_error"),
         "all_failed": run["failed"] >= run["queries"],
         "limit_reached": bool(run.get("limit")),
+        "kind": kind,
+        "message": PROVIDER_MEMBER_MESSAGE[kind],
     }
 
 
-def _record_search_error(message: str, *, limit: bool) -> None:
+def _record_search_error(message: str, *, limit: bool, kind: str | None = None) -> None:
     run = _SEARCH_RUN.get()
     if run is None:
         return
+    kind = kind or (RATE_LIMITED if limit else FAILING)
     run["failed"] += 1
     run["limit"] = run["limit"] or limit
+    if run["kind"] is None or PROVIDER_KIND_RANK.index(kind) < PROVIDER_KIND_RANK.index(run["kind"]):
+        run["kind"] = kind
     if not run["first_error"]:
         run["first_error"] = message[:300]
 
@@ -110,19 +124,21 @@ async def _search_once(query: str, max_results: int, page: int = 0) -> list[dict
     from app.services.web_fetch import web_search_configured, web_search
 
     if web_search_configured():
-        from app.services.web_fetch import last_search_failure
+        from app.services.web_fetch import last_search_failure, last_search_failure_kind
 
         try:
             results = await (web_search(query, max_results=max_results, page=page) if page
                              else web_search(query, max_results=max_results))
             failure = last_search_failure()
             if not results and failure:
-                _record_search_error(failure, limit="limit" in failure.lower() or "429" in failure)
+                kind = last_search_failure_kind() or FAILING
+                _record_search_error(failure, limit=kind in (OUT_OF_CREDIT, RATE_LIMITED), kind=kind)
             return results
         except Exception as exc:
             status = getattr(exc, "status_code", None)
             _record_search_error(f"{status or type(exc).__name__}: {getattr(exc, 'detail', None) or exc}",
-                                 limit=status in (429, 432))
+                                 limit=status in (429, 432),
+                                 kind=classify_provider_status(status) if status else FAILING)
             return []
     key = (os.getenv("TAVILY_API_KEY") or "").strip()
     if not key or page:
@@ -144,10 +160,12 @@ async def _search_once(query: str, max_results: int, page: int = 0) -> list[dict
         # Tavily answers 432 when the plan's credits are spent and 429 when
         # rate limited; both mean every other query of the run fails too.
         code = exc.response.status_code
-        _record_search_error(f"Tavily HTTP {code}: {exc.response.text[:200]}", limit=code in (429, 432))
+        _record_search_error(f"Tavily HTTP {code}: {exc.response.text[:200]}", limit=code in (429, 432),
+                             kind=classify_provider_status(code))
         return []
     except Exception as exc:
-        _record_search_error(f"Tavily {type(exc).__name__}: {exc}", limit=False)
+        _record_search_error(f"Tavily {type(exc).__name__}: {exc}", limit=False,
+                             kind=TIMEOUT if isinstance(exc, httpx.TimeoutException) else FAILING)
         return []
     out: list[dict[str, Any]] = []
     for x in data.get("results") or []:

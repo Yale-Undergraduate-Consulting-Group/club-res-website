@@ -136,7 +136,7 @@ test('an unsure company is marked a best guess, is not searched by itself, and c
   await expect(chip.getByRole('button', { name: 'Best guess · Not this?' })).toBeVisible();
   // Its lane waits for the member instead of spending a search on a guess.
   const lane = pipeline.locator('[data-lane="Bartik Family Foundation"]');
-  await expect(lane.getByTestId('lane-state')).toHaveText('nobody yet');
+  await expect(lane.getByTestId('lane-state')).toHaveText('Not searched yet');
   await page.waitForTimeout(1000);
   expect(runsCreated).toHaveLength(0);
   await expect(lane).toHaveAttribute('data-state', 'idle');
