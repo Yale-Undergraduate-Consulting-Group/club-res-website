@@ -5,7 +5,12 @@ import CompanyAutocomplete from '../CompanyAutocomplete';
 import RecipientPicker, { type PickerMode } from './RecipientPicker';
 import CompanyLanes, { type Lane } from './CompanyLanes';
 import RoleSuggestionBubbles from './RoleSuggestionBubbles';
-import { LEVEL_TITLES, type Level, companyKey, defaultSelection } from '../../lib/recipients';
+import { Button, Chip } from '../ui/Primitives';
+import { LEVEL_TITLES, companyKey, defaultSelection } from '../../lib/recipients';
+import {
+  WANTED_LABEL, companyStatus, dedupePeople, foundAsPerson, foundNotOnFile, matchesWanted,
+  type CompanyStatus, type Wanted,
+} from '../../lib/peopleSheet';
 import { type ChosenCompany, type CompanyRun, useDiscoveryRuns } from '../../lib/useDiscoveryRuns';
 
 /**
@@ -47,10 +52,10 @@ const IDLE: CompanyRun = { state: 'idle', pct: 0, message: '' };
 const AUTO_SEARCH_LIMIT = 5;
 /** Who to look for, in the member's words, mapped to the titles a search
  *  asks for. Team leads by default: they are the people who answer. */
-const WHO: { id: Exclude<Level, 'unknown'>; label: string }[] = [
-  { id: 'working', label: 'Team leads' },
-  { id: 'executive', label: 'Senior leaders' },
-  { id: 'board', label: 'Board' },
+const WHO: { id: Wanted; label: string }[] = [
+  { id: 'working', label: WANTED_LABEL.working },
+  { id: 'executive', label: WANTED_LABEL.executive },
+  { id: 'board', label: WANTED_LABEL.board },
 ];
 
 /** Pasted text as the companies it names: one per line, or several LinkedIn
@@ -138,7 +143,7 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
   }, [open]);
   return (
     <span ref={wrapRef} className="relative inline-flex max-w-full" data-company-chip={company.name}>
-      <span className={`inline-flex h-10 max-w-full items-center gap-2 rounded-full border pl-4 pr-1 text-sm ${
+      <span className={`company-chip-body inline-flex h-9 max-w-full items-center gap-2 overflow-hidden rounded-full border pl-4 pr-0 text-sm ${
         sure ? 'border-deep-navy bg-deep-navy text-white' : 'border-amber-300 bg-amber-50 text-amber-950'}`}>
         <span className="truncate font-medium" title={company.name}>{company.name}</span>
         {(company.targetCountry || company.country) && (
@@ -155,34 +160,30 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
                 className="shrink-0 text-xs underline opacity-90">
           {sure ? 'Not this?' : 'Best guess · Not this?'}
         </button>
-        <button type="button" onClick={onRemove} aria-label={`Remove ${company.name}`}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-base leading-none hover:bg-black/10">
+        <Button variant="ghost" size="sm" iconOnly className="shrink-0" onClick={onRemove} aria-label={`Remove ${company.name}`}>
           ×
-        </button>
+        </Button>
       </span>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-80 max-w-[90vw] space-y-1 rounded-xl border border-pale-sky bg-white p-2 text-sm text-deep-navy shadow-lg">
           {company.country && (
-            <div className="flex flex-wrap gap-1 px-2 pb-1">
+            <div className="flex flex-wrap items-center gap-2 px-2 pb-1">
               <span className="text-xs text-slate-500">Where:</span>
-              <button type="button" onClick={() => { setOpen(false); onWhere(undefined); }}
-                      aria-pressed={!company.targetCountry}
-                      title={(company.entity?.exclude || []).length
-                        ? `Everywhere except ${(company.entity?.exclude || []).map((x) => x.name).join(', ')}`
-                        : 'Everywhere this company works'}
-                      className="rounded-full border border-pale-sky px-2 text-xs aria-pressed:bg-deep-navy aria-pressed:text-white">
+              <Chip onClick={() => { setOpen(false); onWhere(undefined); }}
+                    selected={!company.targetCountry}
+                    title={(company.entity?.exclude || []).length
+                      ? `Everywhere except ${(company.entity?.exclude || []).map((x) => x.name).join(', ')}`
+                      : 'Everywhere this company works'}>
                 Default
-              </button>
-              <button type="button" onClick={() => { setOpen(false); onWhere(company.country); }}
-                      aria-pressed={Boolean(company.targetCountry) && company.targetCountry === company.country}
-                      className="rounded-full border border-pale-sky px-2 text-xs aria-pressed:bg-deep-navy aria-pressed:text-white">
+              </Chip>
+              <Chip onClick={() => { setOpen(false); onWhere(company.country); }}
+                    selected={Boolean(company.targetCountry) && company.targetCountry === company.country}>
                 {countryLabel(company.country)} only
-              </button>
-              <button type="button" onClick={() => { setOpen(false); onWhere('*'); }}
-                      aria-pressed={company.targetCountry === '*'}
-                      className="rounded-full border border-pale-sky px-2 text-xs aria-pressed:bg-deep-navy aria-pressed:text-white">
+              </Chip>
+              <Chip onClick={() => { setOpen(false); onWhere('*'); }}
+                    selected={company.targetCountry === '*'}>
                 Any country
-              </button>
+              </Chip>
             </div>
           )}
           {(company.alternatives || []).length > 0 && <p className="px-2 text-xs text-slate-500">Did you mean</p>}
@@ -306,7 +307,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   // per company and only add to it when clicked.
   // Who to look for is one choice; titles in the member's own words are
   // optional and, when given, win. Nobody has to type a title to search.
-  const [level, setLevel] = useState<Exclude<Level, 'unknown'>>('working');
+  const [level, setLevel] = useState<Wanted>('working');
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
   // The goal a search keeps going for: it stops at this many qualified
@@ -427,7 +428,9 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
     try {
       const res = await api.contacts.list({ companies: names.join(','), limit: 800 });
       if (requestId !== requestRef.current) return;
-      const items = Array.isArray(res?.items) ? res.items : [];
+      // The same person on file twice (two addresses, one name) is one row;
+      // someone already written to is the one kept, so that history shows.
+      const items = dedupePeople(Array.isArray(res?.items) ? res.items : [], (p) => p, (p) => (p.last_sent_at ? 1 : 0));
       setPeople(items);
       setPeopleFor(names.map(companyKey).sort().join('\n'));
       setSelected((current) => {
@@ -491,22 +494,34 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   // One lane per company: how many people it has (on file, plus found and
   // not yet on file), how many of them are ticked, and what its search is
   // doing.
-  const lanes = useMemo<Lane[]>(() => {
+  const { lanes, statuses } = useMemo(() => {
     const byKey: Record<string, Contact[]> = {};
     for (const person of people) (byKey[companyKey(person.company)] ||= []).push(person);
-    return chosen.map((company) => {
+    const statusByKey: Record<string, CompanyStatus> = {};
+    const list = chosen.map<Lane>((company) => {
       const key = companyKey(company.name);
       const rows = byKey[key] || [];
-      const onFile = new Set(rows.map((p) => (p.email || '').trim().toLowerCase()).filter(Boolean));
-      const extra = (found[key] || []).filter((p) => !onFile.has((p.email || '').trim().toLowerCase())).length;
+      const foundHere = found[key] || [];
+      const extra = foundHere.length ? foundNotOnFile(people, foundHere) : [];
+      const run = runs[key] || IDLE;
+      const matching = rows.filter((p) => matchesWanted(p, level)).length
+        + extra.filter((p) => matchesWanted(foundAsPerson(p), level)).length;
+      const status = companyStatus({ run, total: rows.length + extra.length, matching, wanted: level });
+      statusByKey[key] = status;
       return {
         company: company.name,
-        found: rows.length + extra,
+        found: rows.length + extra.length,
         ticked: rows.filter((p) => selected.includes(p.id) && p.email).length,
-        run: runs[key] || IDLE,
+        run,
+        status,
       };
     });
-  }, [chosen, people, selected, found, runs]);
+    return { lanes: list, statuses: statusByKey };
+  }, [chosen, people, selected, found, runs, level]);
+
+  // Why a search could not run, once per reason however many companies hit it.
+  const pausedNotes = [...new Set(lanes.flatMap((l) => (l.status.problem ? [l.status.problem] : [])))];
+  const searchingCount = lanes.filter((l) => l.run.state === 'searching' || l.run.state === 'queued').length;
 
   useEffect(() => {
     onStage?.({ step, lanes });
@@ -636,28 +651,23 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               />
             ))}
             {hiddenChips > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowAllChips((v) => !v)}
-                className="inline-flex h-10 items-center rounded-full border border-dashed border-steel-blue px-4 text-sm text-deep-navy"
-              >
+              <Chip onClick={() => setShowAllChips((v) => !v)}>
                 {showAllChips ? 'Show fewer' : `+${hiddenChips} more`}
-              </button>
+              </Chip>
             )}
           </div>
 
-          <button
-            type="button"
+          <Button
+            className="w-full"
             disabled={chosen.length === 0 || resolving > 0}
             onClick={() => setStep(2)}
-            className="ui-button ui-button--primary w-full py-3 text-[15px]"
           >
             {chosen.length === 0 ? 'Add a company to start' : 'Next: tick who gets it'}
-          </button>
+          </Button>
         </div>
       )}
 
-      <StepHeading n={2} title="Tick who gets it" hint={people.length ? `${recipients.length} of ${people.length} ticked` : 'Searches start by themselves'} step={step} onSelect={setStep} />
+      <StepHeading n={2} title="Tick who gets it" hint={people.length ? `${recipients.length} of ${people.length} ticked` : 'No people yet'} step={step} onSelect={setStep} />
       {step === 2 && (
         <div className="px-5 pb-5 space-y-3 border-b border-pale-sky">
           <p className="text-sm text-deep-navy">
@@ -666,9 +676,13 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
             the right.
           </p>
           {people.length === 0 && !busy && (
-            <p className="text-sm text-slate-500">
-              Nobody on record at these companies yet. Searches start by themselves for companies we
-              could confirm; press Find people on any other lane.
+            <p className="text-sm text-slate-500" data-testid="no-people-note">
+              {pausedNotes[0]
+                ?? (searchingCount > 0
+                  ? `Searching for people at ${searchingCount} compan${searchingCount === 1 ? 'y' : 'ies'}…`
+                  : lanes.length > 0 && lanes.every((l) => l.run.state === 'done')
+                    ? `Nobody found for ${WANTED_LABEL[level]} at these companies. Try another level below, or import a spreadsheet.`
+                    : 'No people on file at these companies yet. Press Find people on a company to search for them.')}
             </p>
           )}
 
@@ -677,18 +691,11 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               wants them, and the company's own titles are one click each. */}
           <div>
             <p className="text-xs font-medium text-slate-600" id="who-to-look-for">Who to look for</p>
-            <div role="radiogroup" aria-labelledby="who-to-look-for" className="mt-1 inline-flex rounded-lg border border-pale-sky p-0.5">
+            <div role="radiogroup" aria-labelledby="who-to-look-for" className="mt-1 flex flex-wrap gap-2">
               {WHO.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={level === option.id}
-                  onClick={() => setLevel(option.id)}
-                  className={`rounded-md px-3 py-1.5 text-sm ${level === option.id ? 'bg-deep-navy text-white' : 'text-deep-navy hover:bg-pale-sky/40'}`}
-                >
+                <Chip key={option.id} role="radio" selected={level === option.id} onClick={() => setLevel(option.id)}>
                   {option.label}
-                </button>
+                </Chip>
               ))}
             </div>
             <p className="mt-1 text-xs text-slate-500">
@@ -829,6 +836,9 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
         {runNotice && (
           <p className="ui-notice ui-notice--info text-sm" role="status">{runNotice}</p>
         )}
+        {pausedNotes.map((note) => (
+          <p key={note} className="ui-notice ui-notice--warning text-sm" role="status" data-testid="search-paused">{note}</p>
+        ))}
         {runError && (
           <p className="ui-notice ui-notice--danger text-sm" role="alert">{runError}</p>
         )}
@@ -853,6 +863,8 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               onSelectedChange={changeSelection}
               found={found}
               runs={runs}
+              statuses={statuses}
+              wanted={level}
               onFind={findPeople}
               focused={focused}
               onFindEverywhere={(company) => {

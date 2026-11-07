@@ -25,14 +25,15 @@ async def cases() -> None:
          patch.object(F, "firecrawl_configured", return_value=False), \
          patch.object(F, "_tinyfish_web_search", AsyncMock(return_value=None)):
         assert await F.web_search("Barclays site:linkedin.com/in") == []
-        assert F.last_search_failure() == "TinyFish gave no answer"
+        assert F.last_search_failure() == "TinyFish failing"
+        assert F.last_search_failure_kind() == F.FAILING
 
     # A real empty answer is not a failure.
     with patch.object(F, "tinyfish_configured", return_value=True), \
          patch.object(F, "firecrawl_configured", return_value=False), \
          patch.object(F, "_tinyfish_web_search", AsyncMock(return_value=[])):
         assert await F.web_search("nobody at all") == []
-        assert F.last_search_failure() is None
+        assert F.last_search_failure() is None and F.last_search_failure_kind() is None
 
     # A run counts the failure, so its message can say search was down.
     with patch.object(F, "web_search_configured", return_value=True), \
@@ -45,7 +46,8 @@ async def cases() -> None:
         finally:
             W.end_search_run(token)
     summary = W.search_errors_summary(run)
-    assert summary and summary["all_failed"] and summary["first_message"] == "TinyFish gave no answer", summary
+    assert summary and summary["all_failed"] and summary["first_message"] == "TinyFish failing", summary
+    assert summary["kind"] == F.FAILING, summary
 
 
 if __name__ == "__main__":

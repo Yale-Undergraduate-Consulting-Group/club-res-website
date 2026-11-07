@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { Button } from '../ui/Primitives';
 import type { NavItem } from '../../lib/navConfig';
 
 type AppShellDrawerProps = {
@@ -26,9 +27,9 @@ export default function AppShellDrawer({ open, onClose, user, onLogout, items }:
               <div className="text-xs text-slate-500 truncate">{user.email}</div>
             </div>
           </div>
-          <button type="button" className="app-nav-util-btn" onClick={onClose} aria-label="Close">
+          <Button variant="ghost" size="sm" iconOnly onClick={onClose} aria-label="Close">
             ✕
-          </button>
+          </Button>
         </div>
         <div className="app-shell-drawer-body">
           <nav aria-label="All sections" className="space-y-1 mb-5">

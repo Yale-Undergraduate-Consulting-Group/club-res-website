@@ -7,19 +7,20 @@ reached through Monid (https://monid.ai), a hosted API broker - MONID_API_KEY
 authenticates against Monid's own API (https://api.monid.ai), not TinyFish
 directly. A single `POST /v1/run` call with {"provider": "tinyfish",
 "endpoint": "/search"|"/fetch", "input": {...}} runs synchronously and
-returns {"status": "COMPLETED", "output": {...}} - confirmed live against
-TinyFish's published free-tier pricing (billedUnits: 0 for both endpoints).
-TinyFish itself is a browser-rendered search/fetch service, engineered
-around the exact failure mode self-hosted Firecrawl hit in production here:
-its own Monid catalog entry reports "healthy" status where Firecrawl's
-/v1/search consistently returned zero results (bot-blocked upstream, see
+returns {"status":"COMPLETED","output":{...}} when the wallet and provider
+are available. Monid is usage-priced: the live 2026-11-06 empty-wallet
+response estimated about $0.005 for one search.
+
+TinyFish itself is a browser-rendered search/fetch service, engineered around
+the exact failure mode self-hosted Firecrawl hit here: Firecrawl's `/v1/search`
+returned zero results behind its upstream bot protection (see
 docs/FIRECRAWL-SEARCH-EXPANSION-PLAN.md section 1.6).
 
-Firecrawl (per docs/FIRECRAWL-SEARCH-EXPANSION-PLAN.md) runs on an OCI VM,
-reachable from this app once the EC2 host joined the same Tailscale mesh
-(plan section 1.3, completed). It stays wired as the second layer: if
-TinyFish/Monid is ever unconfigured, rate-limited, or has an outage,
-Firecrawl is a working fallback rather than an immediate drop to nothing.
+Firecrawl stays wired as a second layer. A successful response, including a
+successful search with zero matches, is authoritative; an HTTP or transport
+failure remains distinguishable from "nothing found." This is fallback
+wiring, not proof that Firecrawl's upstream search currently returns useful
+results.
 
 The club does not pay for Tavily/Apify/Verifalia. A caller checks
 TAVILY_API_KEY only as an optional bonus path if one is ever configured
@@ -58,6 +59,102 @@ _MONID_SEARCH_POLL_ATTEMPTS = 20
 _MONID_SEARCH_POLL_INTERVAL_S = 0.5
 
 
+# --- Search provider health and back-off ----------------------------------
+# Monid answers 402 when its wallet is empty, 401/403 for a bad key and 429
+# when rate limited. Every one of those used to come back as "no results", so
+# a provider outage read as "nobody found". The kind of the last failure is
+# kept here: callers read it (last_search_failure_kind) to tell the member the
+# search could not run, the admin card reads monid_health(), and after a
+# credit/auth/rate failure calls are suppressed for a short while so a burst
+# of lanes does not hammer an API that will refuse every one of them.
+# ponytail: one in-process record - the app is one writer process; a restart
+# forgets it, and the first call afterwards learns the state again.
+
+OUT_OF_CREDIT = "out_of_credit"
+AUTH = "auth"
+RATE_LIMITED = "rate_limited"
+TIMEOUT = "timeout"
+FAILING = "failing"
+#: Worst first: which of several failures in one run the member is told about.
+PROVIDER_KIND_RANK = (OUT_OF_CREDIT, AUTH, RATE_LIMITED, TIMEOUT, FAILING)
+#: The one plain sentence a member sees. Never the provider's own error text.
+PROVIDER_MEMBER_MESSAGE = {
+    OUT_OF_CREDIT: "People search is paused: the search service is out of credit. A maintainer needs to top it up.",
+    AUTH: "People search is paused: the search service refused our access key. A maintainer needs to fix it.",
+    RATE_LIMITED: "People search is busy: the search service is limiting requests. Try again in a few minutes.",
+    TIMEOUT: "People search is temporarily unavailable: the search service is not answering. Try again later.",
+    FAILING: "People search is temporarily unavailable. Try again later.",
+}
+#: Seconds the provider is left alone after a failure that repeating cannot fix.
+_BACKOFF_S = {OUT_OF_CREDIT: 300.0, AUTH: 300.0, RATE_LIMITED: 60.0}
+
+
+def classify_provider_status(status: int) -> str:
+    """The failure kind for an HTTP status a search provider answered with."""
+    if status in (402, 432):
+        return OUT_OF_CREDIT
+    if status in (401, 403):
+        return AUTH
+    if status == 429:
+        return RATE_LIMITED
+    return FAILING
+
+
+_monid: dict[str, Any] = {
+    "state": "unknown",  # unknown (no call yet), working, or a failure kind
+    "last_ok_at": None, "last_failure_at": None, "blocked_until": 0.0,
+}
+
+
+def _monid_note_ok() -> None:
+    if _monid["state"] != "working":
+        logger.info("monid search provider working again (was %s)", _monid["state"])
+    _monid.update(state="working", last_ok_at=time.time(), blocked_until=0.0)
+
+
+def _monid_note_failure(kind: str, detail: str) -> None:
+    """Record a failed call. Logged once per change of state, so a burst of
+    refused calls is one warning, not hundreds."""
+    if _monid["state"] != kind:
+        logger.warning("monid search provider %s: %s", kind, detail[:300])
+    _monid.update(state=kind, last_failure_at=time.time())
+    if kind in _BACKOFF_S:
+        _monid["blocked_until"] = time.monotonic() + _BACKOFF_S[kind]
+
+
+def monid_backoff_kind() -> str | None:
+    """The failure kind while Monid is being left alone, else None. When the
+    back-off ends the next call goes through and decides the state afresh."""
+    if time.monotonic() < _monid["blocked_until"]:
+        return str(_monid["state"])
+    return None
+
+
+def monid_health() -> dict[str, Any]:
+    """What the last real Monid call showed, for the admin card. No call is
+    made here: a probe would spend the wallet this is reporting on."""
+    blocked_for = max(0.0, _monid["blocked_until"] - time.monotonic())
+    state = _monid["state"] if tinyfish_configured() else "unconfigured"
+    return {
+        "configured": tinyfish_configured(),
+        "state": state,
+        "last_ok_at": _monid["last_ok_at"],
+        "last_failure_at": _monid["last_failure_at"],
+        "paused_for_s": round(blocked_for),
+        "message": PROVIDER_MEMBER_MESSAGE.get(state),
+    }
+
+
+def reset_monid_health() -> None:
+    """Forget everything learned about the provider (tests)."""
+    _monid.update(state="unknown", last_ok_at=None, last_failure_at=None, blocked_until=0.0)
+
+
+#: Why the last Monid call of this task failed; set by _monid_run, per task so
+#: parallel searches never read each other's outcome.
+_last_monid_failure_kind: ContextVar[str | None] = ContextVar("monid_failure_kind", default=None)
+
+
 @dataclass(frozen=True)
 class FetchedPage:
     url: str
@@ -86,7 +183,7 @@ def web_search_configured() -> bool:
 
 # --- Search pacing, usage and cache --------------------------------------
 # One process serves every member, Find run and the builder, so this module
-# state is the club-wide view of Monid's published free-tier search limit.
+# applies one club-wide request pace before the usage-priced Monid API.
 
 _SEARCH_PACER_WINDOW_S = 60.0
 #: Monotonic start times of the Monid searches inside the current window.
@@ -227,7 +324,8 @@ async def _monid_run(client: httpx.AsyncClient, api_key: str, endpoint: str,
     non-terminal response, poll /v1/runs/{id} until a terminal status.
     Returns the run's `output` dict on COMPLETED, or None on any failure
     (HTTP error, non-COMPLETED terminal status, network error, malformed
-    body) - callers fall back to Firecrawl."""
+    body) - callers fall back to Firecrawl. Why it failed is left in
+    _last_monid_failure_kind and in monid_health()."""
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload: dict[str, Any] = {"provider": "tinyfish", "endpoint": endpoint, "input": {}}
     if query_params:
@@ -235,14 +333,21 @@ async def _monid_run(client: httpx.AsyncClient, api_key: str, endpoint: str,
     if body:
         payload["input"]["body"] = body
 
+    def fail(kind: str, detail: str) -> None:
+        _last_monid_failure_kind.set(kind)
+        _monid_note_failure(kind, f"tinyfish{endpoint} {detail}")
+
     try:
         resp = await client.post(f"{_MONID_API_BASE}/v1/run", json=payload, headers=headers)
-        data = resp.json()
         if resp.status_code >= 400:
-            logger.warning("monid tinyfish%s HTTP %s: %s", endpoint, resp.status_code, str(data)[:300])
+            fail(classify_provider_status(resp.status_code), f"HTTP {resp.status_code}: {resp.text[:200]}")
             return None
+        data = resp.json()
+    except httpx.TimeoutException as exc:
+        fail(TIMEOUT, f"request timed out: {type(exc).__name__}")
+        return None
     except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("monid tinyfish%s request failed: %s: %s", endpoint, type(exc).__name__, exc)
+        fail(FAILING, f"request failed: {type(exc).__name__}: {exc}")
         return None
 
     run_id = data.get("runId") if isinstance(data, dict) else None
@@ -250,21 +355,31 @@ async def _monid_run(client: httpx.AsyncClient, api_key: str, endpoint: str,
         status = data.get("status") if isinstance(data, dict) else None
         if status == "COMPLETED":
             output = data.get("output")
-            return output if isinstance(output, dict) else None
+            if isinstance(output, dict):
+                _monid_note_ok()
+                return output
+            fail(FAILING, f"run {run_id} completed without output")
+            return None
         if status in {"FAILED", "BLOCKED", "STOPPED", "TIMED_OUT"}:
-            logger.warning("monid tinyfish%s run %s ended %s: %r", endpoint, run_id, status, data.get("error"))
+            fail(TIMEOUT if status == "TIMED_OUT" else FAILING, f"run {run_id} ended {status}: {data.get('error')!r}")
             return None
         if not run_id:
-            logger.warning("monid tinyfish%s malformed response: %r", endpoint, data)
+            fail(FAILING, f"malformed response: {data!r}")
             return None
         await asyncio.sleep(poll_interval_s)
         try:
             resp = await client.get(f"{_MONID_API_BASE}/v1/runs/{run_id}", headers=headers)
+            if resp.status_code >= 400:
+                fail(classify_provider_status(resp.status_code), f"poll HTTP {resp.status_code} for run {run_id}")
+                return None
             data = resp.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            logger.warning("monid tinyfish%s poll failed for run %s: %s: %s", endpoint, run_id, type(exc).__name__, exc)
+        except httpx.TimeoutException as exc:
+            fail(TIMEOUT, f"poll timed out for run {run_id}: {type(exc).__name__}")
             return None
-    logger.warning("monid tinyfish%s run %s never reached a terminal status", endpoint, run_id)
+        except (httpx.HTTPError, ValueError) as exc:
+            fail(FAILING, f"poll failed for run {run_id}: {type(exc).__name__}: {exc}")
+            return None
+    fail(TIMEOUT, f"run {run_id} never reached a terminal status")
     return None
 
 
@@ -274,6 +389,8 @@ async def _tinyfish_fetch_page(url: str, *, user_id: int | None = None) -> Fetch
     quota HTTPException, matching every other paid/metered-call gate."""
     api_key = (os.getenv("MONID_API_KEY") or "").strip()
     if not api_key or not url:
+        return None
+    if monid_backoff_kind():
         return None
     if user_id is not None:
         await reserve_tinyfish_call(user_id)
@@ -363,6 +480,14 @@ async def _tinyfish_web_search(query: str, max_results: int, *, user_id: int | N
     seen_urls: set[str] = set()
     async with httpx.AsyncClient(timeout=_MONID_SEARCH_TIMEOUT_S) as client:
         for page in range(start_page, start_page + max_pages):
+            blocked = monid_backoff_kind()
+            if blocked:
+                # No call: Monid refused the last one for a reason waiting
+                # fixes, and every lane asking again would only be refused too.
+                _last_monid_failure_kind.set(blocked)
+                if page == start_page:
+                    return None
+                break
             if user_id is not None:
                 await reserve_tinyfish_call(user_id)
             params = dict(base_params)
@@ -496,18 +621,20 @@ async def _firecrawl_web_search(query: str, max_results: int, *, user_id: int | 
         except httpx.HTTPStatusError as exc:
             logger.warning("firecrawl web_search HTTP %s for %r in %.2fs: %s",
                             exc.response.status_code, query, time.monotonic() - started, exc.response.text[:300])
-            _last_search_failure.set(f"Firecrawl HTTP {exc.response.status_code}")
+            _set_search_failure(f"Firecrawl HTTP {exc.response.status_code}",
+                                classify_provider_status(exc.response.status_code))
             return []
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("firecrawl web_search failed for %r in %.2fs: %s: %s",
                             query, time.monotonic() - started, type(exc).__name__, exc)
-            _last_search_failure.set(f"Firecrawl {type(exc).__name__}")
+            _set_search_failure(f"Firecrawl {type(exc).__name__}",
+                                TIMEOUT if isinstance(exc, httpx.TimeoutException) else FAILING)
             return []
 
     results = data.get("data") if isinstance(data, dict) else None
     if not isinstance(results, list):
         logger.warning("firecrawl web_search malformed response for %r: %r", query, data)
-        _last_search_failure.set("Firecrawl malformed response")
+        _set_search_failure("Firecrawl malformed response", FAILING)
         return []
     out: list[dict[str, Any]] = []
     for item in results:
@@ -555,11 +682,24 @@ async def fetch_page(url: str, *, user_id: int | None = None) -> FetchedPage | N
 #: down" and told members large companies rarely publish emails. Per task, so
 #: parallel searches never read each other's outcome.
 _last_search_failure: ContextVar[str | None] = ContextVar("web_search_failure", default=None)
+#: The same failure as one of PROVIDER_KIND_RANK.
+_last_search_failure_kind: ContextVar[str | None] = ContextVar("web_search_failure_kind", default=None)
 
 
 def last_search_failure() -> str | None:
     """The reason the most recent web_search in this task failed, or None."""
     return _last_search_failure.get()
+
+
+def last_search_failure_kind() -> str | None:
+    """The kind of that failure (out_of_credit, auth, rate_limited, timeout,
+    failing), or None when the search answered - including with nothing."""
+    return _last_search_failure_kind.get()
+
+
+def _set_search_failure(reason: str, kind: str) -> None:
+    _last_search_failure.set(reason)
+    _last_search_failure_kind.set(kind)
 
 
 async def web_search(query: str, max_results: int = 8, *, user_id: int | None = None,
@@ -568,33 +708,42 @@ async def web_search(query: str, max_results: int = 8, *, user_id: int | None = 
     neither is configured. A genuine empty result from TinyFish is trusted
     and returned as-is, not treated as a reason to fall back to Firecrawl.
 
+    An empty list is only "found nothing" when last_search_failure() is None;
+    otherwise the search could not run (see last_search_failure_kind()).
+
     ``page`` > 0 asks for a later results page. Only TinyFish pages, so a later
     page never falls back to Firecrawl's first page of the same query.
 
     Answers are read through the shared web_search_cache first; a hit spends
     no search, no quota and no pacer slot. Failures are never cached."""
     _last_search_failure.set(None)
+    _last_search_failure_kind.set(None)
+    _last_monid_failure_kind.set(None)
     key = _search_cache_key(query or "")
     use_cache = bool(key) and _search_cache_ttl_s() > 0
     if use_cache:
         cached = await _search_cache_get(key, page, max_results)
         if cached is not None:
             return cached
-    reason = None
+    reason = kind = None
     if tinyfish_configured():
         results = await _tinyfish_web_search(query, max_results, user_id=user_id, start_page=page)
         if results is not None:
             if use_cache:
                 await _search_cache_put(key, page, max_results, results)
             return results
-        reason = "TinyFish gave no answer"
+        kind = _last_monid_failure_kind.get() or FAILING
+        reason = f"TinyFish {kind}"
     if firecrawl_configured() and not page:
         results = await _firecrawl_web_search(query, max_results, user_id=user_id)
-        if results or _last_search_failure.get() is None:
+        if _last_search_failure.get() is None:
+            # The fallback answered. An empty answer is still a successful
+            # search, so it clears the failed primary provider rather than
+            # becoming "search unavailable".
             if use_cache:
                 await _search_cache_put(key, page, max_results, results)
             return results
-        reason = _last_search_failure.get()
+        reason, kind = _last_search_failure.get(), _last_search_failure_kind.get() or kind
     if reason:
-        _last_search_failure.set(reason)
+        _set_search_failure(reason, kind or FAILING)
     return []

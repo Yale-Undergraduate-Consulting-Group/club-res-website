@@ -170,8 +170,7 @@ test('campaign deletion confirmation contains keyboard focus', async ({ page }) 
 });
 
 test('data arriving while the delete confirmation is open does not move focus', async ({ page }) => {
-  let releaseDispatches: () => void = () => {};
-  const dispatchesHeld = new Promise<void>(resolve => { releaseDispatches = resolve; });
+  const { promise: dispatchesHeld, resolve: releaseDispatches } = Promise.withResolvers<void>();
   await page.route('**/api/campaigns/1', async route => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { ...campaigns[0], readiness: { ready: true, issues: [] }, counts: {}, contacts: [] } });

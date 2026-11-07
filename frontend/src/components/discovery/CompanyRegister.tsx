@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, type RegisterCompany, type RegisterPerson, type RegisterRecords, type RegisterSummary } from '../../api';
 import { publicSourceUrl } from '../../lib/contactEvidence';
 import { kindLabel, locationText, peopleText, summaryLine } from '../../lib/registerView';
+import { Button, Chip } from '../ui/Primitives';
 
 const TIERS: { id: string; label: string; hint: string }[] = [
   { id: '', label: 'All', hint: 'Every company on record' },
@@ -170,17 +171,9 @@ export default function CompanyRegister() {
       <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex flex-wrap gap-2">
           {TIERS.map((option) => (
-            <button
-              key={option.id || 'all'}
-              type="button"
-              title={option.hint}
-              onClick={() => setTier(option.id)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
-                tier === option.id ? 'border-deep-navy bg-deep-navy text-white' : 'border-pale-sky bg-white text-deep-navy'
-              }`}
-            >
+            <Chip key={option.id || 'all'} title={option.hint} selected={tier === option.id} onClick={() => setTier(option.id)}>
               {option.label}
-            </button>
+            </Chip>
           ))}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -215,20 +208,12 @@ export default function CompanyRegister() {
             Only companies with named people
           </label>
           {!q.trim() && (
-            <div className="flex items-center gap-1 text-xs" role="group" aria-label="Order companies by" data-testid="register-sort">
+            <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Order companies by" data-testid="register-sort">
               <span className="text-slate-500 mr-1">Order:</span>
               {([['value', 'Worth reaching first'], ['recent', 'Newest filings']] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={sort === id}
-                  onClick={() => setSort(id)}
-                  className={`rounded-full border px-3 py-1 font-medium ${
-                    sort === id ? 'border-deep-navy bg-deep-navy text-white' : 'border-pale-sky bg-white text-deep-navy'
-                  }`}
-                >
+                <Chip key={id} selected={sort === id} onClick={() => setSort(id)}>
                   {label}
-                </button>
+                </Chip>
               ))}
             </div>
           )}
@@ -242,13 +227,7 @@ export default function CompanyRegister() {
           <span className="text-sm font-semibold text-deep-navy">
             {picked.size} compan{picked.size === 1 ? 'y' : 'ies'} selected
           </span>
-          <button
-            type="button"
-            className="rounded-xl bg-deep-navy px-4 py-2 text-sm font-semibold text-white"
-            onClick={workThese}
-          >
-            Find people and write to them
-          </button>
+          <Button onClick={workThese}>Find people and write to them</Button>
           <button
             type="button"
             className="text-sm font-medium text-slate-600 hover:underline"
@@ -334,9 +313,10 @@ export default function CompanyRegister() {
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-xl border border-deep-navy px-3 py-1.5 text-xs font-semibold text-deep-navy hover:bg-pale-sky/30"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
                     onClick={() => {
                       // Carry the domain the register already holds. Without it the
                       // search re-derives a domain it was just handed, and can
@@ -347,7 +327,7 @@ export default function CompanyRegister() {
                     }}
                   >
                     Find people here
-                  </button>
+                  </Button>
                 </div>
                 {showPeople[key] && (
                   <div className="mt-2 ml-7 text-xs text-slate-600" data-testid="register-people">
@@ -394,14 +374,9 @@ export default function CompanyRegister() {
         </ul>
         {items.length < total && (
           <div className="mt-3 text-center">
-            <button
-              type="button"
-              className="rounded-xl border border-pale-sky px-4 py-2 text-sm font-medium text-deep-navy disabled:opacity-50"
-              disabled={loading}
-              onClick={() => void showMore()}
-            >
+            <Button variant="secondary" disabled={loading} onClick={() => void showMore()}>
               Show more companies
-            </button>
+            </Button>
           </div>
         )}
       </div>

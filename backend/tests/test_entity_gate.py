@@ -194,7 +194,8 @@ async def search_errors_and_shared_queries() -> None:
     summary = W.search_errors_summary(run)
     assert summary["count"] == 2 and summary["all_failed"] and summary["limit_reached"], summary
     assert "432" in summary["first_message"], summary
-    assert D._search_unavailable(summary) == "web search unavailable (limit reached)"
+    assert summary["kind"] == "out_of_credit", summary
+    assert D._search_unavailable(summary) == summary["message"] and "out of credit" in summary["message"]
     assert W.search_errors_summary({"queries": 3, "failed": 0}) is None
 
     # Two stages asking the same query in one run share one request.

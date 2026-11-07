@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { Button } from './ui/Primitives';
 
 type Props = { children: ReactNode };
 type State = { hasError: boolean; error?: Error };
@@ -23,12 +24,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             <p className="text-slate-600 text-sm mb-4">
               {this.state.error?.message || 'An unexpected error occurred.'}
             </p>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="px-4 py-2 rounded-lg bg-[var(--btn-primary-bg)] text-[var(--btn-primary-text)] font-medium hover:bg-[var(--btn-primary-hover)]"
-            >
-              Reload app
-            </button>
+            <Button onClick={() => window.location.href = '/'}>Reload app</Button>
           </div>
         </div>
       );

@@ -4,6 +4,7 @@ YUCGoutreach company discovery: SQL-backed runs, parallel enrichment, Excel expo
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from hmac import compare_digest
@@ -36,6 +37,23 @@ class YucgOutreachRunCreate(BaseModel):
     worker_concurrency: int = Field(4, ge=1, le=16)
 
 
+def _member_research_json(text: str | None) -> str | None:
+    """The run's research as members see it. search_errors.first_message is
+    the provider's own error text, kept in the database for maintainers; the
+    page gets ``kind`` and the plain ``message`` instead."""
+    if not text:
+        return text
+    try:
+        research = json.loads(text)
+    except ValueError:
+        return text
+    errors = research.get("search_errors") if isinstance(research, dict) else None
+    if not isinstance(errors, dict) or "first_message" not in errors:
+        return text
+    research["search_errors"] = {k: v for k, v in errors.items() if k != "first_message"}
+    return json.dumps(research)
+
+
 def _run_to_dict(row: dict) -> dict:
     return {
         "id": row["id"],
@@ -47,7 +65,7 @@ def _run_to_dict(row: dict) -> dict:
         "progress_pct": row.get("progress_pct"),
         "progress_message": row.get("progress_message"),
         "prospects_count": row.get("prospects_count"),
-        "research_json": row.get("research_json"),
+        "research_json": _member_research_json(row.get("research_json")),
         "error_message": row.get("error_message"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
@@ -325,7 +343,16 @@ async def list_prospects(run_id: int, user: dict = Depends(get_current_user), li
             (run_id, limit),
         )
         rows = await cur.fetchall()
-        return [row_to_dict(r) for r in rows]
+        # The same level the contacts list gives a title, so the sheet can put
+        # the people who match the chosen level first.
+        from app.services.company_register import classify_person_level
+
+        out = []
+        for r in rows:
+            row = row_to_dict(r)
+            row["person_level"] = classify_person_level(row.get("title"))
+            out.append(row)
+        return out
     finally:
         await db.close()
 
