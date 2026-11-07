@@ -232,12 +232,14 @@ def _gate_rows(rows: list[dict], entity: dict[str, Any], skips: dict, company: s
     """People from a source, less the ones that are not a person or not the
     target entity. Every source passes through here before the merge, and the
     save loop runs it once more on what is about to be stored."""
-    from app.services.web_contact_discovery import entity_gate, note_skip
+    from app.services.web_contact_discovery import department_name, entity_gate, note_skip
 
     kept: list[dict] = []
     for c in rows:
         name = (c.get("name") or "").strip()
-        if not looks_like_person_name(name, company):
+        # "Brand Comms" titled "kristin white" is a team heading read as a
+        # person; its address was built from the heading, so it is not kept.
+        if not looks_like_person_name(name, company) or department_name(name, c.get("title") or ""):
             note_skip(skips, "not_a_person", name)
             continue
         keep, reason = entity_gate(
@@ -859,6 +861,10 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     email = sanitize_email(c.get("email") or "")
                     if not email or not is_employee_outreach_email(email):
                         continue
+                    # The title the page shows is the one the goal counts and
+                    # the ranking reads: the raw search title ("Name - Director
+                    # of X - Acme | LinkedIn") could classify differently.
+                    c = dict(c, title=_clean_title(c.get("title"), name, company))
                     score = _quality_score(c, title_hints, level)
                     secondary = score - 3 if c.get("contact_source") == "linkedin_inferred" else score
                     linkedin = c.get("linkedin_url") or ""
@@ -889,7 +895,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                             email,
                             company,
                             linkedin or c.get("source_url"),
-                            _clean_title(c.get("title"), name, company),
+                            c.get("title"),
                             None,
                             None,
                             None,
