@@ -6,10 +6,14 @@ TinyFish (https://www.tinyfish.ai)'s Search and Fetch capabilities are
 reached through Monid (https://monid.ai), a hosted API broker - MONID_API_KEY
 authenticates against Monid's own API (https://api.monid.ai), not TinyFish
 directly. A single `POST /v1/run` call with {"provider": "tinyfish",
-"endpoint": "/search"|"/fetch", "input": {...}} runs synchronously and
-returns {"status":"COMPLETED","output":{...}} when the wallet and provider
-are available. Monid is usage-priced: the live 2026-11-06 empty-wallet
-response estimated about $0.005 for one search.
+"endpoint": "/free/search"|"/free/fetch", "input": {...}} runs synchronously
+and returns {"status":"COMPLETED","output":{...}}.
+
+Use the /free/ paths. Monid moved TinyFish's free tier there: /free/search and
+/free/fetch cost $0 a call and work with an empty wallet (verified live
+2026-11-07), while the old /search ($0.005 a call) and /fetch ($0.001 a result)
+are now paid and answer 402 WALLET_INSUFFICIENT_FUNDS when the wallet is empty.
+Both pairs take the same input.
 
 TinyFish itself is a browser-rendered search/fetch service, engineered around
 the exact failure mode self-hosted Firecrawl hit here: Firecrawl's `/v1/search`
@@ -48,6 +52,9 @@ from app.services.generation_policy import reserve_firecrawl_call, reserve_tinyf
 logger = logging.getLogger("yucg.firecrawl")
 _TIMEOUT_S = 30.0
 _MONID_API_BASE = "https://api.monid.ai"
+# TinyFish's free tier on Monid; see the module docstring before changing.
+_MONID_SEARCH_ENDPOINT = "/free/search"
+_MONID_FETCH_ENDPOINT = "/free/fetch"
 _MONID_SEARCH_TIMEOUT_S = 20.0
 _MONID_FETCH_TIMEOUT_S = 45.0
 _MONID_POLL_ATTEMPTS = 5
@@ -183,7 +190,7 @@ def web_search_configured() -> bool:
 
 # --- Search pacing, usage and cache --------------------------------------
 # One process serves every member, Find run and the builder, so this module
-# applies one club-wide request pace before the usage-priced Monid API.
+# applies one club-wide request pace before Monid.
 
 _SEARCH_PACER_WINDOW_S = 60.0
 #: Monotonic start times of the Monid searches inside the current window.
@@ -398,7 +405,7 @@ async def _tinyfish_fetch_page(url: str, *, user_id: int | None = None) -> Fetch
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=_MONID_FETCH_TIMEOUT_S) as client:
         output = await _monid_run(
-            client, api_key, "/fetch", body={"urls": [url], "links": True},
+            client, api_key, _MONID_FETCH_ENDPOINT, body={"urls": [url], "links": True},
             poll_attempts=_MONID_POLL_ATTEMPTS, poll_interval_s=_MONID_POLL_INTERVAL_S,
         )
 
@@ -497,7 +504,7 @@ async def _tinyfish_web_search(query: str, max_results: int, *, user_id: int | N
             # so a slow usage write never bunches requests past the window.
             await _await_search_slot()
             output = await _monid_run(
-                client, api_key, "/search", query_params=params,
+                client, api_key, _MONID_SEARCH_ENDPOINT, query_params=params,
                 poll_attempts=_MONID_SEARCH_POLL_ATTEMPTS, poll_interval_s=_MONID_SEARCH_POLL_INTERVAL_S,
             )
             await _record_search_usage()
