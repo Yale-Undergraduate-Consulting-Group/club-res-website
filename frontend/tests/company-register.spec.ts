@@ -249,6 +249,30 @@ test('browsing opens on the companies worth reaching, with the newest filings on
   await expect(order).toHaveCount(0);
 });
 
+test('selected and unselected register order pills have identical geometry', async ({ page }) => {
+  await mockRegister(page);
+  await page.goto('/scraper');
+  await page.getByRole('tab', { name: 'Companies' }).click();
+
+  const order = page.getByTestId('register-sort');
+  const worth = order.getByRole('button', { name: 'Worth reaching first' });
+  const newest = order.getByRole('button', { name: 'Newest filings' });
+  await expect(worth).toHaveAttribute('aria-pressed', 'true');
+
+  const before = await Promise.all([worth, newest].map(async pill => ({
+    box: await pill.boundingBox(),
+    radius: await pill.evaluate(element => getComputedStyle(element).borderRadius),
+  })));
+  expect(before[0].box?.height).toBe(before[1].box?.height);
+  expect(before[0].radius).toBe(before[1].radius);
+
+  await newest.click();
+  await expect(newest).toHaveAttribute('aria-pressed', 'true');
+  const after = await Promise.all([worth, newest].map(pill => pill.boundingBox()));
+  expect(after[0]?.height).toBe(after[1]?.height);
+  expect(after[0]?.height).toBe(before[0].box?.height);
+});
+
 test('a long list loads a page at a time', async ({ page }) => {
   const { calls } = await mockRegister(page, { many: 55 });
   await page.goto('/scraper');

@@ -34,7 +34,7 @@ system does not work.
 | --- | --- | --- |
 | 1 Company ideas | `research_service.py` briefs (sector-driven, sourced); `yucg_ollama_recommender.py` "Refresh with AI" over the prospect spreadsheet + YUCG website corpus | Recommender was **dead** (corpus never shipped in the image; then the prompt exceeded the LLM's 24k-char limit). Both fixed and verified live today: 5 cited recommendations. |
 | 2 Email format | `company_email_cache.py` learns per-domain patterns from every verified sample; `get_company_pattern`/`set_company_pattern` assistant tools | Working. It is the Apollo replacement, and it improves with use. |
-| 3 Real people | `yucgoutreach_discovery.py` orchestrator: website crawl (`contact_scraper.py`) + web/LinkedIn search (`web_contact_discovery.py`) + SEC officer roster (`roster_watch.py`, `roster_email.py`) | Web search was **dead** (self-hosted Firecrawl bot-blocked, 0 results) - replaced by TinyFish via Monid, free. SEC roster was **dead** (EDGAR 403s the placeholder User-Agent) - fixed by `SEC_CONTACT_EMAIL`. Verified: Disney 34 saved, McKinsey 11, Apple 7 real officers. |
+| 3 Real people | `yucgoutreach_discovery.py` orchestrator: website crawl (`contact_scraper.py`) + web/LinkedIn search (`web_contact_discovery.py`) + SEC officer roster (`roster_watch.py`, `roster_email.py`) | Web search uses TinyFish through Monid, with Firecrawl as fallback. It is usage-priced (the live 2026-11-06 error quoted about $0.005 per search) and stops when the Monid wallet is empty. The UI now distinguishes that outage from a successful search with no people; Admin → Operations shows the last real provider state without spending on a probe. SEC roster access uses `SEC_CONTACT_EMAIL`. |
 | 5 Bounce avoidance | `email_verifier.py` (MX now, optional SMTP RCPT), `contact_verify_pipeline.py`, `contact_ai_review.py` | Working as designed at `INBOX_VERIFY_MODE=mx`. See section 4.3 for why full SMTP is not the default. |
 | 6 Club-wide record | `contacts` (UNIQUE email), `campaign_contacts` (`sent_at`, `opened_at`, `replied_at`, UNIQUE per campaign), `email_events`, `outreach_messages` | Working. This already is the shared Google Sheet, with a send ledger Sheets cannot provide. |
 | 7 Send | Campaigns → immutable dispatch snapshot → owner's own Gmail; follow-up job | Working. **No send-time scheduling** by recipient timezone - a real gap. |
@@ -164,17 +164,10 @@ transparency:
   - `"<Company>" "<title hint>" site:linkedin.com/in` per hint token, and
   a news-corpus query (`domain_type=news`, which TinyFish supports) for
   "appointed / named / joins" to catch recent hires with current titles.
-- **Provenance in the UI.** Each prospect row should show its source badge
-  (SEC filing / LinkedIn / company site) and, for SEC, the filing link. A
-  director trusts an officer from a Form 4 differently from a regex hit in
-  a snippet. The data is already in `evidence_json`; it is just not shown.
-- **Honest empty states.** When Companies House is unconfigured, or a
-  company is private (no CIK), say which source was skipped and why. The
-  `roster_note` field already carries this; surface it.
-- **Sizing.** `max_prospects` default 250 is fine; the real constraint is
-  TinyFish's 500 searches/hour shared by the club. Keep the per-member and
-  club quotas in `generation_policy.py`; show remaining quota in Admin →
-  Operations next to the search self-test that already exists.
+- **Provenance in the UI.** Each person row shows a plain source label and a public source link when one exists. The source data comes from `evidence_json`, LinkedIn/profile URLs and filing URLs.
+- **Honest empty states.** A successful search with no matching person says so for the selected level. Monid HTTP 402/401/403/429, timeouts and other provider failures are carried separately through `research_json.search_errors`; the member sees one plain paused/unavailable sentence, never "nobody found" or the provider's raw response. Monid credit, auth and rate failures also put the in-process provider adapter in a short back-off so a set of company lanes does not repeat a call that will be refused. Admin → Operations reports the last real call as working, out of credit, key refused, rate-limited or failing; reading it makes no paid probe.
+- **People sheet.** People are grouped by company, deduplicated by normalized name plus company, and sorted with the selected level first. Each row names the current title, company, why the title matches, and the source/link. Other levels stay behind a count.
+- **Sizing.** `max_prospects` default 250 is fine; the operational constraints are TinyFish's shared upstream limit and the funded Monid wallet. The application records real upstream calls and keeps its configured club controls; an empty wallet stops web search until a maintainer tops it up.
 
 Acceptance: Disney run shows ≥30 people, each with a source badge; an
 officer row links to its SEC filing; a UK company run says "Companies House
@@ -260,8 +253,8 @@ normal develop → feature → main pipeline.
 
 | Order | Item | Size | Why first |
 | --- | --- | --- | --- |
-| 0 | Done today: TinyFish via Monid, site: translation, LinkedIn slug names, corpus in image, prompt budget, SEC contact email, search pagination | - | Find people and Refresh with AI went from dead to working |
-| 1 | Source badges + filing links + honest empty states in Find people (4.2) | S | Trust; zero new data, only display |
+| 0 | Done: TinyFish via Monid, site translation, LinkedIn slug names, corpus in image, prompt budget, SEC contact email and search pagination | - | Find people has working provider integration when the Monid wallet is funded |
+| 1 | Done: source links, selected-level grouping and honest empty/provider-paused states in Find people | - | Members can distinguish no match from a provider outage and follow where each person came from |
 | 2 | Pattern confidence summary in draft/company views (4.3) | S | The bounce-avoidance confirmation directors ask for |
 | 3 | `send_after` + recipient-local window in drain (4.4) | M | Replaces YAMM's one real advantage |
 | 4 | SEC register table + weekly refresh + sector filter page (4.1) | M | Replaces "how do we come up with companies" |

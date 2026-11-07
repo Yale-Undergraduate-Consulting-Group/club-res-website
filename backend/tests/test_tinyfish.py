@@ -243,7 +243,9 @@ def tests() -> None:
 
         os.environ.pop('FIRECRAWL_URL')
 
-        # --- Quota: same shape as reserve_firecrawl_call. ---
+        # --- Quota: same shape as reserve_firecrawl_call. The 401 above put
+        # Monid in back-off, which would stop the calls before the quota. ---
+        web_fetch.reset_monid_health()
         os.environ['TINYFISH_CALLS_PER_MEMBER_PER_HOUR'] = '2'
         os.environ['TINYFISH_CALLS_PER_CLUB_PER_HOUR'] = '100'
 

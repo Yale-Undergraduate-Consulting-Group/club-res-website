@@ -13,9 +13,9 @@ const FOUND = [
 /** What the NEON search finds: two people, one of whom the import refuses,
  *  and a CEO the page leaves for the member to add on purpose. */
 const PROSPECTS = [
-  { id: 91, run_id: 9, first_name: 'Margaret', last_name: 'Hamilton', email: 'margaret@neon.com', title: 'Head of Partnerships', score: 90 },
-  { id: 92, run_id: 9, first_name: 'Dorothy', last_name: 'Vaughan', email: 'dorothy@neon.com', title: 'Programme Lead', score: 80 },
-  { id: 93, run_id: 9, first_name: 'Grace', last_name: 'Murray', email: 'grace@neon.com', title: 'Chief Executive Officer', score: 70 },
+  { id: 91, run_id: 9, first_name: 'Margaret', last_name: 'Hamilton', email: 'margaret@neon.com', title: 'Head of Partnerships', person_level: 'working', score: 90 },
+  { id: 92, run_id: 9, first_name: 'Dorothy', last_name: 'Vaughan', email: 'dorothy@neon.com', title: 'Programme Lead', person_level: 'working', score: 80 },
+  { id: 93, run_id: 9, first_name: 'Grace', last_name: 'Murray', email: 'grace@neon.com', title: 'Chief Executive Officer', person_level: 'executive', score: 70 },
 ];
 
 const AFTER_ADD = {
@@ -121,9 +121,12 @@ test('the campaign is written to the people who were ticked, not to everyone fou
 
   // Four people have an address. The two who work there are ticked; the board
   // seat and the person already written to are not, because writing to either
-  // is a decision, not a default.
+  // is a decision, not a default. The board seat is not what the member is
+  // looking for (Team leads), so it waits behind a count until asked for.
   await expect(pipeline.getByTestId('selected-count')).toHaveText('2 of 4 selected');
   await expect(picker.getByRole('checkbox', { name: 'Write to Jean Bartik' })).toBeChecked();
+  await expect(picker.getByRole('checkbox', { name: 'Write to Ada Lovelace' })).toHaveCount(0);
+  await picker.getByTestId('show-others').click();
   await expect(picker.getByRole('checkbox', { name: 'Write to Ada Lovelace' })).not.toBeChecked();
 
   // Someone with no address cannot be ticked at all, rather than being ticked
@@ -193,7 +196,7 @@ test('a company with nobody on file is searched from its lane, and the people it
   // The CEO is folded away - a large company's search no longer opens on its
   // chief officers - and still one click from a deliberate add.
   await expect(neon.getByRole('button', { name: 'Add Grace Murray' })).toHaveCount(0);
-  await neon.getByRole('button', { name: 'Show 1 more: very senior, or the name is unclear' }).click();
+  await neon.getByRole('button', { name: 'Show 1 more: other levels, very senior or unclear names' }).click();
   await expect(neon.getByRole('button', { name: 'Add Grace Murray' })).toBeVisible();
 
 });
@@ -250,6 +253,10 @@ test('the very senior and names that are not people are shown but never ticked b
   const picker = page.locator('[data-section="campaign-pipeline"]').getByTestId('recipient-picker');
   const box = (name: string) => picker.getByRole('checkbox', { name: `Write to ${name}` });
   await expect(box('Jean Bartik')).toBeChecked();
+  // Only the people who match Team leads show; everyone else waits behind a
+  // count, with how many of them are ticked.
+  await expect(box('Anat Ashkenazi')).toHaveCount(0);
+  await picker.getByTestId('show-others').click();
   // A chief officer and a corporate VP: too senior to answer a cold email.
   await expect(box('Anat Ashkenazi')).not.toBeChecked();
   await expect(box('Katy George')).not.toBeChecked();

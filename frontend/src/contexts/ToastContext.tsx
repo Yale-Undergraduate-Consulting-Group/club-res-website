@@ -2,6 +2,7 @@ import { ToastContext, type Toast } from './useToast';
 /**
  * Toast notifications - bottom-right, progress bar, auto-dismiss
  */
+import { Button } from '../components/ui/Primitives';
 import { useCallback, useEffect, useState } from 'react';
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -59,13 +60,16 @@ function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast:
                 className="absolute bottom-0 left-0 h-1 bg-current opacity-20 transition-none"
                 style={{ width: `${progress}%` }}
               />
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
                 onClick={() => removeToast(t.id)}
-                className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 p-1 text-lg leading-none"
+                className="absolute top-1 right-1"
                 aria-label="Dismiss"
               >
                 ×
-              </button>
+              </Button>
             </div>
           );
         })}

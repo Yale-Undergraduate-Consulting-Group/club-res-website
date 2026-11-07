@@ -29,7 +29,7 @@ export function companyKey(name: string | null | undefined): string {
   return (name || '').trim().toLowerCase();
 }
 
-export function levelOf(person: Contact): Level {
+export function levelOf(person: Contact | { person_level?: unknown }): Level {
   const raw = typeof person.person_level === 'string' ? person.person_level : '';
   return raw === 'working' || raw === 'executive' || raw === 'board' ? raw : 'unknown';
 }
@@ -57,7 +57,7 @@ const SENIOR_VP = /\b(?:[escg]vp|(?:executive|senior|corporate|group)\s+vice[\s-
 const BOARD_SEAT = /\b(?:committee|board\s+(?:of\s+directors|member|director)|independent\s+director|non-executive|trustee)\b/i;
 
 /** Too senior to answer a student's cold email: never ticked by default. */
-export function isTooSenior(person: Contact): boolean {
+export function isTooSenior(person: { title?: string | null }): boolean {
   const title = person.title || '';
   return TOP_OFFICER.test(title) || SENIOR_VP.test(title) || BOARD_SEAT.test(title);
 }
@@ -76,7 +76,7 @@ const NOT_A_NAME = new Set([
  *  Leader"), and a draft to one opens "Dear Transformation,". A token with a
  *  digit is a profile id stuck on a real name ("Steve Mathias B1a579") and is
  *  ignored rather than counted against it. */
-export function looksLikePerson(person: Contact): boolean {
+export function looksLikePerson(person: { name?: string | null }): boolean {
   const name = (person.name || '').trim();
   if (!name || /[\n\r]/.test(name)) return false;
   const words = name.split(/\s+/).filter((w) => !/\d/.test(w));

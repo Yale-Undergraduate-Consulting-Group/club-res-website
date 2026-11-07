@@ -5,6 +5,7 @@ import {
   type ResolvedAlternative,
 } from '../api';
 import { companyKey, isTooSenior, looksLikePerson } from './recipients';
+import { dedupePeople, foundAsPerson } from './peopleSheet';
 
 /**
  * The durable Find people searches behind the campaign pipeline, one per
@@ -62,6 +63,10 @@ export type CompanyRun = {
   pct: number;
   message: string;
   shortfall?: Shortfall;
+  /** Why the search could not run, as one sentence a member can read: the
+   *  provider was out of credit, refused us, or is down. Set on a finished
+   *  run whose searches failed - never because nobody was found. */
+  paused?: string;
   /** The club's catalog builder found these people: anyone may keep them,
    *  nobody deletes the run. */
   shared?: boolean;
@@ -84,6 +89,19 @@ function jsonObject(text?: string | null): Record<string, unknown> {
 function shortfallOf(run: DiscoveryRun): Shortfall | undefined {
   const value = jsonObject(run.research_json).shortfall as Shortfall | undefined;
   return value && Number.isFinite(Number(value.found)) ? value : undefined;
+}
+
+const SEARCH_UNAVAILABLE = 'People search is temporarily unavailable. Try again later.';
+
+/** The sentence for a run whose web searches failed: every one of them (no
+ *  answer at all), or enough that the run stopped for it. A run that searched
+ *  fine and found nobody has neither, and says nothing here. */
+function pausedOf(run: DiscoveryRun): string | undefined {
+  const research = jsonObject(run.research_json);
+  const errors = research.search_errors as { all_failed?: boolean; message?: string } | null | undefined;
+  const shortfall = research.shortfall as Shortfall | null | undefined;
+  if (errors?.all_failed || shortfall?.reason === 'search_failed') return errors?.message || SEARCH_UNAVAILABLE;
+  return undefined;
 }
 
 export type SearchOptions = { titleHints: string; maxProspects: number; domain?: string };
@@ -110,7 +128,8 @@ function usable(rows: DiscoveryProspect[]): FoundPerson[] {
     const unit = jsonObject(row.evidence_json).group_unit;
     out.push(typeof unit === 'string' && unit.trim() ? { ...row, groupUnit: unit.trim() } : row);
   }
-  return out;
+  // The same person found twice under two addresses is one person.
+  return dedupePeople(out, foundAsPerson);
 }
 
 export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
@@ -406,11 +425,12 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
           message: run.progress_message || 'Searching…',
         };
       } else if (run.status === 'failed') {
-        map[key] = { state: 'failed', runId: run.id, pct: 100, message: run.error_message || 'Search failed' };
+        // The raw error is for maintainers; the lane says what a member can act on.
+        map[key] = { state: 'failed', runId: run.id, pct: 100, message: 'The search stopped before it finished. Try again.' };
       } else {
         map[key] = {
           state: 'done', runId: run.id, pct: 100, message: run.progress_message || 'Search finished',
-          shortfall: shortfallOf(run), shared: run.origin === 'builder',
+          shortfall: shortfallOf(run), paused: pausedOf(run), shared: run.origin === 'builder',
         };
       }
     }

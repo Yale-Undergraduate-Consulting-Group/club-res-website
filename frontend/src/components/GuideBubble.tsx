@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { TOUR_EVENT } from './Tour';
+import { Button } from './ui/Primitives';
 
 /**
  * What this page is for, and what to do next.
@@ -93,15 +94,15 @@ export default function GuideBubble() {
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        iconOnly
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="How this page works"
-        className="fixed bottom-5 right-5 z-40 grid h-12 w-12 place-items-center rounded-full bg-deep-navy text-lg font-semibold text-white shadow-lg hover:opacity-90"
+        className="fixed bottom-5 right-5 z-40 shadow-lg"
       >
         ?
-      </button>
+      </Button>
 
       {open && (
         <div
@@ -111,14 +112,9 @@ export default function GuideBubble() {
         >
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-deep-navy">{guide.title}</h2>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close"
-              className="text-slate-500 hover:text-deep-navy"
-            >
+            <Button variant="ghost" size="sm" iconOnly onClick={() => setOpen(false)} aria-label="Close">
               ✕
-            </button>
+            </Button>
           </div>
           <ol className="mt-2 space-y-2 text-[13px] leading-5 text-slate-700">
             {guide.steps.map((step, index) => (
@@ -131,13 +127,13 @@ export default function GuideBubble() {
             ))}
           </ol>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => { setOpen(false); window.dispatchEvent(new Event(TOUR_EVENT)); }}
-            className="ui-button ui-button--secondary ui-button--sm"
           >
             Take the tour
-          </button>
+          </Button>
           {guide.next && (
             <Link
               to={guide.next.to}

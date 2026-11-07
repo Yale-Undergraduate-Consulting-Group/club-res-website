@@ -2,6 +2,7 @@ import PageHeader from '../components/PageHeader';
 import Invitations from '../components/Invitations';
 import ContactMaintenance from '../components/admin/ContactMaintenance';
 import CatalogBuilderCard from '../components/admin/CatalogBuilderCard';
+import SearchProviderStatus from '../components/admin/SearchProviderStatus';
 import { useEffect, useState, Fragment } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import QRCode from 'qrcode';
@@ -625,7 +626,7 @@ export default function Admin() {
           <div className="space-y-4">
             {(twoFactorStatus === 'not_setup' || twoFactorStatus === 'pending' || twoFactorStatus === null) && (
               <div className="flex gap-2 flex-wrap">
-                <button onClick={handle2FASetup} className="ui-button ui-button--primary btn-press">
+                <button onClick={handle2FASetup} className="ui-button ui-button--primary">
                   {twoFactorStatus === 'pending' && !qrDataUrl ? 'Regenerate QR Code' : twoFactorStatus === 'pending' ? 'Regenerate QR Code' : 'Setup 2FA'}
                 </button>
               </div>
@@ -905,6 +906,7 @@ export default function Admin() {
               pipeline actually gets right now (TinyFish first, then Firecrawl). Use this instead
               of guessing why a company search found nothing.
             </p>
+            <SearchProviderStatus refreshKey={firecrawlStatus} />
             {firecrawlError && <p className="text-sm text-red-700 mb-3">{firecrawlError}</p>}
             {firecrawlStatus && (
               <div className="space-y-4 text-sm">

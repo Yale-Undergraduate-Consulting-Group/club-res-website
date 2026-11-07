@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import SectionChart from '../components/SectionChart';
 import OutcomePie from '../components/OutcomePie';
 import OutreachLedger from '../components/OutreachLedger';
-import { Button, EmptyState, Notice, StatusBadge } from '../components/ui/Primitives';
+import { Button, Chip, EmptyState, Notice, StatusBadge } from '../components/ui/Primitives';
 
 type Breakdown = { sections: BreakdownSection[]; mine?: OutcomeSplit | null; club?: OutcomeSplit };
 
@@ -74,21 +74,11 @@ export default function Analytics() {
       <section className="surface-card p-5" aria-label="Outcomes">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="app-section-title">Outcomes</h2>
-          <div className="flex gap-1 rounded-lg bg-pale-sky/40 p-0.5" role="group" aria-label="Whose results">
+          <div className="flex gap-2" role="group" aria-label="Whose results">
             {(['mine', 'club'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={scope === option}
-                onClick={() => setScope(option)}
-                // Matches the small-button height so the control row lines
-                // up; it keeps its own radius because .ui-button would break
-                // the segmented seam.
-                className={`min-h-9 rounded-md px-3 text-xs font-semibold ${
-                  scope === option ? 'bg-white text-deep-navy shadow-sm' : 'text-slate-600 hover:text-deep-navy'}`}
-              >
+              <Chip key={option} selected={scope === option} onClick={() => setScope(option)}>
                 {option === 'mine' ? 'Mine' : 'The club'}
-              </button>
+              </Chip>
             ))}
           </div>
         </div>

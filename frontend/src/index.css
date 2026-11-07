@@ -31,6 +31,7 @@
   --radius-control: 0.5rem;
   --radius-panel: 0.5rem;
   --control-height: 2.75rem;
+  --control-height-sm: 2.25rem;
   --yale-blue: #00356b;
   --yale-blue-light: #286dc0;
   --yale-blue-dark: #002244;
@@ -463,31 +464,6 @@ html:not(.dark) .surface-card {
   color: #ffffff;
 }
 
-.app-nav-util-btn {
-  padding: 0.45rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border: 2px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-
-.app-nav-util-btn:hover {
-  background: var(--pale-sky);
-  border-color: var(--deep-navy);
-}
-
-.dark .app-nav-util-btn {
-  background: var(--bg-card);
-  border-color: var(--border);
-}
-
-.dark .app-nav-util-btn:hover {
-  background: #334155;
-}
-
 .app-avatar {
   width: 2rem;
   height: 2rem;
@@ -572,7 +548,7 @@ html:not(.dark) .surface-card {
 
 .app-shell-header-avatar,
 .app-shell-header-profile,
-.app-shell-header-logout {
+.ui-button.app-shell-header-logout {
   display: none;
 }
 
@@ -589,7 +565,7 @@ html:not(.dark) .surface-card {
     white-space: nowrap;
   }
 
-  .app-shell-header-logout {
+  .ui-button.app-shell-header-logout {
     display: inline-flex;
   }
 }
@@ -864,7 +840,11 @@ html:not(.dark) .surface-card {
 .app-tab-menu-item {
   flex: 1 1 auto;
   min-width: max-content;
-  padding: 0.625rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding: 0 1rem;
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -921,7 +901,11 @@ html:not(.dark) .surface-card {
 }
 
 .app-subnav-item {
-  padding: 0.55rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding: 0 1.25rem;
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -1345,10 +1329,6 @@ select {
   min-height: var(--control-height);
 }
 
-.btn-danger-solid {
-  border-radius: var(--radius-control);
-}
-
 
 /*
  * Email Studio — Gmail preview: explicit colors so .dark .bg-slate-* hacks don't flatten contrast.
@@ -1391,124 +1371,12 @@ select {
 .dark .email-studio-gmail-toolbar span {
   color: var(--text-primary);
 }
-/* Raw ad hoc buttons across pages repeat the same primary/danger color
-   utilities without the shared .ui-button/.btn-danger-solid classes. Target
-   them by the color marker so every button reading as "primary" or
-   "danger" gets the same height and radius tier as componentized buttons,
-   without having to touch every call site's className string. Padding is
-   pinned too - a min-height alone is a floor, not a ceiling, and several
-   of these buttons use larger py- utilities that would still render taller.
-   Small/inline buttons (text-xs, text-[12px]) keep a smaller, still-
-   consistent tier rather than being forced to full CTA height - a tiny
-   inline suggestion action next to compact text should not suddenly
-   dominate its own card. */
-button[class*="btn-primary-bg"],
-button[class*="btn-primary-hover"] {
-  min-height: var(--control-height);
-  padding: 0.625rem 1rem;
-  border-radius: var(--radius-control);
-}
-button[class*="btn-primary-bg"][class*="text-xs"],
-button[class*="btn-primary-hover"][class*="text-xs"],
-button[class*="btn-primary-bg"][class*="text-[12px]"],
-button[class*="btn-primary-hover"][class*="text-[12px]"] {
-  min-height: 2.25rem;
-  padding: 0.4rem 0.75rem;
-}
-
-/* Secondary/neutral action buttons and link-styled actions share the same
-   border-pale-sky marker but drift between compact (py-1.5) and standard
-   (py-2) heights depending on who wrote that page. Give them the same
-   floor as everything else so a toolbar button next to a text input on the
-   same row does not look mismatched. */
-button[class*="border-pale-sky"],
-a[class*="border-pale-sky"][class*="rounded-lg"] {
-  min-height: 2.75rem;
-}
-
-
-/* Destructive actions — solid fill, never washed out by theme utilities */
-.btn-danger-solid {
-  background-color: #991b1b;
-  color: #ffffff;
-  font-weight: 600;
-  border: 1px solid #7f1d1d;
-  border-radius: var(--radius-control);
-}
-.btn-danger-solid:hover:not(:disabled) {
-  background-color: #7f1d1d;
-  color: #ffffff;
-}
-.btn-danger-solid:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.dark .btn-danger-solid {
-  background-color: #dc2626;
-  border-color: #b91c1c;
-  color: #ffffff;
-}
-.dark .btn-danger-solid:hover:not(:disabled) {
-  background-color: #b91c1c;
-  color: #ffffff;
-}
-
-/* Primary CTA: use with padding/radius utilities (bg/hover from CSS vars) */
-.btn-primary {
-  background-color: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
-}
-.btn-primary:hover:not(:disabled) {
-  background-color: var(--btn-primary-hover);
-}
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/*
- * Site-wide primary button — solid fill, no drop shadow (elevation only on cards).
- * Pair with text-xs / text-sm and px/py via utility classes as needed.
- */
-.btn-primary-solid {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  font-weight: 600;
-  font-size: 0.875rem;
-  line-height: 1.25;
-  border-radius: 0;
-  border: none;
-  background-color: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
-  box-shadow: none;
-  cursor: pointer;
-  transition: background-color 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
-}
-.btn-primary-solid:hover:not(:disabled) {
-  background-color: var(--btn-primary-hover);
-}
-.btn-primary-solid:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.btn-primary-solid:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 /* Standardized button press animation site-wide */
 button:not([disabled]) {
   transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.15s ease;
 }
 button:not([disabled]):active {
-  transform: scale(0.98);
-}
-.btn-press {
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-.btn-press:active {
   transform: scale(0.98);
 }
 
@@ -2030,20 +1898,9 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   font-size: 0.875rem;
 }
 .studio-workbench-bar > div { display: flex; gap: 0.5rem; }
-.studio-workbench-bar button {
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--surface);
-  padding: 0.625rem 0.875rem;
-  color: var(--text-primary);
-  min-height: 44px;
-}
-.studio-workbench-bar button[aria-pressed="true"] {
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
-}
+/* The focus toggle is only useful beside the preview rail, so it hides below it. */
 @media (max-width: 1279px) {
-  .studio-workbench-bar button:first-child { display: none; }
+  .studio-workbench-bar .studio-workbench-bar__focus { display: none; }
 }
 .studio-address-check { margin: 0; padding: 0.75rem 1rem; font-size: 0.8125rem; color: var(--text-primary); }
 .studio-address-check span { display: block; margin-top: 0.25rem; color: var(--text-muted); }
@@ -2333,7 +2190,9 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 .ui-button {
+  height: var(--control-height);
   min-height: var(--control-height);
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2345,6 +2204,7 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   font-size: 0.875rem;
   font-weight: 700;
   line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -2354,10 +2214,69 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 .ui-button--sm {
-  min-height: 2.25rem;
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   padding: 0.4rem 0.75rem;
   font-size: 0.8125rem;
 }
+
+/* Icon-only: one square per size step. */
+.ui-button--icon,
+.ui-button--icon.ui-button--sm {
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.ui-button--icon { width: var(--control-height); }
+.ui-button--icon.ui-button--sm { width: var(--control-height-sm); }
+
+/* Toggles, filters and segmented choices. The size is fixed; state changes
+   colour only, so a selected pill is exactly as tall as an unselected one. */
+.ui-chip {
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.4rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ui-chip:hover:not(:disabled) {
+  background: var(--surface-subtle);
+}
+
+.ui-chip[aria-pressed="true"],
+.ui-chip[aria-checked="true"],
+.ui-chip[aria-current="step"],
+.ui-chip[aria-pressed="true"]:hover:not(:disabled),
+.ui-chip[aria-checked="true"]:hover:not(:disabled),
+.ui-chip[aria-current="step"]:hover:not(:disabled) {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+}
+
+.ui-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A ghost button inside a filled pill (the company tag) takes the pill's own
+   text colour instead of the page ink, which is unreadable on navy. */
+.company-chip-body .ui-button--ghost { color: inherit; }
+.company-chip-body .ui-button--ghost:hover:not(:disabled) { background: rgb(0 0 0 / 0.12); }
 
 .ui-button--primary {
   background: var(--btn-primary-bg);
@@ -2642,7 +2561,6 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 .research-jobs p { margin: 0; color: var(--ink-muted); }
 
 .research-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
-.research-actions .ui-button { min-height: 2.5rem; }
 .research-dimensions { display: grid; gap: 0.5rem; margin: 0; }
 .research-dimensions > div { display: grid; grid-template-columns: minmax(9rem, 1fr) 2fr; gap: 0.5rem; }
 .research-dimensions dt { color: var(--ink-muted); font-weight: 700; }
@@ -2667,28 +2585,15 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 @media (max-width: 767px) {
   .studio-mobile-steps {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.25rem;
+    max-width: 100%;
+    overflow-x: auto;
+    grid-template-columns: repeat(3, max-content);
+    justify-content: start;
+    gap: 0.5rem;
     margin-bottom: 0.75rem;
-    padding: 0.25rem;
-    border: 1px solid var(--border);
-    border-radius: 0.625rem;
-    background: var(--surface-subtle);
   }
 
-  .studio-mobile-steps button {
-    min-height: 2.75rem;
-    border-radius: 0.45rem;
-    color: var(--ink-muted);
-    font-size: 0.75rem;
-    font-weight: 800;
-  }
-
-  .studio-mobile-steps button[aria-current="step"] {
-    background: var(--surface);
-    color: var(--ink);
-    box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
-  }
+  .studio-mobile-steps button { width: 100%; }
 
   .email-studio .studio-step:not(.is-active) {
     display: none;
@@ -2703,8 +2608,6 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 @media (max-width: 767px) {
-  :root { --control-height: 2.75rem; }
-
   .app-shell-main {
     padding: 0.75rem;
     padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
@@ -2839,16 +2742,16 @@ details[open] > *:not(summary),
 }
 
 .email-toolbar__button {
-  min-width: 2rem;
-  height: 2rem;
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 0.4rem;
+  padding: 0 0.5rem;
   border: 1px solid transparent;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-control);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   background: transparent;
   cursor: pointer;
@@ -2858,12 +2761,12 @@ details[open] > *:not(summary),
 .email-toolbar__button:hover { background: var(--surface-subtle); }
 
 .email-toolbar__button.is-active {
-  background: var(--deep-navy);
-  border-color: var(--deep-navy);
-  color: #ffffff;
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
 }
 
-.email-toolbar__select { height: 2rem; min-height: 2rem; width: auto; max-width: 8.5rem; }
+.email-toolbar__select { height: var(--control-height-sm); min-height: var(--control-height-sm); width: auto; max-width: 8.5rem; }
 
 .email-toolbar__divider {
   width: 1px;
@@ -2877,9 +2780,9 @@ details[open] > *:not(summary),
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2rem;
-  height: 2rem;
-  border-radius: 0.375rem;
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border-radius: var(--radius-control);
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -2889,8 +2792,6 @@ details[open] > *:not(summary),
 .email-toolbar__color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 .dark .email-toolbar { background: var(--bg-card); border-color: var(--border); }
-.dark .email-toolbar__button { color: var(--text-primary); }
-.dark .email-toolbar__button.is-active { background: var(--accent); border-color: var(--accent); }
 
 @media (min-width: 768px) {
   .app-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
