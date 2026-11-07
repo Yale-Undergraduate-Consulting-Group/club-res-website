@@ -26,6 +26,7 @@ async def enqueue_discovery_run(
     worker_concurrency: int = 4,
     entity: dict[str, Any] | None = None,
     origin: str = "member",
+    level: str = "working",
 ) -> int:
     """Queue one durable company search for a member, enforcing the same
     per-member (one at a time) and club-wide queue limits as the UI. The
@@ -45,7 +46,11 @@ async def enqueue_discovery_run(
     if int(club["n"] or 0) >= club_limit:
         raise HTTPException(429, "The club search queue is full; try again after a current search finishes")
     hints = (title_hints or "").strip()[:500]
-    research_data: dict[str, Any] = {"title_hints": hints} if hints else {}
+    from app.services.web_contact_discovery import wanted_level
+
+    research_data: dict[str, Any] = {"level": wanted_level(level)}
+    if hints:
+        research_data["title_hints"] = hints
     # The entity the member picked in resolve-company, cut to the contract;
     # without one the run behaves exactly as before.
     from app.services.company_entity import sanitize_entity
@@ -53,7 +58,7 @@ async def enqueue_discovery_run(
     clean_entity = sanitize_entity(entity) if entity else None
     if clean_entity:
         research_data["entity"] = clean_entity
-    research = json.dumps(research_data) if research_data else None
+    research = json.dumps(research_data)
     cur = await db.execute(
         """INSERT INTO yucgoutreach_discovery_runs (
             user_id, company_name, company_domain,
