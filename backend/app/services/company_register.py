@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from app.database import get_db
+from app.services.register_names import DERIVATION_VERSION, derive
 
 logger = logging.getLogger(__name__)
 
@@ -165,20 +166,36 @@ async def _already_ingested(source: str, batch_key: str) -> bool:
         await db.close()
 
 
+def _size_rank(source: str, account_category: str | None) -> int:
+    """Companies House statutory band as a rank, group accounts first; every
+    other source has no band (3). The row-level REGISTER_VALUE_ORDER reads the
+    same rule from the JSON; this is the stored copy the company list uses."""
+    if source != "companies_house":
+        return 3
+    return {"GROUP": 0, "FULL": 1, "MEDIUM": 2}.get(account_category or "", 3)
+
+
 async def upsert_companies(rows: Iterable[dict[str, Any]]) -> int:
     """Insert or refresh register rows. A row already present keeps its
-    first_seen_at and only gains newer facts."""
+    first_seen_at and only gains newer facts.
+
+    Every ingest path (SEC listing, Form D, Form 5500, IRS 990, Companies
+    House, the club sheet, the off-box loader) ends here, which is why the
+    derived public name, entity key and hide reason are computed here: one
+    function, one place, no path that can forget it."""
     written = 0
     db = await get_db()
     try:
         for row in rows:
+            country = row.get("country") or "US"
+            derived = derive(row["company_name"], country)
             await db.execute(
                 """INSERT INTO company_register (
                        source, source_key, tier, country, company_name, company_domain,
                        sector_code, sector_label, region, employees, employees_source,
                        last_event_at, last_event_amount, last_event_kind, metadata_json,
-                       prominence_rank
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       prominence_rank, display_name, entity_key, hidden_reason, derived_version, size_rank
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(source, source_key) DO UPDATE SET
                        company_name=excluded.company_name,
                        tier=excluded.tier,
@@ -193,15 +210,23 @@ async def upsert_companies(rows: Iterable[dict[str, Any]]) -> int:
                        last_event_kind=COALESCE(excluded.last_event_kind, company_register.last_event_kind),
                        metadata_json=COALESCE(excluded.metadata_json, company_register.metadata_json),
                        prominence_rank=COALESCE(excluded.prominence_rank, company_register.prominence_rank),
+                       display_name=excluded.display_name,
+                       entity_key=excluded.entity_key,
+                       hidden_reason=excluded.hidden_reason,
+                       derived_version=excluded.derived_version,
+                       size_rank=CASE WHEN excluded.metadata_json IS NULL THEN company_register.size_rank
+                                      ELSE excluded.size_rank END,
                        updated_at=CURRENT_TIMESTAMP""",
                 (
-                    row["source"], row["source_key"], row["tier"], row.get("country") or "US",
+                    row["source"], row["source_key"], row["tier"], country,
                     row["company_name"], row.get("company_domain"),
                     row.get("sector_code"), row.get("sector_label"), row.get("region"),
                     row.get("employees"), row.get("employees_source"),
                     row.get("last_event_at"), row.get("last_event_amount"), row.get("last_event_kind"),
                     json.dumps(row["metadata"]) if row.get("metadata") else None,
                     row.get("prominence_rank"),
+                    derived.display_name, derived.entity_key, derived.hidden_reason, DERIVATION_VERSION,
+                    _size_rank(row["source"], (row.get("metadata") or {}).get("account_category")),
                 ),
             )
             written += 1
@@ -209,6 +234,47 @@ async def upsert_companies(rows: Iterable[dict[str, Any]]) -> int:
     finally:
         await db.close()
     return written
+
+
+async def backfill_register_entities(batch_size: int = 2000) -> dict[str, Any]:
+    """Derive display_name / entity_key / hidden_reason for rows that have
+    none (stored before the columns existed, or inserted by a release that did
+    not know them) or were derived under an older DERIVATION_VERSION.
+
+    Idempotent and cheap when there is nothing to do: both lookups read the
+    derived_version index, never the table. Registered through leader_only in
+    main.py, so during a blue/green overlap only the lease holder runs it. A
+    batch is one short write transaction, so ingest and members' reads
+    interleave with it."""
+    done = 0
+    while True:
+        db = await get_db()
+        try:
+            rows = await (await db.execute(
+                "SELECT id, company_name, country, source, json_extract(metadata_json, '$.account_category') AS band "
+                "FROM company_register WHERE derived_version IS NULL ORDER BY id LIMIT ?", (batch_size,),
+            )).fetchall()
+            if not rows:
+                rows = await (await db.execute(
+                    "SELECT id, company_name, country, source, json_extract(metadata_json, '$.account_category') AS band "
+                    "FROM company_register WHERE derived_version < ? ORDER BY id LIMIT ?", (DERIVATION_VERSION, batch_size),
+                )).fetchall()
+            if not rows:
+                return {"ok": True, "derived": done}
+            params = []
+            for row in rows:
+                derived = derive(row["company_name"], row["country"])
+                params.append((derived.display_name, derived.entity_key, derived.hidden_reason,
+                               DERIVATION_VERSION, _size_rank(row["source"], row["band"]), row["id"]))
+            await db.executemany(
+                "UPDATE company_register SET display_name=?, entity_key=?, hidden_reason=?, derived_version=?, size_rank=? WHERE id=?",
+                params,
+            )
+            await db.commit()
+            done += len(params)
+        finally:
+            await db.close()
+        await asyncio.sleep(0)
 
 
 # Who actually reads a cold email is not who a filing names. A statutory
@@ -1315,84 +1381,92 @@ REGISTER_VALUE_ORDER = """CASE WHEN tier = 'us_public' AND prominence_rank IS NO
                          company_name"""
 
 
-async def search_register(
-    *,
-    q: str | None = None,
-    tier: str | None = None,
-    country: str | None = None,
-    sector: str | None = None,
-    min_amount: float | None = None,
-    with_officers: bool = False,
-    limit: int = 50,
-    offset: int = 0,
-    sort: str = "value",
-) -> dict[str, Any]:
-    where: list[str] = []
-    args: list[Any] = []
-    # A query ranked only by recency/amount treats "contains these letters
-    # anywhere" as good as "is this company". Typing "meta" must not bury
-    # Meta Platforms under every UK company with "metal" in its name or
-    # sector, just because "meta" is a literal prefix of "metal". Match
-    # quality is ranked first, in tiers a plain substring search cannot
-    # express: exact name / exact ticker / curated brand alias, name starts
-    # with the query as a whole word, the query as a whole word elsewhere in
-    # the name, a plain prefix, a plain substring in the name, and last a
-    # sector-label-only match.
-    relevance_case = "0.0"
-    relevance_args: list[Any] = []
-    searching = bool(q and q.strip())
-    if searching:
-        raw = q.strip().lower()
-        # Escape the query's own literal % and _ so a member searching for
-        # them is not exposed to SQL LIKE wildcard behaviour.
-        escaped = raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        aliases = brand_alias_names(raw)
-        alias_sql = " OR ".join(["lower(company_name) LIKE ? ESCAPE '\\'"] * len(aliases))
-        alias_args = [
-            a.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for a in aliases
-        ]
-        # A ticker is only on SEC-listed rows, so the source test keeps
-        # json_extract off the millions of other rows. "GOOGL" appears
-        # nowhere in "Alphabet Inc.", which is why it needs its own clause.
-        ticker_sql = "(source = 'sec_public' AND lower(json_extract(metadata_json, '$.ticker')) = ?)"
-        if len(raw) < 5:
-            # Three or four letters occur inside thousands of unrelated
-            # words: "hbo" is in "Loug-hbo-rough", so "Frelif (Loughborough)
-            # Llp" came back for HBO. A short query has to start a word of
-            # the name; a sector-label hit is dropped for the same reason
-            # ("meta" in "fabricated metal products" names no company).
-            boundary = raw
-            for ch in _WORD_BREAK_CHARS:
-                boundary = boundary.replace(ch, " ")
-            boundary = boundary.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            name_sql = f"{_word_break_sql('company_name')} LIKE ? ESCAPE '\\'"
-            name_args: list[Any] = [f"% {boundary}%"]
-        else:
-            name_sql = (
-                "lower(company_name) LIKE ? ESCAPE '\\' OR lower(COALESCE(sector_label,'')) LIKE ? ESCAPE '\\'"
-            )
-            name_args = [f"%{escaped}%", f"%{escaped}%"]
-        where.append(f"({name_sql} OR {ticker_sql}{' OR ' + alias_sql if aliases else ''})")
-        args.extend([*name_args, raw, *alias_args])
-        relevance_case = f"""CASE
-            WHEN lower(company_name) = ? THEN 0
+def _escape_like(text: str) -> str:
+    """A member's own literal % and _ must not act as SQL LIKE wildcards."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _search_clauses(q: str | None, columns: tuple[str, ...] = ("company_name",)) -> tuple[str | None, list[Any], str, list[Any]]:
+    """(where, where args, relevance CASE, relevance args) for a typed query.
+
+    A query ranked only by recency/amount treats "contains these letters
+    anywhere" as good as "is this company". Typing "meta" must not bury
+    Meta Platforms under every UK company with "metal" in its name or
+    sector, just because "meta" is a literal prefix of "metal". Match
+    quality is ranked first, in tiers a plain substring search cannot
+    express: exact name / exact ticker / curated brand alias, name starts
+    with the query as a whole word, the query as a whole word elsewhere in
+    the name, a plain prefix, a plain substring in the name, and last a
+    sector-label-only match.
+
+    ``columns`` are the name columns searched: the row search reads the
+    legal name only; the grouped browse also reads the public name, so
+    "pwc" finds the row filed as PricewaterhouseCoopers."""
+    if not (q and q.strip()):
+        return None, [], "0.0", []
+    raw = q.strip().lower()
+    escaped = _escape_like(raw)
+    aliases = brand_alias_names(raw)
+    alias_args = [_escape_like(a) + "%" for a in aliases]
+    n = len(columns)
+    like = "{col} LIKE ? ESCAPE '\\'"
+
+    def any_column(template: str) -> str:
+        return "(" + " OR ".join(template.format(col=f"lower({c})") for c in columns) + ")"
+
+    # A ticker is only on SEC-listed rows, so the source test keeps
+    # json_extract off the millions of other rows. "GOOGL" appears
+    # nowhere in "Alphabet Inc.", which is why it needs its own clause.
+    ticker_sql = "(source = 'sec_public' AND lower(json_extract(metadata_json, '$.ticker')) = ?)"
+    alias_sql = " OR ".join(like.format(col=f"lower({c})") for c in columns for _ in aliases)
+    if len(raw) < 5:
+        # Three or four letters occur inside thousands of unrelated
+        # words: "hbo" is in "Loug-hbo-rough", so "Frelif (Loughborough)
+        # Llp" came back for HBO. A short query has to start a word of
+        # the name; a sector-label hit is dropped for the same reason
+        # ("meta" in "fabricated metal products" names no company).
+        boundary = raw
+        for ch in _WORD_BREAK_CHARS:
+            boundary = boundary.replace(ch, " ")
+        boundary = _escape_like(boundary)
+        name_sql = " OR ".join(f"{_word_break_sql(c)} LIKE ? ESCAPE '\\'" for c in columns)
+        name_args: list[Any] = [f"% {boundary}%"] * n
+    else:
+        name_sql = " OR ".join(like.format(col=f"lower({c})") for c in columns) \
+            + " OR lower(COALESCE(sector_label,'')) LIKE ? ESCAPE '\\'"
+        name_args = [f"%{escaped}%"] * (n + 1)
+    where = f"({name_sql} OR {ticker_sql}{' OR ' + alias_sql if aliases else ''})"
+    where_args = [*name_args, raw, *(alias_args * n)]
+    exact = any_column("{col} = ?")
+    one_like = any_column(like)
+    two_likes = any_column(like + " OR {col} LIKE ? ESCAPE '\\'")
+    alias_when = f"WHEN {alias_sql} THEN 0" if aliases else ""
+    relevance = f"""CASE
+            WHEN {exact} THEN 0
             WHEN {ticker_sql} THEN 0
-            {f"WHEN {alias_sql} THEN 0" if aliases else ""}
-            WHEN lower(company_name) LIKE ? ESCAPE '\\' THEN 1
-            WHEN lower(company_name) LIKE ? ESCAPE '\\' OR lower(company_name) LIKE ? ESCAPE '\\' THEN 2
-            WHEN lower(company_name) LIKE ? ESCAPE '\\' THEN 3
-            WHEN lower(company_name) LIKE ? ESCAPE '\\' THEN 4
+            {alias_when}
+            WHEN {one_like} THEN 1
+            WHEN {two_likes} THEN 2
+            WHEN {one_like} THEN 3
+            WHEN {one_like} THEN 4
             ELSE 5
         END"""
-        relevance_args = [
-            raw,
-            raw,
-            *alias_args,
-            f"{escaped} %",
-            f"% {escaped} %", f"% {escaped}",
-            f"{escaped}%",
-            f"%{escaped}%",
-        ]
+    relevance_args: list[Any] = [
+        *([raw] * n),
+        raw,
+        *(alias_args * n),
+        *([f"{escaped} %"] * n),
+        *([f"% {escaped} %", f"% {escaped}"] * n),
+        *([f"{escaped}%"] * n),
+        *([f"%{escaped}%"] * n),
+    ]
+    return where, where_args, relevance, relevance_args
+
+
+def _row_filters(tier: str | None, country: str | None, sector: str | None,
+                 min_amount: float | None, with_officers: bool) -> tuple[list[str], list[Any]]:
+    where: list[str] = []
+    args: list[Any] = []
     if tier and tier.strip():
         where.append("tier = ?")
         args.append(tier.strip())
@@ -1407,6 +1481,31 @@ async def search_register(
         args.append(float(min_amount))
     if with_officers:
         where.append("officer_count > 0")
+    return where, args
+
+
+async def search_register(
+    *,
+    q: str | None = None,
+    tier: str | None = None,
+    country: str | None = None,
+    sector: str | None = None,
+    min_amount: float | None = None,
+    with_officers: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+    sort: str = "value",
+) -> dict[str, Any]:
+    where: list[str] = []
+    args: list[Any] = []
+    searching = bool(q and q.strip())
+    name_where, name_args, relevance_case, relevance_args = _search_clauses(q)
+    if name_where:
+        where.append(name_where)
+        args.extend(name_args)
+    filter_where, filter_args = _row_filters(tier, country, sector, min_amount, with_officers)
+    where.extend(filter_where)
+    args.extend(filter_args)
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     limit = max(1, min(int(limit), 200))
     size_order = REGISTER_VALUE_ORDER
@@ -1460,21 +1559,335 @@ async def search_register(
         await db.close()
 
 
-async def register_summary() -> dict[str, Any]:
+# Kinds in the order a company's badges read.
+KIND_ORDER = ("us_public", "us_private", "us_employer", "us_nonprofit", "uk", "club_targets")
+
+# What a member sees for each source: the record, not the pipeline's name for it.
+SOURCE_LABELS = {
+    "irs_990": "IRS nonprofit return",
+    "sec_public": "SEC listing",
+    "sec_form_d": "Reg D filing",
+    "dol_5500": "Benefit plan filing",
+    "companies_house": "Companies House",
+    "club_sheet": "Club target list",
+}
+
+# The rank REGISTER_VALUE_ORDER gives one row, taken over a company's rows: its
+# best row decides where the company sits. Only columns of idx_company_register_entity.
+_COMPANY_VALUE_ORDER = """CASE WHEN MIN(prominence_rank) IS NULL THEN 1 ELSE 0 END,
+                         COALESCE(MIN(prominence_rank), 999999999) ASC,
+                         MAX(COALESCE(employees, -1)) DESC,
+                         MIN(COALESCE(size_rank, 3)),
+                         SUM(officer_count) DESC,
+                         MAX(COALESCE(last_event_at, '')) DESC, MAX(COALESCE(last_event_amount, 0)) DESC,
+                         entity_key"""
+_COMPANY_RECENT_ORDER = """MAX(COALESCE(last_event_at, '')) DESC, MAX(COALESCE(last_event_amount, 0)) DESC,
+                         SUM(officer_count) DESC,
+                         COALESCE(MIN(prominence_rank), 999999999) ASC,
+                         entity_key"""
+
+
+# Sources spell a US state differently (5500 and IRS: "CA"; Form D and the SEC
+# listing: "California"), so "CA" and "California" would count as two places.
+_US_STATE_CODES = {
+    name.lower(): code for code, name in (
+        ("AL", "Alabama"), ("AK", "Alaska"), ("AZ", "Arizona"), ("AR", "Arkansas"), ("CA", "California"),
+        ("CO", "Colorado"), ("CT", "Connecticut"), ("DE", "Delaware"), ("DC", "District of Columbia"),
+        ("FL", "Florida"), ("GA", "Georgia"), ("HI", "Hawaii"), ("ID", "Idaho"), ("IL", "Illinois"),
+        ("IN", "Indiana"), ("IA", "Iowa"), ("KS", "Kansas"), ("KY", "Kentucky"), ("LA", "Louisiana"),
+        ("ME", "Maine"), ("MD", "Maryland"), ("MA", "Massachusetts"), ("MI", "Michigan"), ("MN", "Minnesota"),
+        ("MS", "Mississippi"), ("MO", "Missouri"), ("MT", "Montana"), ("NE", "Nebraska"), ("NV", "Nevada"),
+        ("NH", "New Hampshire"), ("NJ", "New Jersey"), ("NM", "New Mexico"), ("NY", "New York"),
+        ("NC", "North Carolina"), ("ND", "North Dakota"), ("OH", "Ohio"), ("OK", "Oklahoma"), ("OR", "Oregon"),
+        ("PA", "Pennsylvania"), ("RI", "Rhode Island"), ("SC", "South Carolina"), ("SD", "South Dakota"),
+        ("TN", "Tennessee"), ("TX", "Texas"), ("UT", "Utah"), ("VT", "Vermont"), ("VA", "Virginia"),
+        ("WA", "Washington"), ("WV", "West Virginia"), ("WI", "Wisconsin"), ("WY", "Wyoming"),
+    )
+}
+
+
+def _place(country: str, region: str) -> str:
+    return _US_STATE_CODES.get(region.strip().lower(), region.strip()) if country == "US" else region.strip()
+
+
+def _best_row_key(row: dict[str, Any]) -> tuple:
+    """Which of a company's rows speaks for it: the SEC-ranked one, then the
+    largest headcount, then the best-staffed, then the newest."""
+    prominence = row["prominence_rank"]
+    return (
+        prominence is not None,
+        -(prominence or 0),
+        row["employees"] or -1,
+        row["officer_count"] or 0,
+        row["last_event_at"] or "",
+    )
+
+
+async def browse_register(
+    *,
+    q: str | None = None,
+    tier: str | None = None,
+    country: str | None = None,
+    sector: str | None = None,
+    min_amount: float | None = None,
+    with_officers: bool = False,
+    include_hidden: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+    sort: str = "value",
+) -> dict[str, Any]:
+    """One entry per company: rows sharing an entity_key (same public name,
+    same country) are grouped, whatever tier, source or state they came from.
+
+    Every filter reads the rows: a company is listed when ANY of its records
+    matches (the nonprofit tier lists a company that is also SEC-listed), and
+    its rank comes from the records that matched. The entry itself always
+    shows all of its records' kinds, states and people. Rows whose derived
+    columns are still NULL (inserted by the previous release, not yet
+    backfilled) are left out until the backfill job reaches them. Hidden
+    entries (funds, vehicles, group returns) are left out unless
+    ``include_hidden``."""
+    where = ["entity_key IS NOT NULL"]
+    args: list[Any] = []
+    if not include_hidden:
+        where.append("hidden_reason IS NULL")
+    searching = bool(q and q.strip())
+    name_where, name_args, relevance_case, relevance_args = _search_clauses(q, ("company_name", "display_name"))
+    if name_where:
+        where.append(name_where)
+        args.extend(name_args)
+    filter_where, filter_args = _row_filters(tier, country, sector, min_amount, with_officers)
+    where.extend(filter_where)
+    args.extend(filter_args)
+    clause = f"WHERE {' AND '.join(where)}"
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+    if searching:
+        # A typed name ranks by how well it matches, then by size - see
+        # _search_clauses; a company's match is its best-matching row.
+        order_by = f"match_level ASC, {_COMPANY_VALUE_ORDER}"
+        match_sql = f", MIN({relevance_case}) AS match_level"
+    else:
+        order_by = _COMPANY_RECENT_ORDER if sort == "recent" else _COMPANY_VALUE_ORDER
+        match_sql = ""
+        relevance_args = []
     db = await get_db()
     try:
+        # One pass: the window counts the groups before LIMIT cuts them.
+        page = await (await db.execute(
+            f"""SELECT entity_key, COUNT(*) OVER () AS total{match_sql} FROM company_register {clause}
+                GROUP BY entity_key ORDER BY {order_by} LIMIT ? OFFSET ?""",
+            (*relevance_args, *args, limit, offset),
+        )).fetchall()
+        if page:
+            total = int(page[0]["total"])
+        elif offset:     # paged past the end: no row to carry the count
+            total = int((await (await db.execute(
+                f"SELECT COUNT(*) AS n FROM (SELECT 1 FROM company_register {clause} GROUP BY entity_key)",
+                tuple(args),
+            )).fetchone())["n"])
+        else:
+            total = 0
+        keys = [r["entity_key"] for r in page]
+        match_levels = {r["entity_key"]: r["match_level"] for r in page} if searching else {}
+        by_key: dict[str, list[dict[str, Any]]] = {k: [] for k in keys}
+        if keys:
+            rows = await (await db.execute(
+                f"""SELECT r.id, r.entity_key, r.display_name, r.hidden_reason, r.source, r.tier, r.country,
+                           r.company_name, r.company_domain, r.sector_label, r.region, r.employees,
+                           r.officer_count, r.last_event_at, r.prominence_rank,
+                           (SELECT COUNT(*) FROM company_register_people p
+                             WHERE p.register_id = r.id AND p.person_level = 'working') AS working_count
+                    FROM company_register r WHERE r.entity_key IN ({','.join('?' * len(keys))})""",
+                keys,
+            )).fetchall()
+            for row in rows:
+                by_key[row["entity_key"]].append(dict(row))
+    finally:
+        await db.close()
+
+    items = []
+    for key in keys:
+        rows = by_key[key]
+        if not rows:
+            continue
+        best = max(rows, key=_best_row_key)
+        tiers = {r["tier"] for r in rows}
+        item = {
+            "entity_key": key,
+            "id": best["id"],
+            "display_name": best["display_name"] or best["company_name"],
+            "legal_name": best["company_name"],
+            "country": best["country"],
+            "kinds": [t for t in KIND_ORDER if t in tiers] + sorted(tiers - set(KIND_ORDER)),
+            "locations": sorted({_place(r["country"], r["region"]) for r in rows if r["region"]})[:60],
+            "record_count": len(rows),
+            "officer_count": sum(r["officer_count"] or 0 for r in rows),
+            "working_count": sum(r["working_count"] or 0 for r in rows),
+            "company_domain": next((r["company_domain"] for r in rows if r["company_domain"]), None),
+            "sector_label": next((r["sector_label"] for r in sorted(rows, key=_best_row_key, reverse=True)
+                                  if r["sector_label"]), None),
+            "last_event_at": max((r["last_event_at"] or "" for r in rows), default="") or None,
+            "hidden_reason": best["hidden_reason"],
+            # A listed or UK row with no people yet can be read from its own
+            # register on demand; this is the row to ask about.
+            "lookup_id": next((r["id"] for r in rows if r["source"] in ("sec_public", "companies_house")
+                               and not r["officer_count"]), None),
+            "match_level": match_levels.get(key),
+        }
+        items.append(item)
+    # Who in the club is already on each of these, so a member does not
+    # start a company a colleague is halfway through.
+    from app.services.company_claims import claims_for, company_key
+
+    claims = await claims_for([{"company_name": i["display_name"], "company_domain": i["company_domain"]} for i in items])
+    for item in items:
+        held = claims.get(company_key(item["display_name"], item["company_domain"]))
+        item["claimed_by"] = held["member"] if held else None
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+def _money(value: float) -> str:
+    if value >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.1f}B"
+    if value >= 1_000_000:
+        return f"${round(value / 1_000_000)}M"
+    return f"${round(value / 1000)}k"
+
+
+def _record_link(row: dict[str, Any], meta: dict[str, Any]) -> str | None:
+    """The public page for this record, when the row carries what it takes."""
+    source, key = row["source"], (row["source_key"] or "").strip()
+    if source == "companies_house" and key:
+        return f"https://find-and-update.company-information.service.gov.uk/company/{key}"
+    if source == "sec_public" and key:
+        return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={key}&owner=include&count=40"
+    if source == "sec_form_d" and key.isdigit():
+        accession = str(meta.get("accession") or "").replace("-", "")
+        if accession:
+            return f"https://www.sec.gov/Archives/edgar/data/{int(key)}/{accession}/"
+        return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={key}&type=D"
+    for field in ("url", "source_url", "verification_source_url"):
+        value = str(meta.get(field) or "").strip()
+        if value.startswith(("http://", "https://")):
+            return value
+    return None
+
+
+def _record_detail(row: dict[str, Any], meta: dict[str, Any]) -> list[str]:
+    """What this one record says, plainly. The only place amounts appear."""
+    detail: list[str] = []
+    if row["last_event_amount"]:
+        prefix = "Raised " if row["last_event_kind"] == "reg_d_offering" else ""
+        detail.append(f"{prefix}{_money(float(row['last_event_amount']))}")
+    if row["employees"]:
+        unit = "plan participants" if row["employees_source"] == "form_5500_active_participants" else "employees"
+        detail.append(f"{int(row['employees']):,} {unit}")
+    if row["source"] == "irs_990":
+        detail.extend(str(meta[f]) for f in ("revenue_range", "buys_outside_advice") if meta.get(f))
+    if row["source"] == "companies_house" and meta.get("size_band"):
+        detail.append(str(meta["size_band"]))
+    return detail
+
+
+async def register_records(entity_key: str, *, limit: int = 500) -> dict[str, Any]:
+    """The log behind one company: a line per stored record, newest first,
+    with the legal name as filed. Empty ``records`` for an unknown key."""
+    db = await get_db()
+    try:
+        rows = await (await db.execute(
+            """SELECT id, source, source_key, tier, country, company_name, display_name, region,
+                      last_event_at, last_event_amount, last_event_kind, employees, employees_source,
+                      officer_count, hidden_reason, metadata_json
+               FROM company_register WHERE entity_key = ?
+               ORDER BY COALESCE(last_event_at, '') DESC, id LIMIT ?""",
+            (entity_key, max(1, min(int(limit), 1000))),
+        )).fetchall()
+        total = await (await db.execute(
+            "SELECT COUNT(*) AS n FROM company_register WHERE entity_key = ?", (entity_key,),
+        )).fetchone()
+    finally:
+        await db.close()
+    records = []
+    for row in (dict(r) for r in rows):
+        try:
+            meta = json.loads(row["metadata_json"] or "{}")
+        except (TypeError, ValueError):
+            meta = {}
+        records.append({
+            "id": row["id"],
+            "source": row["source"],
+            "source_label": SOURCE_LABELS.get(row["source"]) or str(row["source"]).replace("_", " ").capitalize(),
+            "tier": row["tier"],
+            "legal_name": row["company_name"],
+            "region": row["region"],
+            "date": row["last_event_at"],
+            "detail": _record_detail(row, meta),
+            "url": _record_link(row, meta),
+            "officer_count": row["officer_count"],
+        })
+    return {
+        "entity_key": entity_key,
+        "display_name": (dict(rows[0])["display_name"] or dict(rows[0])["company_name"]) if rows else None,
+        "hidden_reason": rows[0]["hidden_reason"] if rows else None,
+        "total": int(total["n"] or 0),
+        "records": records,
+    }
+
+
+async def register_entity_people(entity_key: str) -> list[dict[str, Any]]:
+    """Everyone named on any of a company's records, once each."""
+    db = await get_db()
+    try:
+        rows = await (await db.execute(
+            """SELECT p.full_name, p.relationship, p.person_level, p.observed_at, p.source_url
+               FROM company_register_people p JOIN company_register r ON r.id = p.register_id
+               WHERE r.entity_key = ? ORDER BY p.full_name, p.observed_at DESC""",
+            (entity_key,),
+        )).fetchall()
+    finally:
+        await db.close()
+    seen: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        seen.setdefault(row["full_name"].strip().lower(), dict(row))
+    return list(seen.values())
+
+
+async def register_summary() -> dict[str, Any]:
+    """Counts of companies, not rows: the same company filed under several
+    names, states or tiers is one, and hidden entries are not counted. A
+    company in two tiers counts once in each (its kinds) and once in the
+    total."""
+    db = await get_db()
+    try:
+        base = "FROM company_register WHERE entity_key IS NOT NULL AND hidden_reason IS NULL"
+        # Distinct (company, kind) pairs first, straight off the covering index,
+        # then counted per kind: much cheaper than COUNT(DISTINCT) per group.
         tiers = await (await db.execute(
-            "SELECT tier, country, COUNT(*) AS n, SUM(officer_count > 0) AS with_officers FROM company_register GROUP BY tier, country"
+            f"""SELECT tier, country, COUNT(*) AS n, SUM(has_people) AS with_officers FROM (
+                    SELECT entity_key, tier, country, MAX(officer_count > 0) AS has_people
+                    {base} GROUP BY entity_key, tier, country)
+                GROUP BY tier, country"""
         )).fetchall()
+        totals = await (await db.execute(
+            f"""SELECT COUNT(DISTINCT entity_key) AS companies,
+                       COUNT(DISTINCT CASE WHEN officer_count > 0 THEN entity_key END) AS with_people {base}"""
+        )).fetchone()
         sectors = await (await db.execute(
-            """SELECT sector_label AS sector, COUNT(*) AS n FROM company_register
-               WHERE sector_label IS NOT NULL AND sector_label != ''
-               GROUP BY sector_label ORDER BY n DESC LIMIT 40"""
+            f"""SELECT sector_label AS sector, COUNT(DISTINCT entity_key) AS n {base}
+                AND sector_label IS NOT NULL AND sector_label != ''
+                GROUP BY sector_label ORDER BY n DESC LIMIT 40"""
         )).fetchall()
+        pending = await (await db.execute(
+            "SELECT COUNT(*) AS n FROM company_register WHERE derived_version IS NULL"
+        )).fetchone()
         ingests = await (await db.execute(
             "SELECT source, batch_key, rows_written, status, detail, completed_at FROM company_register_ingests ORDER BY completed_at DESC LIMIT 10"
         )).fetchall()
         return {
+            "companies": int(totals["companies"] or 0),
+            "with_people": int(totals["with_people"] or 0),
+            "pending": int(pending["n"] or 0),
             "tiers": [dict(r) for r in tiers],
             "sectors": [dict(r) for r in sectors],
             "recent_ingests": [dict(r) for r in ingests],

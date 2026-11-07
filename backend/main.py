@@ -16,6 +16,7 @@ else:
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import logging
 from app.log_redaction import RedactAccessPath
 logging.getLogger("uvicorn.access").addFilter(RedactAccessPath())
@@ -37,7 +38,7 @@ from app.services.yucgoutreach_discovery import (
     drain_queued_yucgoutreach_runs,
     recover_interrupted_yucgoutreach_runs,
 )
-from app.services.company_register import drain_company_register
+from app.services.company_register import backfill_register_entities, drain_company_register
 from app.services.roster_watch import drain_roster_queue, enroll_prospect_companies
 from app.services.roster_email import drain_roster_emails, drain_roster_verification
 from app.services.roster_adjudicate import drain_roster_adjudication
@@ -90,6 +91,20 @@ async def lifespan(app: FastAPI):
         id="company_register_ingest",
         max_instances=1,
         coalesce=True,
+    )
+    # Public name / entity key / hide reason for register rows that have none
+    # yet (the first deploy of the columns, rows the previous release inserted
+    # during a deploy overlap, a bumped DERIVATION_VERSION). It reads only the
+    # derived_version index, so a tick with nothing to derive costs nothing;
+    # the first tick runs shortly after start rather than a full interval later.
+    scheduler.add_job(
+        leader_only(backfill_register_entities),
+        "interval",
+        minutes=5,
+        id="company_register_derive",
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
     )
     scheduler.add_job(
         leader_only(drain_roster_queue),

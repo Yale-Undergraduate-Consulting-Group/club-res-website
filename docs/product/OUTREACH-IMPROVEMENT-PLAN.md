@@ -20,7 +20,8 @@ small campaign end to end before building anything new.
 
 ## What works
 
-- The register is now one index: 215,335 companies across six tiers, 392k named
+- The register is now one index: about 200,000 companies (one entry per company
+  under its public name, funds and vehicles hidden) across six kinds, 392k named
   officers, with the club's 620 curated rows folded in as `club_targets`.
 - Selection in the register produces a target list, the object the rest of the
   app consumes (`app/routers/releases.py`).

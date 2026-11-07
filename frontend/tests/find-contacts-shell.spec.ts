@@ -3,21 +3,22 @@ import { expect, test, type Page } from '@playwright/test';
 const user = { id: 1, email: 'alice@yale.edu', name: 'Alice', role: 'admin', is_active: 1 };
 
 const REGISTER_HIT = {
+  entity_key: 'GB:hansford sensors',
   id: 9,
-  source: 'companies_house',
-  tier: 'uk',
+  display_name: 'Hansford Sensors',
+  legal_name: 'Hansford Sensors Limited',
   country: 'GB',
-  company_name: 'Hansford Sensors Limited',
+  kinds: ['uk'],
+  locations: ['High Wycombe'],
+  record_count: 1,
+  officer_count: 3,
+  working_count: 0,
   company_domain: 'hansfordsensors.com',
   sector_label: 'Manufacture of electronic industrial process control equipment',
-  region: 'High Wycombe',
-  employees: null,
-  employees_source: null,
   last_event_at: '2025-12-31',
-  last_event_amount: null,
-  last_event_kind: 'accounts_filed',
-  officer_count: 3,
-  metadata: {},
+  hidden_reason: null,
+  lookup_id: null,
+  claimed_by: null,
 };
 
 async function mockPage(page: Page) {
@@ -34,7 +35,7 @@ async function mockPage(page: Page) {
     else if (path === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (path === '/api/yucgoutreach/resolve-company') {
       const q = url.searchParams.get('q') || '';
-      body = q === REGISTER_HIT.company_name
+      body = q === REGISTER_HIT.display_name
         ? { name: q, domain: REGISTER_HIT.company_domain, domain_verified: false, linkedin_url: null, source: 'register', alternatives: [] }
         : { name: q, domain: null, domain_verified: false, linkedin_url: null, source: 'typed', alternatives: [] };
     }
@@ -89,14 +90,14 @@ test('every Find contacts surface is a pill, and the company field reaches the p
   // the browser, and the row is labelled with where it came from.
   await page.getByLabel('Company', { exact: true }).fill('hansford');
   await expect.poll(() => registerQueries.includes('hansford')).toBe(true);
-  const option = page.getByRole('option', { name: /Hansford Sensors Limited/ });
+  const option = page.getByRole('option', { name: /Hansford Sensors/ });
   await expect(option).toBeVisible();
   await expect(option).toContainText('hansfordsensors.com');
   await option.click();
   // Picking from the register adds it to the chosen companies rather than
   // only filling a box: choosing is the point of the step.
   await expect(page.getByTestId('chosen-count')).toContainText('1 company added');
-  await expect(page.locator('[data-company-chip="Hansford Sensors Limited"]')).toContainText('hansfordsensors.com');
+  await expect(page.locator('[data-company-chip="Hansford Sensors"]')).toContainText('hansfordsensors.com');
 });
 
 test('a one-character company does not query the register', async ({ page }) => {
@@ -120,7 +121,7 @@ test('the guide explains the page instead of a chatbot driving it', async ({ pag
   await page.getByRole('button', { name: 'How this page works' }).click();
   const guide = page.getByRole('dialog', { name: /How Find contacts works/ });
   await expect(guide).toBeVisible();
-  await expect(guide).toContainText('215,000 companies');
+  await expect(guide).toContainText('200,000 companies');
   await expect(guide).toContainText('Nothing leaves until you release the campaign');
 
   // It points at the next thing rather than ending the trail.

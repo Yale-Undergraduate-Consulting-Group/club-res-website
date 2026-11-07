@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
+import { locationText, peopleText } from '../lib/registerView';
 
 export type CompanyOption = {
   name: string;
@@ -76,11 +77,11 @@ export default function CompanyAutocomplete({
       api.yucgoutreach.register({ q, limit: 8 }, controller.signal)
         .then((res) => {
           setRegisterOptions((res.items || []).map((row) => ({
-            name: row.company_name,
+            name: row.display_name,
             domain: row.company_domain || undefined,
             source: 'register' as const,
             sector: row.sector_label || undefined,
-            hint: [row.region, row.officer_count ? `${row.officer_count} officers on file` : null]
+            hint: [locationText(row.country, row.locations), row.officer_count ? peopleText(row.officer_count) : null]
               .filter(Boolean).join(' · ') || undefined,
           })));
         })
