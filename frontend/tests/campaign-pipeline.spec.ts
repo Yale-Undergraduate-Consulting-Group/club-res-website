@@ -3,8 +3,8 @@ import { expect, test, type Page } from '@playwright/test';
 const user = { id: 1, email: 'andre.h.costa@yale.edu', name: 'Andre H. Costa', role: 'admin', is_active: 1 };
 
 const PEOPLE = [
-  { id: 1, name: 'Jean Bartik', email: 'jean.bartik@a24films.com', title: 'Head of Acquisitions', company: 'A24' },
-  { id: 2, name: 'Klara Dan', email: 'klara.dan@a24films.com', title: 'VP Partnerships', company: 'A24' },
+  { id: 1, name: 'Jean Bartik', email: 'jean.bartik@a24films.com', title: 'Head of Acquisitions', company: 'A24', person_level: 'working' },
+  { id: 2, name: 'Klara Dan', email: 'klara.dan@a24films.com', title: 'VP Partnerships', company: 'A24', person_level: 'working' },
   // No name, so a message using {first} cannot be rendered for them.
   { id: 3, name: '', email: 'info@a24films.com', title: '', company: 'A24' },
 ];
@@ -151,7 +151,7 @@ test('the member sets how many people to find, watches the rounds, and is told p
   await page.route('**/api/yucgoutreach/runs/9/prospects**', route => route.fulfill({
     json: [{
       id: 501, run_id: 9, first_name: 'Ada', last_name: 'Byron', email: 'ada.byron@a24films.com',
-      title: 'Producer', company: 'A24', evidence_json: JSON.stringify({ group_unit: 'A24 Music' }),
+      title: 'Producer', company: 'A24', person_level: 'working', evidence_json: JSON.stringify({ group_unit: 'A24 Music' }),
     }],
   }));
   await page.route('**/api/yucgoutreach/runs/9/import-contacts', route => route.fulfill({

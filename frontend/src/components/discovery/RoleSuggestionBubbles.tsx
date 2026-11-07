@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type RoleSuggestions } from '../../api';
+import { Chip } from '../ui/Primitives';
 
 const SOURCE_LABEL: Record<string, string> = {
   roster: 'SEC filing',
@@ -105,15 +106,14 @@ export default function RoleSuggestionBubbles({
                 <>
                   <span className="text-slate-500"> → at {data.company}: </span>
                   {eq.at_company.map((t) => (
-                    <button
+                    <Chip
                       key={t}
-                      type="button"
+                      className="ml-1"
                       onClick={() => onAdd(t)}
                       disabled={present.has(t.toLowerCase())}
-                      className="ml-1 rounded-full border border-deep-navy/30 bg-white px-2 py-0.5 text-[11px] font-medium hover:bg-deep-navy hover:text-white disabled:opacity-40"
                     >
                       + {t}
-                    </button>
+                    </Chip>
                   ))}
                 </>
               ) : (
@@ -131,19 +131,17 @@ export default function RoleSuggestionBubbles({
             Roles seen at {data.company}
             {loading && <span className="normal-case tracking-normal"> · updating…</span>}
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {data.roles.map((r) => (
-              <button
+              <Chip
                 key={r.title}
-                type="button"
                 onClick={() => onAdd(r.title)}
                 disabled={present.has(r.title.toLowerCase())}
                 title={`${r.count} seen · ${SOURCE_LABEL[r.source] || r.source}`}
-                className="rounded-full border border-pale-sky bg-white px-2.5 py-1 text-xs text-deep-navy hover:border-deep-navy disabled:opacity-40"
               >
                 {r.title}
-                <span className="ml-1 text-[10px] text-slate-400">{r.count}</span>
-              </button>
+                <span className="text-[10px] opacity-60">{r.count}</span>
+              </Chip>
             ))}
           </div>
         </div>

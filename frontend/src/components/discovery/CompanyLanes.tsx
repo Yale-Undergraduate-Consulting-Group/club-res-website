@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import type { CompanyStatus } from '../../lib/peopleSheet';
 import type { CompanyRun } from '../../lib/useDiscoveryRuns';
+import { Button } from '../ui/Primitives';
 
 /**
  * Company progress, drawn the way a commit graph draws branches.
@@ -23,26 +25,19 @@ export type Lane = {
   found: number;
   ticked: number;
   run: CompanyRun;
+  /** What this company's search amounts to, in the words the sheet uses. */
+  status: CompanyStatus;
 };
 
 /** Lane colours, in the order a commit graph would assign them. */
 const COLOURS = ['#1E3A6E', '#3D5C82', '#5B7FA6', '#7A9CC6', '#C2884B', '#4E7A5E', '#8C5A86'];
 
-const ROW = 34;
+const ROW = 38;
 /** Rows drawn before the rest fold behind a count. */
 const WINDOW = 6;
 const TRUNK_X = 10;
 const COL_X = [40, 70, 100];
 const GRAPH_W = 112;
-
-function stateText(lane: Lane): string {
-  switch (lane.run.state) {
-    case 'queued': return 'queued';
-    case 'searching': return `searching ${Math.round(lane.run.pct)}%`;
-    case 'failed': return lane.found > 0 ? `${lane.found} found · search failed` : 'search failed';
-    default: return lane.found > 0 ? `${lane.found} found` : 'nobody yet';
-  }
-}
 
 export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport, onDelete }: {
   lanes: Lane[];
@@ -104,7 +99,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
               // wherever the overflow landed, so a tap could land on a
               // completely different lane's button. Below `sm` the row wraps
               // to two lines and grows to fit instead.
-              className={`group flex cursor-pointer flex-wrap sm:flex-nowrap sm:h-[34px] items-center gap-x-2 gap-y-1 rounded-lg px-1 py-1.5 sm:py-0 -mx-1 ${
+              className={`group flex cursor-pointer flex-wrap sm:flex-nowrap sm:h-[38px] items-center gap-x-2 gap-y-1 rounded-lg px-1 py-1.5 sm:py-0 -mx-1 ${
                 isFocused ? 'bg-pale-sky/40' : 'hover:bg-pale-sky/15'}`}
             >
               {/* Purely decorative - the commit-graph metaphor is a desktop
@@ -135,16 +130,16 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
               <span className="min-w-0 flex-1 basis-full sm:basis-auto truncate text-[13px] font-semibold text-deep-navy" title={lane.company}>
                 {lane.company}
               </span>
-              {/* Fixed widths, not natural ones: "nobody yet" and "23 found ·
-                  search failed · 23 ticked" are wildly different lengths, and
+              {/* Fixed widths, not natural ones: "Not searched yet" and "23 people
+                  found · search paused · 23 ticked" are wildly different lengths, and
                   a natural-width column shifts left or right with every row's
                   own text. A fixed box keeps the column's left edge - and the
                   actions after it - in the same place on every row. */}
               <span className={`shrink-0 sm:w-44 truncate text-xs tabular-nums ${
-                lane.run.state === 'failed' ? 'text-amber-800' : active ? 'text-deep-navy' : 'text-slate-500'}`}
-                    title={(active && lane.run.message ? lane.run.message : stateText(lane)) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
+                lane.status.tone === 'paused' ? 'text-amber-800' : active ? 'text-deep-navy' : 'text-slate-500'}`}
+                    title={(lane.status.problem || (active && lane.run.message ? lane.run.message : lane.status.long)) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
                     data-testid="lane-state">
-                {stateText(lane)}
+                {lane.status.text}
                 {lane.ticked > 0 ? ` · ${lane.ticked} ticked` : ''}
               </span>
               {/* The search is the lane's main action, so it is always on
@@ -153,24 +148,21 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                   focus on a real pointer device (touch has no hover, so below
                   `sm` it is always visible too). Fixed width and right-aligned
                   so the menu appearing or not never moves anything left. */}
-              <span className="flex shrink-0 sm:w-44 items-center sm:justify-end gap-1">
-                <button
-                  type="button"
+              <span className="flex shrink-0 sm:w-48 items-center sm:justify-end gap-1">
+                <Button
+                  variant={lane.found > 0 ? 'secondary' : 'primary'}
+                  size="sm"
                   disabled={active}
                   onClick={(e) => { e.stopPropagation(); onFind(lane.company); }}
-                  // The row is 34px at `sm`; the stock small button is 36px and
-                  // made neighbouring lanes' buttons touch. Below `sm` the row
-                  // grows, so the full tap target stays.
-                  className={`ui-button ui-button--sm sm:h-7 sm:min-h-0! sm:py-0! ${lane.found > 0 ? 'ui-button--secondary' : 'ui-button--primary'}`}
                   title={lane.found > 0 ? `Search ${lane.company} again for more people` : `Search ${lane.company} for people`}
                 >
                   {active ? 'Searching…' : lane.found > 0 ? 'Find more people' : 'Find people'}
-                </button>
+                </Button>
                 {runId !== undefined && (
                   <details className="relative sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100 open:opacity-100"
                            onClick={(e) => e.stopPropagation()}>
                     <summary
-                      className="list-none cursor-pointer rounded-md px-2 py-0.5 text-sm leading-none text-slate-600 hover:bg-pale-sky/60 [&::-webkit-details-marker]:hidden"
+                      className="ui-button ui-button--ghost ui-button--sm ui-button--icon list-none [&::-webkit-details-marker]:hidden"
                       aria-label={`More for ${lane.company}`}
                     >
                       ⋯

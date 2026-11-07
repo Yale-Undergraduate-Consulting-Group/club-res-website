@@ -3,13 +3,41 @@ import { forwardRef, useEffect, useRef, useId, type ButtonHTMLAttributes, type R
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   size?: 'sm' | 'md';
+  /** Square button for a glyph or icon with no visible text; needs an aria-label. */
+  iconOnly?: boolean;
 };
 
+/**
+ * The one action button. Height, padding, radius and weight come from the size
+ * alone (md = --control-height, sm = --control-height-sm); the variant only
+ * changes colour, so a button never changes size because of how it looks.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', className = '', type = 'button', ...props },
+  { variant = 'primary', size = 'md', iconOnly = false, className = '', type = 'button', ...props },
   ref,
 ) {
-  return <button ref={ref} type={type} className={`ui-button ui-button--${variant} ui-button--${size} ${className}`.trim()} {...props} />;
+  const classes = `ui-button ui-button--${variant} ui-button--${size}${iconOnly ? ' ui-button--icon' : ''} ${className}`.trim();
+  return <button ref={ref} type={type} className={classes} {...props} />;
+});
+
+type ChipProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'role'> & {
+  /** Current state of a toggle or segmented choice; omit for a plain pill action. */
+  selected?: boolean;
+  /** Use "radio" for one-of-many groups (the group needs role="radiogroup"). */
+  role?: 'radio';
+};
+
+/**
+ * The one pill for toggles, filters and segmented choices. Selected and
+ * unselected share every dimension (1px border, same padding and font); only
+ * colour changes with state.
+ */
+export const Chip = forwardRef<HTMLButtonElement, ChipProps>(function Chip(
+  { selected, role, className = '', type = 'button', ...props },
+  ref,
+) {
+  const state = role === 'radio' ? { 'aria-checked': Boolean(selected) } : selected === undefined ? {} : { 'aria-pressed': selected };
+  return <button ref={ref} type={type} role={role} className={`ui-chip ${className}`.trim()} {...state} {...props} />;
 });
 
 export function Notice({ children, tone = 'info', className = '' }: { children: ReactNode; tone?: 'info' | 'success' | 'warning' | 'danger'; className?: string }) {

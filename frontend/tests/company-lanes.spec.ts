@@ -43,9 +43,22 @@ test('the lanes and the sheet stay on screen together at every step', async ({ p
   await expect(picker).toHaveAttribute('data-mode', 'select');
   await expect(lanes).toBeVisible();
   await expect(lanes.getByText('2 companies · 2 people ticked')).toBeVisible();
-  await expect(lanes.locator('[data-lane="A24"]').getByTestId('lane-state')).toHaveText('2 found · 2 ticked');
+  await expect(lanes.locator('[data-lane="A24"]').getByTestId('lane-state')).toHaveText('2 people found · 2 ticked');
   // The company nobody has been found at says so, rather than looking done.
-  await expect(lanes.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('nobody yet');
+  await expect(lanes.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('Not searched yet');
+
+  // Selected and unselected choices use the same control geometry; choosing a
+  // level changes only its colour, never the size of the row.
+  const who = pipeline.getByRole('radiogroup', { name: 'Who to look for' });
+  const team = who.getByRole('radio', { name: 'Team leads' });
+  const senior = who.getByRole('radio', { name: 'Senior leaders' });
+  const before = await Promise.all([team.boundingBox(), senior.boundingBox()]);
+  expect(before[0]?.height).toBe(before[1]?.height);
+  await senior.click();
+  const after = await Promise.all([team.boundingBox(), senior.boundingBox()]);
+  expect(after[0]?.height).toBe(after[1]?.height);
+  expect(after[0]?.height).toBe(before[0]?.height);
+  await team.click();
 
   // Step 1: same lanes, and the sheet previews what the companies come with.
   await rail.getByRole('button', { name: /Add companies/ }).click();
@@ -63,7 +76,7 @@ test('the lanes and the sheet stay on screen together at every step', async ({ p
 });
 
 test('the state column lines up regardless of how long each row\'s text is', async ({ page }, testInfo) => {
-  // "nobody yet" and "2 found · 2 ticked" are very different lengths. A
+  // "Not searched yet" and "2 people found · 2 ticked" are very different lengths. A
   // natural-width column shifts with every row's own text, so what looked
   // like a flowchart read as a ragged list instead. Fixed-width columns are
   // a desktop layout: a phone does not have 450px of row to spare, so below
@@ -73,8 +86,8 @@ test('the state column lines up regardless of how long each row\'s text is', asy
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
   const lanes = page.locator('[data-section="campaign-pipeline"]').getByTestId('company-lanes');
-  await expect(lanes.locator('[data-lane="A24"]').getByTestId('lane-state')).toHaveText('2 found · 2 ticked');
-  await expect(lanes.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('nobody yet');
+  await expect(lanes.locator('[data-lane="A24"]').getByTestId('lane-state')).toHaveText('2 people found · 2 ticked');
+  await expect(lanes.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('Not searched yet');
 
   const a24Box = await lanes.locator('[data-lane="A24"]').getByTestId('lane-state').boundingBox();
   const neonBox = await lanes.locator('[data-lane="NEON"]').getByTestId('lane-state').boundingBox();
@@ -186,4 +199,111 @@ test('Find more people sits on the lane and at the top of the people sheet, once
   const box = await sheetFind.boundingBox();
   const viewport = page.viewportSize();
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((viewport?.width ?? 0) + 1);
+});
+
+const PAUSED = 'People search is paused: the search service is out of credit. A maintainer needs to top it up.';
+
+/** What the server keeps for a finished run: its words, and the research behind them. */
+function finishedRun(id: number, company: string, research: Record<string, unknown>, message = 'Done') {
+  return { id, company_name: company, status: 'completed', progress_pct: 100, progress_message: message, research_json: JSON.stringify(research) };
+}
+
+/** mockLanes with its own people and runs, registered after it so they answer first. */
+async function mockPeople(page: Page, opts: { people?: Record<string, unknown>[]; runs?: Record<string, unknown>[]; prospects?: Record<string, unknown>[] }) {
+  await mockLanes(page);
+  await page.route('**/api/contacts?*', route => route.fulfill({
+    json: { items: opts.people ?? [], total: (opts.people ?? []).length, limit: 800, offset: 0 },
+  }));
+  await page.route('**/api/yucgoutreach/runs?*', route => route.fulfill({ json: opts.runs ?? [] }));
+  await page.route('**/api/yucgoutreach/runs/*/prospects**', route => route.fulfill({ json: opts.prospects ?? [] }));
+  await page.route(/\/api\/yucgoutreach\/runs\/10$/, route => route.fulfill({
+    json: { id: 10, company_name: 'Acme', status: 'running', progress_pct: 35, progress_message: 'Searching the web' },
+  }));
+}
+
+test('a search that could not run says it is paused, never that nobody was found', async ({ page }) => {
+  await mockPeople(page, {
+    runs: [finishedRun(9, 'NEON', {
+      search_errors: { count: 17, queries: 17, all_failed: true, limit_reached: true, kind: 'out_of_credit', message: PAUSED },
+      shortfall: { target: 60, found: 0, reason: 'search_failed' },
+    }, `No contacts saved. Website 0 · roster 0 · web 0. ${PAUSED}`)],
+  });
+  await page.goto('/scraper?view=company&companies=NEON');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  await expect(pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('Search paused');
+  // One plain sentence, once at the top and as the step's own note - and the
+  // empty-company copy that blames the company is nowhere.
+  await expect(pipeline.getByTestId('search-paused')).toHaveText(PAUSED);
+  await expect(pipeline.getByTestId('no-people-note')).toHaveText(PAUSED);
+  await expect(pipeline.locator('[data-company="NEON"]').getByTestId('company-status')).toHaveText('Search paused');
+  await expect(pipeline.getByText(/Nobody on record|Nobody found/)).toHaveCount(0);
+  // No raw provider text or key anywhere on the page.
+  await expect(page.locator('body')).not.toContainText(/WALLET|monid_|402/);
+  // The lane still offers the search, so the member can try again.
+  await expect(pipeline.locator('[data-lane="NEON"]').getByRole('button', { name: 'Find people' })).toBeEnabled();
+});
+
+test('a search that ran and found nobody says for whom, and follows who to look for', async ({ page }) => {
+  await mockPeople(page, { runs: [finishedRun(9, 'NEON', {}, 'No contacts saved. Website 0 · roster 0 · web 0')] });
+  await page.goto('/scraper?view=company&companies=NEON');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  const status = pipeline.locator('[data-company="NEON"]').getByTestId('company-status');
+  await expect(pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('Nobody found');
+  await expect(status).toHaveText('Nobody found for Team leads (try Senior leaders)');
+  await expect(pipeline.getByTestId('search-paused')).toHaveCount(0);
+
+  await pipeline.locator('[data-rail]').getByRole('radio', { name: 'Senior leaders' }).click();
+  await expect(status).toHaveText('Nobody found for Senior leaders (try Team leads)');
+});
+
+test('people are grouped by company, the chosen level first, duplicates merged, each company with its status', async ({ page }) => {
+  await mockPeople(page, {
+    people: [
+      // The same person under two addresses: the company's own site beats a web search.
+      { id: 1, name: 'Jean M. Bartik', email: 'jbartik@a24films.com', title: 'Director of Operations', company: 'A24', person_level: 'working', contact_source: 'web_discovery' },
+      { id: 2, name: 'Jean Bartik', email: 'jean.bartik@a24films.com', title: 'Director of Operations', company: 'A24', person_level: 'working', contact_source: 'domain_scrape', linkedin_url: 'https://www.linkedin.com/in/jean-bartik' },
+      { id: 3, name: 'Lena Chief', email: 'lena@a24films.com', title: 'Chief of Staff', company: 'A24', person_level: 'executive', contact_source: 'roster_sec' },
+      { id: 4, name: 'Tomas Board', email: 'tomas@a24films.com', title: 'Trustee', company: 'A24', person_level: 'board', contact_source: 'roster_sec' },
+      { id: 5, name: 'Klara Dan', email: 'klara@a24films.com', title: 'Head of Partnerships', company: 'A24', person_level: 'working', contact_source: 'web_discovery' },
+    ],
+    runs: [
+      finishedRun(9, 'NEON', {}, 'No contacts saved. Website 0 · roster 0 · web 0'),
+      { id: 10, company_name: 'Acme', status: 'running', progress_pct: 35, progress_message: 'Searching the web' },
+    ],
+  });
+  await page.goto('/scraper?view=company&companies=A24,NEON,Acme');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  const picker = pipeline.getByTestId('recipient-picker');
+  const a24 = picker.locator('[data-company="A24"]');
+
+  // One Jean, not two - and the row carries what a member needs to judge it.
+  await expect(a24.getByText(/Jean (M\. )?Bartik/)).toHaveCount(1);
+  const jean = a24.locator('li', { hasText: 'Jean Bartik' });
+  await expect(jean).toContainText('Director of Operations');
+  await expect(jean).toContainText('A24');
+  await expect(jean.getByTestId('match-reason')).toHaveText('Team lead: "Director of" in the title');
+  await expect(jean.getByTestId('person-source')).toContainText('Source: Company website');
+  await expect(jean.getByRole('link', { name: 'LinkedIn profile' })).toHaveAttribute('href', 'https://www.linkedin.com/in/jean-bartik');
+  await expect(jean.getByRole('checkbox', { name: 'Write to Jean Bartik' })).toBeChecked();
+
+  // The people at the chosen level come first; the rest wait behind a count.
+  const names = () => a24.getByRole('checkbox').evaluateAll((els) => els
+    .map((el) => el.getAttribute('aria-label') || '').filter((label) => label.startsWith('Write to ')));
+  await expect.poll(names).toEqual(['Write to Jean Bartik', 'Write to Klara Dan']);
+  await a24.getByTestId('show-others').click();
+  await expect.poll(names).toEqual(['Write to Jean Bartik', 'Write to Klara Dan', 'Write to Lena Chief', 'Write to Tomas Board']);
+  await expect(a24.locator('li', { hasText: 'Lena Chief' }).getByTestId('match-reason')).toHaveText('Senior leader, not a team lead');
+
+  // Every company says where its search stands.
+  await expect(a24.getByTestId('company-status')).toHaveText('4 people found · 2 for Team leads');
+  await expect(picker.locator('[data-company="NEON"]').getByTestId('company-status'))
+    .toHaveText('Nobody found for Team leads (try Senior leaders)');
+  await expect(picker.locator('[data-company="Acme"]').getByTestId('company-status')).toHaveText('Searching…');
+  const lanes = pipeline.getByTestId('company-lanes');
+  await expect(lanes.locator('[data-lane="A24"]').getByTestId('lane-state')).toContainText('4 people found');
+  await expect(lanes.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('Nobody found');
+  await expect(lanes.locator('[data-lane="Acme"]').getByTestId('lane-state')).toHaveText('Searching… 35%');
 });

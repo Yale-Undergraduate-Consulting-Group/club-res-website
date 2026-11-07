@@ -11,6 +11,7 @@ import AddressCheck from '../components/AddressCheck';
 import AdvisoryBatch from '../components/AdvisoryBatch';
 import { useAiModel } from '../contexts/useAiModel';
 import { useUrlTab } from '../lib/useUrlTab';
+import { Button, Chip } from '../components/ui/Primitives';
 
 
 /** One screen of companies. The catalogue can hold tens of thousands, so the
@@ -799,8 +800,8 @@ export default function EmailStudio() {
       <div className="studio-workbench-bar">
         <span>Writing as <strong>{user?.email}</strong></span>
         <div>
-          <button type="button" aria-pressed={focusWriting} onClick={() => setFocusWriting(value => !value)}>Focus on writing</button>
-          <button type="button" aria-pressed={previewOpen} onClick={() => { setPreviewOpen(value => !value); setMobileStep('edit'); }}>Preview email</button>
+          <Chip className="studio-workbench-bar__focus" selected={focusWriting} onClick={() => setFocusWriting(value => !value)}>Focus on writing</Chip>
+          <Chip selected={previewOpen} onClick={() => { setPreviewOpen(value => !value); setMobileStep('edit'); }}>Preview email</Chip>
         </div>
       </div>
       <nav className="studio-mobile-steps" aria-label="Draft workflow">
@@ -809,14 +810,13 @@ export default function EmailStudio() {
           ['generate', '2. AI assistance'],
           ['edit', '3. Write'],
         ] as const).map(([id, label]) => (
-          <button
+          <Chip
             key={id}
-            type="button"
             aria-current={mobileStep === id ? 'step' : undefined}
             onClick={() => setMobileStep(id)}
           >
             {label}
-          </button>
+          </Chip>
         ))}
       </nav>
       {handoff && (
@@ -847,14 +847,16 @@ export default function EmailStudio() {
                   pills stacked and stretched the buttons beside them. */}
               <div className="px-4 py-3 border-b border-[var(--border)] space-y-2 bg-white dark:bg-[var(--bg-card)]">
                 <div className="flex gap-2 items-stretch">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconOnly
                     onClick={() => setContactsPanelExpanded(false)}
-                    className="app-nav-util-btn w-9 shrink-0 grid place-items-center p-0"
                     title="Collapse panel"
                     aria-label="Collapse contacts panel"
                   >
                     ◀
-                  </button>
+                  </Button>
                   <AppSubnav
                     className="app-subnav--stretch min-w-0"
                     items={[
@@ -1062,14 +1064,16 @@ export default function EmailStudio() {
             </>
           ) : (
             <div className="flex flex-col items-center py-4 xl:py-6 gap-2">
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
                 onClick={() => setContactsPanelExpanded(true)}
-                className="p-2 rounded text-slate-500 hover:bg-pale-sky/30 hover:text-deep-navy"
                 title="Expand panel"
                 aria-label="Expand contacts panel"
               >
                 ▶
-              </button>
+              </Button>
               <span className="text-xs text-slate-500 hidden xl:block" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
                 Contacts
               </span>
@@ -1085,15 +1089,16 @@ export default function EmailStudio() {
             {aiGeneratorExpanded ? (
             <>
             <div className="email-generator-header px-4 py-3 border-b border-pale-sky dark:border-slate-600 flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
                 onClick={() => setAiGeneratorExpanded(false)}
-                className="p-1.5 rounded text-slate-500 hover:bg-pale-sky/20 dark:hover:bg-slate-600 shrink-0"
                 title="Collapse panel"
                 aria-label="Collapse AI generator panel"
               >
                 ◀
-              </button>
+              </Button>
               <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">AI assistance</h2>
             </div>
             <div className="email-studio-generator-body">
@@ -1247,15 +1252,16 @@ export default function EmailStudio() {
             </>
             ) : (
             <div className="flex flex-col items-center py-4 xl:py-6 gap-2">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
                 onClick={() => setAiGeneratorExpanded(true)}
-                className="p-2 rounded text-slate-500 hover:bg-pale-sky/30 dark:hover:bg-slate-600/50"
                 title="Expand panel"
                 aria-label="Expand AI generator panel"
               >
                 ▶
-              </button>
+              </Button>
               <span className="text-xs text-slate-500 dark:text-slate-400 hidden xl:block" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
                 AI Generator
               </span>

@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { type Contact } from '../../api';
 import {
-  LEVEL_LABEL, LEVEL_RANK, type Level,
-  companyKey, defaultSelection, isTooSenior, isWritable, levelOf, looksLikePerson,
+  LEVEL_RANK, type Level,
+  companyKey, defaultSelection, isWritable, levelOf,
 } from '../../lib/recipients';
+import {
+  fitRank, foundAsPerson, foundNotOnFile, matchesWanted, type CompanyStatus, type Wanted,
+} from '../../lib/peopleSheet';
 import type { ChosenCompany, CompanyRun, FoundPerson } from '../../lib/useDiscoveryRuns';
+import { PersonHeadline, PersonWhy } from './PersonDetails';
 
 /**
  * Who gets the email - chosen, not inherited.
@@ -44,7 +48,7 @@ const SHORTFALL_REASON: Record<string, string> = {
 };
 
 export default function RecipientPicker({
-  mode, companies, focused, people, selected, onSelectedChange, found, runs, onFind, onFindEverywhere, onAddFound, busy,
+  mode, companies, focused, people, selected, onSelectedChange, found, runs, statuses, wanted, onFind, onFindEverywhere, onAddFound, busy,
 }: {
   mode: PickerMode;
   companies: ChosenCompany[];
@@ -60,13 +64,18 @@ export default function RecipientPicker({
   /** Search the same company again with no country limit. */
   onFindEverywhere?: (company: ChosenCompany) => void;
   onAddFound: (companyKey: string, ids: number[] | 'all') => Promise<void>;
+  /** What each company's search amounts to, keyed by canonical company. */
+  statuses: Record<string, CompanyStatus>;
+  /** Who to look for: the people at this level are shown first, the rest fold. */
+  wanted: Wanted;
   busy: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState<'all' | Level>('all');
   const [hideWritten, setHideWritten] = useState(true);
   const [adding, setAdding] = useState<Record<string, true>>({});
-  const [showHeld, setShowHeld] = useState<Record<string, boolean>>({});
+  // Companies whose people at other levels are unfolded, by key.
+  const [showOthers, setShowOthers] = useState<Record<string, boolean>>({});
   // Folded companies, by key. A fold hides the rows only - the header keeps
   // the count, the tick-all box and the search, so nothing is decided blind.
   const [folded, setFolded] = useState<Record<string, true>>({});
@@ -93,28 +102,23 @@ export default function RecipientPicker({
       .filter((p) => (filtering && hideWritten ? !p.last_sent_at : true))
       .filter((p) => !term
         || `${p.name || ''} ${p.title || ''} ${p.email || ''} ${p.company || ''}`.toLowerCase().includes(term))
-      .sort((a, b) => LEVEL_RANK[levelOf(a)] - LEVEL_RANK[levelOf(b)]
+      .sort((a, b) => fitRank(a, wanted) - fitRank(b, wanted)
         || (a.name || a.email || '').localeCompare(b.name || b.email || ''));
-  }, [mode, people, chosen, query, level, hideWritten]);
-
-  // Addresses already on file, so a found person who has since been added
-  // (or was on file all along) is not listed twice.
-  const onFileEmails = useMemo(
-    () => new Set(people.map((p) => (p.email || '').trim().toLowerCase()).filter(Boolean)),
-    [people],
-  );
+  }, [mode, people, chosen, query, level, hideWritten, wanted]);
 
   const groups = useMemo(() => {
     const map = new Map<string, { company: ChosenCompany; rows: Contact[]; found: FoundPerson[] }>();
     // Every chosen company keeps a group even with nobody on file, because
-    // that group is where its search lives.
+    // that group is where its search lives. What a search found leaves its
+    // list once the same person is on file, by address or by name.
     for (const company of companies) {
       const key = companyKey(company.name);
       if (!map.has(key)) {
+        const fresh = mode === 'review' || !(found[key] || []).length ? [] : foundNotOnFile(people, found[key]);
         map.set(key, {
           company,
           rows: [],
-          found: mode === 'review' ? [] : (found[key] || []).filter((p) => !onFileEmails.has((p.email || '').trim().toLowerCase())),
+          found: [...fresh].sort((a, b) => fitRank(foundAsPerson(a), wanted) - fitRank(foundAsPerson(b), wanted)),
         });
       }
     }
@@ -126,7 +130,7 @@ export default function RecipientPicker({
     const entries = [...map.entries()];
     // In review, a company with nobody going to it is not a recipient group.
     return mode === 'review' ? entries.filter(([, g]) => g.rows.length > 0) : entries;
-  }, [visible, companies, found, onFileEmails, mode]);
+  }, [visible, companies, found, people, mode, wanted]);
 
   const writableVisible = visible.filter(isWritable);
   const hiddenWritten = people.filter((p) => p.last_sent_at).length;
@@ -262,16 +266,26 @@ export default function RecipientPicker({
         const allOn = writable.length > 0 && writable.every((p) => chosen.has(p.id));
         const run = runs[key];
         const searching = run && (run.state === 'searching' || run.state === 'queued');
-        // The people worth writing to first; the very senior and rows whose
-        // name is page text fold behind one link. A search at a large company
-        // otherwise opens on its CEO, CFO and COO.
-        const asContact = (p: FoundPerson) => ({
-          name: [p.first_name, p.last_name].filter(Boolean).join(' '), title: p.title,
-        } as Contact);
-        const held = group.found.filter((p) => isTooSenior(asContact(p)) || !looksLikePerson(asContact(p)));
-        const likely = group.found.filter((p) => !held.includes(p));
-        const shownFound = showHeld[key] ? group.found : likely;
-        const addable = likely.filter((p) => !p.skippedReason);
+        // Who matches what the member is looking for comes first; everyone
+        // else - another level, the very senior, a name that is page text -
+        // folds behind one count. A search at a large company otherwise opens
+        // on its CEO, CFO and COO. A narrowed list or a typed search is the
+        // member asking to see more, so nothing folds then.
+        const collapsing = mode !== 'review' && level === 'all' && !query.trim();
+        const open = Boolean(showOthers[key]);
+        const restRows = collapsing ? rows.filter((p) => !matchesWanted(p, wanted)) : [];
+        const restFound = collapsing ? group.found.filter((p) => !matchesWanted(foundAsPerson(p), wanted)) : [];
+        const foldedAway = new Set<unknown>([...restRows, ...restFound]);
+        const shownRows = open ? rows : rows.filter((p) => !foldedAway.has(p));
+        const shownFound = open ? group.found : group.found.filter((p) => !foldedAway.has(p));
+        const restTicked = restRows.filter((p) => chosen.has(p.id)).length;
+        const addable = group.found.filter((p) => !p.skippedReason && matchesWanted(foundAsPerson(p), wanted));
+        const status = statuses[key];
+        const peopleHere = rows.length + group.found.length;
+        // The run's own words are progress while it works, and the skipped
+        // note afterwards; once it is over, the status line says what it came to.
+        const showRunMessage = Boolean(run) && (searching
+          || (run?.state === 'done' && !run.paused && (peopleHere > 0 || /skipped/i.test(run.message || ''))));
         const isFolded = Boolean(folded[key]);
         const bodyId = `group-${key.replace(/[^a-z0-9]+/gi, '-')}`;
         return (
@@ -285,7 +299,7 @@ export default function RecipientPicker({
                   aria-expanded={!isFolded}
                   aria-controls={bodyId}
                   aria-label={`${isFolded ? 'Show' : 'Hide'} people at ${company.name}`}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-pale-sky/70"
+                  className="ui-button ui-button--ghost ui-button--sm ui-button--icon"
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
                        className={`transition-transform ${isFolded ? '-rotate-90' : ''}`}>
@@ -319,21 +333,30 @@ export default function RecipientPicker({
               </span>
             </div>
 
-            {mode !== 'review' && run && run.state !== 'idle' && (
+            {mode !== 'review' && status && (
+              <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${status.tone === 'paused' ? 'text-amber-900' : 'text-slate-600'}`}
+                 data-testid="company-status" data-tone={status.tone}>
+                {status.long}
+              </p>
+            )}
+
+            {mode !== 'review' && run && run.state !== 'idle'
+              && (showRunMessage || (run.state === 'done' && run.shortfall)) && (
               <div className="border-t border-pale-sky px-3 py-2" role="status">
-                <p className={`text-xs ${run.state === 'failed' ? 'text-amber-900' : 'text-slate-600'}`}>
-                  {run.message}
-                  {/* A search that skipped people for being elsewhere offers
-                      them back in one click, rather than hiding a choice. */}
-                  {selectable && onFindEverywhere && run.state === 'done' && /skipped/i.test(run.message || '')
-                    && company.targetCountry !== '*' && (
-                    <button type="button" onClick={() => onFindEverywhere(company)}
-                            className="ml-2 underline text-deep-navy">
-                      Search all countries
-                    </button>
-                  )}
-                  {run.state === 'failed' && group.found.length ? ' · what it found so far is below' : ''}
-                </p>
+                {showRunMessage && (
+                  <p className="text-xs text-slate-600">
+                    {run.message}
+                    {/* A search that skipped people for being elsewhere offers
+                        them back in one click, rather than hiding a choice. */}
+                    {selectable && onFindEverywhere && run.state === 'done' && /skipped/i.test(run.message || '')
+                      && company.targetCountry !== '*' && (
+                      <button type="button" onClick={() => onFindEverywhere(company)}
+                              className="ml-2 underline text-deep-navy">
+                        Search all countries
+                      </button>
+                    )}
+                  </p>
+                )}
                 {run.state === 'done' && run.shortfall && (
                   <p className="mt-1 text-xs text-amber-900" data-testid="shortfall">
                     Only {run.shortfall.found} qualified {run.shortfall.found === 1 ? 'person' : 'people'} found
@@ -353,16 +376,16 @@ export default function RecipientPicker({
 
             {/* Hidden, not unmounted: unfolding is instant and loses nothing. */}
             <div id={bodyId} hidden={isFolded}>
-              {rows.length === 0 && group.found.length === 0 && !searching && mode !== 'review' && (
+              {peopleHere === 0 && !searching && mode !== 'review' && (
                 <p className="px-3 py-2 text-sm text-slate-500">
-                  {selectable
-                    ? 'Nobody here matches what you are looking at. Find people for this company from its lane, import a list, or widen the filters above.'
-                    : 'Nobody on file here yet.'}
+                  {selectable && (query.trim() || level !== 'all')
+                    ? 'Nobody matches your filters. Widen them above.'
+                    : 'Nobody on file here yet. Use Find people to search, or import a list.'}
                 </p>
               )}
 
               <ul className="divide-y divide-pale-sky">
-                {rows.map((person) => {
+                {shownRows.map((person) => {
                   const writableRow = isWritable(person);
                   const on = chosen.has(person.id);
                   return (
@@ -378,29 +401,8 @@ export default function RecipientPicker({
                         />
                       )}
                       <span className="min-w-0 flex-1">
-                        <span className="font-medium text-deep-navy">{person.name || person.email}</span>
-                        <span className="text-slate-500"> · {person.title || 'no title'}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          {/* The title outranks the stored level: a CFO whose
-                              filing title reads as working level is still a CFO. */}
-                          {!looksLikePerson(person) ? (
-                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900"
-                                  title="This name looks like page text a search picked up, not a person, so it is not ticked by default">
-                              Not a person? Check the name
-                            </span>
-                          ) : isTooSenior(person) ? (
-                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900"
-                                  title="Chief officers, presidents and senior vice presidents rarely answer a student's cold email, so they are not ticked by default">
-                              Very senior · rarely replies
-                            </span>
-                          ) : (
-                            <span className={`rounded-full px-2 py-0.5 ${
-                              levelOf(person) === 'working' ? 'bg-emerald-50 text-emerald-800'
-                                : levelOf(person) === 'board' ? 'bg-amber-50 text-amber-800'
-                                  : 'bg-pale-sky/60 text-deep-navy'}`}>
-                              {LEVEL_LABEL[levelOf(person)]}
-                            </span>
-                          )}
+                        <PersonHeadline name={person.name || person.email} person={person} company={company.name} />
+                        <PersonWhy person={person} wanted={wanted}>
                           {writableRow
                             ? <span className="truncate">{person.email}</span>
                             : <span className="text-amber-800">no address yet</span>}
@@ -408,7 +410,7 @@ export default function RecipientPicker({
                             <span>written {shortDate(person.last_sent_at)}
                               {person.last_campaign_name ? ` · ${person.last_campaign_name}` : ''}</span>
                           )}
-                        </span>
+                        </PersonWhy>
                       </span>
                     </li>
                   );
@@ -425,7 +427,7 @@ export default function RecipientPicker({
                       <button
                         type="button"
                         disabled={Boolean(adding[key])}
-                        onClick={() => void add(key, 'all')}
+                        onClick={() => void add(key, addable.map((p) => p.id))}
                         className="ui-button ui-button--secondary ui-button--sm"
                       >
                         {adding[key] ? 'Adding…' : `Add all ${addable.length} found`}
@@ -438,9 +440,8 @@ export default function RecipientPicker({
                       return (
                         <li key={person.id} className="flex items-start gap-3 px-3 py-2 text-sm" data-found={person.id}>
                           <span className="min-w-0 flex-1">
-                            <span className="font-medium text-deep-navy">{name}</span>
-                            <span className="text-slate-500"> · {person.title || 'no title'}</span>
-                            <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <PersonHeadline name={name || ''} person={foundAsPerson(person)} company={company.name} />
+                            <PersonWhy person={foundAsPerson(person)} wanted={wanted}>
                               <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">found</span>
                               {person.groupUnit && (
                                 <span className="rounded-full bg-pale-sky/60 px-2 py-0.5 text-slate-600" data-testid="group-unit"
@@ -452,7 +453,7 @@ export default function RecipientPicker({
                               {person.skippedReason && (
                                 <span className="text-amber-900">not added: {person.skippedReason}</span>
                               )}
-                            </span>
+                            </PersonWhy>
                           </span>
                           {selectable && !person.skippedReason && (
                             <button
@@ -469,18 +470,22 @@ export default function RecipientPicker({
                       );
                     })}
                   </ul>
-                  {held.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowHeld((prev) => ({ ...prev, [key]: !prev[key] }))}
-                      className="w-full border-t border-pale-sky px-3 py-2 text-left text-xs text-slate-600 underline"
-                    >
-                      {showHeld[key]
-                        ? 'Hide the very senior and unclear names'
-                        : `Show ${held.length} more: very senior, or the name is unclear`}
-                    </button>
-                  )}
                 </div>
+              )}
+
+              {restRows.length + restFound.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowOthers((prev) => ({ ...prev, [key]: !prev[key] }))}
+                  aria-expanded={open}
+                  className="w-full border-t border-pale-sky px-3 py-2 text-left text-xs text-slate-600 underline"
+                  data-testid="show-others"
+                >
+                  {open
+                    ? 'Show fewer: only the people who match'
+                    : `Show ${restRows.length + restFound.length} more: other levels, very senior or unclear names${
+                      restTicked ? ` (${restTicked} ticked)` : ''}`}
+                </button>
               )}
             </div>
           </div>

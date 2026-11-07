@@ -569,12 +569,16 @@ async def search_person(req: SearchPersonRequest):
     if not query:
         raise HTTPException(400, "Name is required")
 
-    from app.services.web_fetch import web_search_configured, web_search
+    from app.services.web_fetch import PROVIDER_MEMBER_MESSAGE, last_search_failure_kind, web_search_configured, web_search
 
     search_query = f"{req.name} contact email professional {req.company or ''}".strip()
     if web_search_configured():
         try:
             raw_results = await web_search(search_query, max_results=10)
+            kind = last_search_failure_kind()
+            if not raw_results and kind:
+                # The search could not run: not the same as finding nothing.
+                return {"query": query, "results": [], "summary": None, "message": PROVIDER_MEMBER_MESSAGE[kind]}
             results = [{"title": r.get("title"), "url": r.get("url"), "content": (r.get("content") or "")[:500]} for r in raw_results]
         except Exception as e:
             return {"query": query, "results": [], "summary": None, "message": str(e)}

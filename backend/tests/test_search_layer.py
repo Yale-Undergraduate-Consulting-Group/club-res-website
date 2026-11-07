@@ -1,6 +1,6 @@
-"""The search layer every caller shares: one pacer for Monid's free-tier
-limit (30 searches/min), one club-wide cache of answers, one usage count the
-builder budgets against.
+"""The search layer every caller shares: one club-wide Monid request pacer
+(30 searches/min), one shared cache of answers, and one usage count the builder
+budgets against.
 
 A burst waits for a slot instead of failing; a repeated query costs nothing,
 even after a restart; "nothing found" is re-asked sooner than a hit; a

@@ -4,6 +4,7 @@ import AppSubnav from '../components/AppSubnav';
 import PageHeader from '../components/PageHeader';
 import CompanyRegister from '../components/discovery/CompanyRegister';
 import CampaignPipeline from '../components/discovery/CampaignPipeline';
+import { Button } from '../components/ui/Primitives';
 import { useUrlTab } from '../lib/useUrlTab';
 type ScraperTab = 'company' | 'import' | 'register';
 
@@ -148,9 +149,9 @@ export default function Scraper() {
             onChange={handleImport}
             className="hidden"
           />
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing} className="w-full py-3.5 rounded-xl bg-[var(--btn-primary-bg)] hover:bg-[var(--btn-primary-hover)] text-[var(--btn-primary-text)] text-[15px] font-semibold disabled:opacity-50">
+          <Button className="w-full" onClick={() => fileInputRef.current?.click()} disabled={importing}>
             {importing ? 'Uploading…' : 'Import file'}
-          </button>
+          </Button>
         </div>
       </div>
       )}

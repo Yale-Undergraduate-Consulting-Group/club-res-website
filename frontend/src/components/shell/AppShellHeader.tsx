@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { NAV_GROUPS, TOP_LEVEL_IDS, type NavItem } from '../../lib/navConfig';
 import AppNavLink from './AppNavLink';
+import { Button } from '../ui/Primitives';
 
 type AppShellHeaderProps = {
   user: { email: string; name?: string; picture?: string };
@@ -74,9 +75,9 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
           <NavLink to="/profile" className="app-shell-profile-link app-shell-header-profile">
             {user.name || user.email?.split('@')[0] || 'User'}
           </NavLink>
-          <button type="button" onClick={onLogout} className="app-nav-util-btn app-shell-header-logout">
+          <Button variant="secondary" size="sm" onClick={onLogout} className="app-shell-header-logout">
             Log out
-          </button>
+          </Button>
         </div>
       </div>
     </header>
