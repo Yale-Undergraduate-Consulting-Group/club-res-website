@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -107,6 +108,30 @@ def the_headline_employer_decides() -> None:
         assert '-"amazon development centre india"' in q and len(q) <= 300, q
     pool = W.round_query_pool("Amazon", "amazon.com", "", AMAZON)
     assert pool and not {q for q, page in pool if page == 0} & set(queries), pool
+
+    # A team-lead search spends its profile queries on directors, heads and
+    # managers, never on the C-suite; the executive search does the opposite.
+    working = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, "working")
+    executive = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, "executive")
+    for q in working:
+        assert not re.search(r"\bCEO\b|\bCFO\b|leadership OR executives|\"leadership team\"", q), q
+    assert any('"director of" OR "head of"' in q for q in working), working
+    assert any("CEO OR CFO" in q for q in executive), executive
+    assert not {q for q, _ in W.round_query_pool("Amazon", "amazon.com", "", AMAZON, "working")
+                if '"vice president"' in q or '"chief"' in q}
+    # Titles in the member's words are one OR group, not a run-on phrase.
+    hinted = W.first_wave_queries("Acme", "acme.com", "Director of, Head of, Manager", None)[0]
+    assert hinted == '"Acme" ("Director of" OR "Head of" OR "Manager") site:linkedin.com/in', hinted
+
+    # Who counts as a team lead: the same rule as the page's "too senior".
+    from app.services.company_register import fit_level
+    for title, level in [
+        ("Director of Operations", "working"), ("Head of Partnerships", "working"),
+        ("Senior Manager, Strategy", "working"), ("VP, Strategy", "working"),
+        ("Co-Founder & Co-CEO", "executive"), ("SVP, Chief Financial Officer", "executive"),
+        ("President", "executive"), ("Board Member", "board"), (None, "unknown"),
+    ]:
+        assert fit_level(title) == level, (title, fit_level(title))
 
     # The units survive the browser round trip.
     assert sanitize_entity(AMAZON)["units"][0] == {
@@ -207,16 +232,18 @@ async def _run(run_id: int, target: int, first_wave: list[dict], later: list[dic
 
 
 async def a_short_first_wave_searches_again_until_the_goal() -> None:
-    first = [profile(n, "Software Engineer at Amazon") for n in FIRST_NAMES]
+    first = [profile(n, "Engineering Manager at Amazon") for n in FIRST_NAMES]
     first.append(profile("Pat Lee", "Partner manager at Acme (Amazon reseller)"))
     later = [profile("Dana Kim", "Solutions Architect at Amazon Web Services (AWS)")]
     later += [profile(n, "Senior Manager at Amazon") for n in MORE_NAMES]
     run, saved, asked = await _run(21, 10, first, later)
 
     research = json.loads(run["research_json"])
-    assert run["status"] == "completed" and run["prospects_count"] == 10 == len(saved), (run, saved)
-    assert research["rounds"] >= 2 and research["shortfall"] is None, research
-    assert run["progress_message"].startswith("Done — 10 saved"), run
+    # The goal counts team leads; Dana, an architect, is saved but not counted.
+    assert run["status"] == "completed" and research["level"] == "working", (run, saved)
+    assert research["level_found"] >= 10 and research["shortfall"] is None, research
+    assert run["prospects_count"] == len(saved) == research["level_found"] + 1, (run, research)
+    assert run["progress_message"].startswith(f"Done — {len(saved)} saved"), run
     emails = {r["email"] for r in saved}
     assert not emails & {"info@amazon.com", "sales@amazon.com", "careers@amazon.com"}, emails
     assert all(not CS.is_role_based_local_part(e.split("@")[0]) for e in emails), emails
@@ -228,25 +255,46 @@ async def a_short_first_wave_searches_again_until_the_goal() -> None:
 
 
 async def dry_sources_end_with_an_exhausted_shortfall() -> None:
-    first = [profile(n, "Software Engineer at Amazon") for n in FIRST_NAMES[:3]]
+    first = [profile(n, "Engineering Manager at Amazon") for n in FIRST_NAMES[:3]]
     run, saved, asked = await _run(22, 10, first, [])
     research = json.loads(run["research_json"])
     assert len(saved) == 3, saved
-    assert research["shortfall"] == {"target": 10, "found": 3, "reason": "exhausted"}, research
-    assert run["progress_message"].endswith("3 of 10 qualified people (no more found)"), run
+    assert research["shortfall"] == {"target": 10, "found": 3, "reason": "exhausted", "level": "working"}, research
+    assert run["progress_message"].endswith("3 of 10 team leads (no more found)"), run
 
 
 async def failing_search_is_not_reported_as_exhausted() -> None:
-    first = [profile(n, "Software Engineer at Amazon") for n in FIRST_NAMES[:3]]
+    first = [profile(n, "Engineering Manager at Amazon") for n in FIRST_NAMES[:3]]
     run, saved, _ = await _run(23, 10, first, [], later_fail=True)
     research = json.loads(run["research_json"])
     assert len(saved) == 3, saved
     assert research["shortfall"]["reason"] == "search_failed", research
-    assert run["progress_message"].endswith("3 of 10 qualified people (web search failing)"), run
+    assert run["progress_message"].endswith("3 of 10 team leads (web search failing)"), run
+
+
+async def executives_do_not_count_toward_a_team_lead_goal() -> None:
+    # A first wave of chief officers reaches "4 people" but not the goal: the
+    # run keeps searching for team leads, keeps the executives, and ranks the
+    # team leads above them.
+    first = [profile(n, "Chief Operating Officer at Amazon") for n in FIRST_NAMES]
+    later = [profile(n, "Director of Partnerships at Amazon") for n in MORE_NAMES[:6]]
+    run, saved, asked = await _run(26, 4, first, later)
+    research = json.loads(run["research_json"])
+    assert research["rounds"] >= 2 and research["level_found"] >= 4, research
+    assert research["shortfall"] is None, research
+    names = {f'{r["first_name"]} {r["last_name"]}' for r in saved}
+    assert set(FIRST_NAMES) <= names, names   # executives are kept, not dropped
+    db = await get_db()
+    try:
+        order = [r["title"] for r in await (await db.execute(
+            "SELECT title FROM yucgoutreach_prospects WHERE run_id=26 ORDER BY score DESC, id")).fetchall()]
+    finally:
+        await db.close()
+    assert "Chief" not in (order[0] or ""), order
 
 
 async def everyone_found_is_kept_past_the_goal() -> None:
-    first = [profile(n, "Software Engineer at Amazon") for n in FIRST_NAMES]
+    first = [profile(n, "Engineering Manager at Amazon") for n in FIRST_NAMES]
     run, saved, _ = await _run(24, 2, first, [])
     assert len(saved) == 4, saved
     assert json.loads(run["research_json"])["shortfall"] is None, run
@@ -254,7 +302,7 @@ async def everyone_found_is_kept_past_the_goal() -> None:
 
 
 async def builder_runs_never_join_officer_tracking() -> None:
-    first = [profile(n, "Software Engineer at Amazon") for n in FIRST_NAMES]
+    first = [profile(n, "Engineering Manager at Amazon") for n in FIRST_NAMES]
     run, saved, _ = await _run(25, 2, first, [], origin="builder")
     assert run["status"] == "completed" and len(saved) == 4, (run, saved)
     REMEMBERED.assert_not_awaited()
@@ -274,6 +322,7 @@ async def main() -> None:
     await dry_sources_end_with_an_exhausted_shortfall()
     await failing_search_is_not_reported_as_exhausted()
     await everyone_found_is_kept_past_the_goal()
+    await executives_do_not_count_toward_a_team_lead_goal()
     await builder_runs_never_join_officer_tracking()
 
 

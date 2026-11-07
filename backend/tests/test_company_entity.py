@@ -375,7 +375,7 @@ def main() -> None:
                     'company_name': 'Barclays Global Service Centre', 'title_hints': 'analyst', 'entity': entity})
                 assert resp.status_code == 200, resp.text
                 stored = json.loads(asyncio.run(research_of(resp.json()['id'])))
-                assert stored == {'title_hints': 'analyst', 'entity': entity}, stored
+                assert stored == {'level': 'working', 'title_hints': 'analyst', 'entity': entity}, stored
 
                 huge = {
                     'legal_name': 'X' * 5000, 'display_name': 'Barclays', 'brand_words': ['barclays'] * 50,
@@ -396,9 +396,10 @@ def main() -> None:
                 assert got['exclude'][0]['domains'] == ['a.in'] * 5 and got['exclude'][0]['kind'] == 'subsidiary', got
                 assert got['target_country'] == '*', got
 
-                # No entity: the run is exactly as before.
+                # No entity: the run carries only who to look for (team leads by default).
                 resp = client.post('/api/yucgoutreach/runs', json={'company_name': 'Globex'})
-                assert resp.status_code == 200 and asyncio.run(research_of(resp.json()['id'])) is None
+                assert resp.status_code == 200
+                assert json.loads(asyncio.run(research_of(resp.json()['id']))) == {'level': 'working'}
 
 
 if __name__ == '__main__':
