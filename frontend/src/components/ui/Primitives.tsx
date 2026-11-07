@@ -45,12 +45,17 @@ export function ConfirmDialog({ open, title, body, confirmLabel, danger = false,
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
+  // The page re-renders while the dialog is open (data arriving, inline
+  // onClose); reading these through a ref keeps focus where the member put it
+  // instead of resetting it on every render.
+  const latest = useRef({ busy, onClose });
+  useEffect(() => { latest.current = { busy, onClose }; }, [busy, onClose]);
   useEffect(() => {
     if (!open) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancelRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose();
+      if (event.key === 'Escape' && !latest.current.busy) latest.current.onClose();
       if (event.key === 'Tab') {
         const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') || []);
         const first = controls[0]; const last = controls.at(-1);
@@ -61,7 +66,7 @@ export function ConfirmDialog({ open, title, body, confirmLabel, danger = false,
     };
     window.addEventListener('keydown', onKeyDown);
     return () => { window.removeEventListener('keydown', onKeyDown); previousFocus?.focus(); };
-  }, [open, busy, onClose]);
+  }, [open]);
   if (!open) return null;
 
   return (
