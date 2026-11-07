@@ -56,7 +56,7 @@ async function mockInput(page: Page, opts: { limited?: boolean } = {}) {
     else if (p === '/api/yucgoutreach/register') {
       // The top register row for "HBO" is a subsidiary nobody asked for.
       body = (url.searchParams.get('q') || '').toLowerCase() === 'hbo'
-        ? { items: [{ company_name: 'HBO Production UK Ltd', company_domain: null, sector_label: 'Film production' }], total: 1, limit: 8, offset: 0 }
+        ? { items: [{ entity_key: 'GB:hbo production uk', id: 1, display_name: 'HBO Production UK', legal_name: 'HBO Production UK Ltd', country: 'GB', kinds: ['uk'], locations: [], record_count: 1, officer_count: 0, working_count: 0, company_domain: null, sector_label: 'Film production' }], total: 1, limit: 8, offset: 0 }
         : { items: [], total: 0, limit: 8, offset: 0 };
     }
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
@@ -114,11 +114,11 @@ test('Enter sends the typed name to the resolver and does not take the top sugge
   const field = rail.getByLabel('Company');
   await field.fill('HBO');
   // The dropdown offers the register's row, but nobody pointed at it.
-  await expect(page.getByRole('option', { name: /HBO Production UK Ltd/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /HBO Production UK/ })).toBeVisible();
   await field.press('Enter');
 
   await expect(rail.locator('[data-company-chip="HBO"]')).toContainText('hbo.com ✓');
-  await expect(rail.locator('[data-company-chip="HBO Production UK Ltd"]')).toHaveCount(0);
+  await expect(rail.locator('[data-company-chip="HBO Production UK"]')).toHaveCount(0);
   expect(resolved).toEqual(['HBO']);
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
 });

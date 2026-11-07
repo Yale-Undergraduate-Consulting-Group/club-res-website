@@ -72,7 +72,7 @@ async def _register_targets(register_ids: list[int]) -> list[dict]:
     db = await get_db()
     try:
         rows = await (await db.execute(
-            f"""SELECT company_name, company_domain, sector_label, source, tier, employees
+            f"""SELECT COALESCE(display_name, company_name) AS company_name, company_domain, sector_label, source, tier, employees
                 FROM company_register WHERE id IN ({placeholders})""",
             ids,
         )).fetchall()

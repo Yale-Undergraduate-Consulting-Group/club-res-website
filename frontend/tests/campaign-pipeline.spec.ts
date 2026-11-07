@@ -12,8 +12,8 @@ const PEOPLE = [
 /** The resolver's contract: a checked website only where one could be
  *  checked, otherwise the name as typed. */
 function resolveFor(q: string) {
-  if (q === 'NVIDIA Corporation') {
-    return { name: 'NVIDIA Corporation', domain: 'nvidia.com', domain_verified: true, linkedin_url: null, source: 'register', alternatives: [] };
+  if (q === 'NVIDIA') {
+    return { name: 'NVIDIA', domain: 'nvidia.com', domain_verified: true, linkedin_url: null, source: 'register', alternatives: [] };
   }
   if (/linkedin\.com\/company\/bartik-foundation/i.test(q)) {
     return { name: 'Bartik Foundation', domain: 'bartik.org', domain_verified: true, linkedin_url: 'https://www.linkedin.com/company/bartik-foundation', source: 'linkedin', alternatives: [] };
@@ -247,26 +247,26 @@ test('picking a suggested company adds it with its domain, not the half-typed te
   const { runsCreated } = await mockPipeline(page);
   // Registered after the shared mock, so the register answers first.
   await page.route('**/api/yucgoutreach/register?*', route => route.fulfill({ json: {
-    items: [{ company_name: 'NVIDIA Corporation', company_domain: 'nvidia.com', sector_label: 'Semiconductors' }],
+    items: [{ entity_key: 'US:nvidia', id: 1, display_name: 'NVIDIA', legal_name: 'NVIDIA Corporation', country: 'US', kinds: ['us_public'], locations: [], record_count: 1, officer_count: 0, working_count: 0, company_domain: 'nvidia.com', sector_label: 'Semiconductors' }],
     total: 1, limit: 8, offset: 0,
   } }));
   await page.goto('/scraper?view=company');
   const rail = page.locator('[data-section="campaign-pipeline"] [data-rail]');
 
   await rail.getByLabel('Company').fill('nvid');
-  await page.getByRole('option', { name: /NVIDIA Corporation/ }).click();
-  const chip = rail.locator('[data-company-chip="NVIDIA Corporation"]');
+  await page.getByRole('option', { name: /NVIDIA/ }).click();
+  const chip = rail.locator('[data-company-chip="NVIDIA"]');
   await expect(chip).toContainText('nvidia.com ✓');
   await expect(rail.locator('[data-company-chip="nvid"]')).toHaveCount(0);
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
 
   // Adding it again used to toggle it off.
   await rail.getByLabel('Company').fill('nvid');
-  await page.getByRole('option', { name: /NVIDIA Corporation/ }).click();
+  await page.getByRole('option', { name: /NVIDIA/ }).click();
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
   await expect(chip).toBeVisible();
 
   // Its domain came with it: the search is told, not left to guess one.
   await expect.poll(() => runsCreated.length).toBe(1);
-  expect(runsCreated[0]).toMatchObject({ company_name: 'NVIDIA Corporation', company_domain: 'nvidia.com' });
+  expect(runsCreated[0]).toMatchObject({ company_name: 'NVIDIA', company_domain: 'nvidia.com' });
 });
