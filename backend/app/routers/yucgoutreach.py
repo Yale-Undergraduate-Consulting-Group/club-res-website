@@ -35,6 +35,9 @@ class YucgOutreachRunCreate(BaseModel):
     entity: dict[str, Any] | None = None
     max_prospects: int = Field(60, ge=1, le=800)  # target count of qualified people, not just a cap
     worker_concurrency: int = Field(4, ge=1, le=16)
+    # Who to look for: team leads (default), senior leaders or board. The goal
+    # counts people at this level; the searches and ranking follow it.
+    level: Literal["working", "executive", "board"] = "working"
 
 
 def _member_research_json(text: str | None) -> str | None:
@@ -106,6 +109,7 @@ async def create_run(body: YucgOutreachRunCreate, user: dict = Depends(get_curre
             entity=body.entity,
             max_prospects=body.max_prospects,
             worker_concurrency=body.worker_concurrency,
+            level=body.level,
         )
         await db.commit()
     finally:

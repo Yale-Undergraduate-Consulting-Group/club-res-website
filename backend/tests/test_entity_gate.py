@@ -373,13 +373,14 @@ async def barclays_run_end_to_end() -> None:
     assert skipped["other_entity"]["examples"] == ["Priya Sharma"], skipped
     assert set(skipped["other_country"]["examples"]) == {"Rahul Verma", "Arjun Patel", "Michael Brown"}, skipped
     assert set(skipped["not_a_person"]["examples"]) == {"Plc Barclays", "West London"}, skipped
-    # Asked for 25 (the column's default); the later rounds found nobody new.
+    # Asked for 25 team leads (the column's default); the later rounds found
+    # nobody new, and one of the two saved is a team lead.
     assert row["progress_message"] == (
         "Done — 2 saved · 7 skipped (1 other Barclays entities, 3 outside UK, "
-        "1 at other mail domains, 2 not people) · 2 of 25 qualified people (no more found)"
+        "1 at other mail domains, 2 not people) · 1 of 25 team leads (no more found)"
     ), row["progress_message"]
     research = json.loads(row["research_json"])
-    assert research["shortfall"] == {"target": 25, "found": 2, "reason": "exhausted"}, research
+    assert research["shortfall"] == {"target": 25, "found": 1, "reason": "exhausted", "level": "working"}, research
     remembered = remember.await_args.args[2]
     assert {c["name"] for c in remembered} == {"James Carter", "Emma Wilson"}, remembered
 

@@ -1345,6 +1345,7 @@ export const api = {
       max_prospects?: number;
       worker_concurrency?: number;
       entity?: EntityProfile;
+      level?: 'working' | 'executive' | 'board';
     }) =>
       fetchApi<{ id: number; status: string }>('/api/yucgoutreach/runs', {
         method: 'POST',

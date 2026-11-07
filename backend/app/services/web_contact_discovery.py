@@ -954,6 +954,7 @@ async def discover_contacts_from_web(
     skips: dict[str, dict[str, str]] | None = None,
     queries: list[str | tuple[str, int]] | None = None,
     seen: dict[str, set[str]] | None = None,
+    level: str | None = "working",
 ) -> list[dict]:
     """
     Search the web for named employees (LinkedIn, press, directories).
@@ -978,7 +979,7 @@ async def discover_contacts_from_web(
         if on_progress:
             await on_progress(msg, pct)
 
-    batch = queries if queries is not None else first_wave_queries(company, dom, title_hints, entity)
+    batch = queries if queries is not None else first_wave_queries(company, dom, title_hints, entity, level)
     await emit(f"Running {len(batch)} web searches at once…", 15)
     all_results = await _tavily_parallel(batch, max_results=SEARCH_PAGE_RESULTS)
     if cancel_event and cancel_event.is_set():
@@ -1074,8 +1075,60 @@ def _with_negatives(query: str, negatives: list[str]) -> str:
     return query
 
 
+#: The level-specific profile searches of a run's first wave. Team leads are
+#: the default: the directors, heads and managers who can champion a student
+#: project. Executive and board searches are only asked when chosen.
+_LEVEL_FIRST_WAVE: dict[str, tuple[str, ...]] = {
+    "working": (
+        '("director of" OR "head of" OR "senior manager") site:linkedin.com/in',
+        '(manager OR lead OR "program manager" OR "product manager") site:linkedin.com/in',
+        '(strategy OR operations OR partnerships OR "business development" OR innovation) '
+        '(manager OR director OR lead) site:linkedin.com/in',
+        'senior manager OR director biography',
+    ),
+    "executive": (
+        'leadership OR executives site:linkedin.com/in',
+        'CEO OR CFO OR CTO OR "head of" site:linkedin.com/in',
+        'employees VP OR Director OR Manager site:linkedin.com/in',
+        '"leadership team" OR "executive team"',
+    ),
+    "board": (
+        '"board of directors" OR "board member" OR trustee',
+        'leadership OR executives site:linkedin.com/in',
+        '"board of directors" site:linkedin.com/in',
+        '"leadership team" OR "our board"',
+    ),
+}
+
+#: Title and seniority words a later round pairs with the quoted company, so a
+#: round asks what the first wave did not.
+ROUND_TITLE_VARIANTS: dict[str, tuple[str, ...]] = {
+    "working": ("director", "manager", "head of", "senior manager", "lead", "principal",
+                "strategy manager", "operations manager", "partnerships", "business development",
+                "program manager", "product manager"),
+    "executive": ("vice president", "chief", "head of", "director", "president", "general manager"),
+    "board": ("board member", "trustee", "board of directors", "chair"),
+}
+
+
+def wanted_level(level: str | None) -> str:
+    """working (team leads), executive or board; anything else is working."""
+    return level if level in _LEVEL_FIRST_WAVE else "working"
+
+
+def _hint_terms(hints: str) -> str:
+    """Comma-separated titles as one OR group: "Director of, Head of" becomes
+    ("Director of" OR "Head of"), which an engine reads as alternatives rather
+    than one run-on phrase."""
+    parts = [p.strip().strip('"') for p in hints.split(",") if p.strip().strip('"')]
+    if len(parts) <= 1:
+        return f'"{parts[0]}"' if parts else ""
+    return "(" + " OR ".join(f'"{p}"' for p in parts) + ")"
+
+
 def first_wave_queries(
     company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
+    level: str | None = "working",
 ) -> list[str]:
     """The first round of a run's web searches.
 
@@ -1084,27 +1137,27 @@ def first_wave_queries(
     reachable people come back is how many different places are asked:
     profiles, the company's own pages, appointment notices, and the places
     addresses are actually published. The company is quoted everywhere: bare,
-    "Target" and "Shell" are words, not companies."""
+    "Target" and "Shell" are words, not companies. The profile searches follow
+    the level asked for, so a team-lead search does not spend its wave on the
+    C-suite."""
     brand = search_brand(company, entity)
-    queries = [
-        f'"{brand}" leadership OR executives site:linkedin.com/in',
-        f'"{brand}" employees VP OR Director OR Manager site:linkedin.com/in',
+    queries = [f'"{brand}" {q}' for q in _LEVEL_FIRST_WAVE[wanted_level(level)]]
+    queries += [
         f'"{brand}" team member site:linkedin.com/in',
-        f'"{brand}" CEO OR CFO OR CTO OR "head of" site:linkedin.com/in',
-        f'"{brand}" senior manager OR director biography',
         f'"{brand}" press release appointed OR joins OR named',
         # People are reachable when a page prints their address or the company
         # publishes who does what, so ask for those pages directly.
-        f'"{brand}" "our team" OR "leadership team" OR "meet the team"',
+        f'"{brand}" "our team" OR "meet the team"',
         f'"{brand}" spokesperson OR "media contact" OR "press contact" email',
         f'"{brand}" conference speaker OR panelist OR webinar',
     ]
     hints = (title_hints or "").strip()
     if hints:
-        first_hint = hints.split(",")[0].strip()
+        first_hint = hints.split(",")[0].strip().strip('"')
+        terms = _hint_terms(hints)
         queries[0:0] = [
-            f'"{brand}" {hints} site:linkedin.com/in',
-            f'"{brand}" {hints} email OR contact OR LinkedIn',
+            f'"{brand}" {terms} site:linkedin.com/in',
+            f'"{brand}" {terms} email OR contact OR LinkedIn',
             # The hint as the company would write it on its own pages.
             f'"{brand}" "{first_hint}" site:{dom}' if dom else f'"{brand}" "{first_hint}"',
         ]
@@ -1134,29 +1187,25 @@ def first_wave_queries(
     return list(dict.fromkeys(_with_negatives(q, negatives) for q in queries))
 
 
-#: Title and seniority words a later round pairs with the quoted company, so a
-#: round asks what the first wave did not.
-ROUND_TITLE_VARIANTS = ("director", "vice president", "manager", "head of", "engineer", "analyst",
-                        "senior manager", "principal", "lead", "associate")
-
-
 def round_query_pool(
     company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
+    level: str | None = "working",
 ) -> list[tuple[str, int]]:
     """Every (query, results page) a run's later rounds may ask, best first:
-    the next page of the first wave's profile searches, title and seniority
-    variants, the HQ city with a few titles, then the group units. None of them
-    is a first-wave query, so no round repeats one. At most ~25 searches."""
+    the next page of the first wave's profile searches, title variants for the
+    level asked for, the HQ city with a few of them, then the group units. None
+    of them is a first-wave query, so no round repeats one. At most ~25 searches."""
+    level = wanted_level(level)
     brand = search_brand(company, entity)
     negatives = _negatives(entity, brand)
-    first = first_wave_queries(company, dom, title_hints, entity)
+    first = first_wave_queries(company, dom, title_hints, entity, level)
     pool = [(q, 1) for q in first if "site:linkedin.com/in" in q]
     pool += [(_with_negatives(f'"{brand}" "{t}" site:linkedin.com/in', negatives), 0)
-             for t in ROUND_TITLE_VARIANTS]
+             for t in ROUND_TITLE_VARIANTS[level]]
     city = ((entity or {}).get("hq_city") or "").strip()
     if city:
         pool += [(_with_negatives(f'"{brand}" "{city}" "{t}" site:linkedin.com/in', negatives), 0)
-                 for t in ("director", "manager", "engineer", "analyst")]
+                 for t in ROUND_TITLE_VARIANTS[level][:4]]
     pool += [(f'"{u["name"]}" "{brand}" site:linkedin.com/in', 0) for u in entity_units(entity)[:5]]
     asked = {(q, 0) for q in first}
     return [item for item in dict.fromkeys(pool) if item not in asked]
@@ -1173,7 +1222,7 @@ def _entity_queries(brand: str, hints: str, entity: dict[str, Any] | None) -> li
         out.append(f'"{brand}" "{city}" site:linkedin.com/in')
     legal = (entity.get("legal_name") or "").strip()
     if legal and _entity_phrase(legal) != _entity_phrase(brand):
-        out.append(f'"{legal}" {hints or "director OR head"} site:linkedin.com/in')
+        out.append(f'"{legal}" {_hint_terms(hints) if hints else "director OR head"} site:linkedin.com/in')
     return out
 
 

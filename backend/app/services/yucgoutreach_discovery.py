@@ -56,6 +56,8 @@ DISCOVERY_ROUND_QUERIES = int(os.getenv("DISCOVERY_ROUND_QUERIES", "8") or 8)
 #: has no more to find through these sources.
 DISCOVERY_ROUND_MIN_NEW = int(os.getenv("DISCOVERY_ROUND_MIN_NEW", "2") or 2)
 #: How a short run explains why it stopped. Only "exhausted" is a claim about the company.
+#: What a run's goal counts, in the words the page uses.
+_LEVEL_WORD = {"working": "team leads", "executive": "senior leaders", "board": "board members"}
 _STOP_LABEL = {
     "exhausted": "no more found",
     "time_budget": "search time limit reached",
@@ -188,6 +190,20 @@ def _title_hints_from_spec(spec: dict[str, Any]) -> str:
     return ""
 
 
+def _level_from_spec(spec: dict[str, Any]) -> str:
+    """Who to look for: working (team leads, the default), executive or board.
+    Runs made before the choice reached the server carry none and count as
+    team-lead searches, which is what the page asked for by default."""
+    from app.services.web_contact_discovery import wanted_level
+
+    raw = spec.get("research_json") or ""
+    try:
+        data = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        data = {}
+    return wanted_level(data.get("level") if isinstance(data, dict) else None)
+
+
 def _entity_from_spec(spec: dict[str, Any], company: str | None = None) -> dict[str, Any]:
     """The run's entity profile from research_json["entity"].
 
@@ -273,7 +289,7 @@ def _grounded_at_company(
 
 async def _tavily_name_seeds(
     company_name: str, domain: str, max_n: int, custom_patterns: list[str], title_hints: str = "",
-    *, entity: dict[str, Any] | None = None, skips: dict | None = None,
+    *, entity: dict[str, Any] | None = None, skips: dict | None = None, level: str = "working",
 ) -> list[dict]:
     """Supplement merged list with Tavily+LLM name extraction when Apify/web yield few rows."""
     from app.services.web_contact_discovery import (
@@ -285,7 +301,7 @@ async def _tavily_name_seeds(
     dom = normalize_domain(domain) if domain else ""
     # The web stage's first query, word for word: the run asks it once and
     # both stages read the answer (a second copy used to go out in parallel).
-    query = first_wave_queries(company_name, dom, title_hints, entity)[0]
+    query = first_wave_queries(company_name, dom, title_hints, entity, level)[0]
     results = await _tavily_search(query, max_results=SEARCH_PAGE_RESULTS)
     if not results:
         return []
@@ -368,7 +384,7 @@ Results:
     return out
 
 
-def _quality_score(contact: dict, title_hints: str = "") -> float:
+def _quality_score(contact: dict, title_hints: str = "", level: str | None = None) -> float:
     score = 40.0
     ev = contact.get("email_verification_status") or ""
     if ev == "valid":
@@ -398,7 +414,16 @@ def _quality_score(contact: dict, title_hints: str = "") -> float:
         if len(token) >= 2 and token in blob:
             score += 10
             break
-    return max(0.0, min(100.0, score))
+    score = max(0.0, min(100.0, score))
+    if level:
+        # The level the member asked for ranks first: anyone else loses 15
+        # points after the cap, so a verified chief officer in a team-lead
+        # search sits below a verified director instead of tying at 100.
+        from app.services.company_register import fit_level
+
+        if fit_level(contact.get("title")) != level:
+            score = max(0.0, score - 15)
+    return score
 
 
 def _fit_status(score: float, contact: dict) -> str:
@@ -591,8 +616,14 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     company = (spec.get("company_name") or "").strip()
     domain_in = (spec.get("company_domain") or "").strip()
     title_hints = _title_hints_from_spec(spec)
+    level = _level_from_spec(spec)
+    from app.services.company_register import fit_level
+    level_word = _LEVEL_WORD[level]
     entity = _entity_from_spec(spec, company)
     profiled = entity.get("source") != "fallback"
+    # The goal counts people at the level asked for. Everyone else who passes
+    # is saved too, but a team-lead search does not stop because it found
+    # sixty executives.
     max_prospects = max(1, min(int(spec.get("max_prospects") or 100), YUCG_MAX_PROSPECTS))
     # The entity's mail domain is the only host an address may be built on.
     # The run used to build them on whatever domain it had, which for Barclays
@@ -658,7 +689,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             return []
         return await discover_contacts_from_web(
             cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
-            seen=seen,
+            seen=seen, level=level,
         )
 
     async def _roster() -> tuple[list[dict], str]:
@@ -699,7 +730,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         of the step is more people, so it runs with the rest and what it finds
         is used if it is new."""
         return await _tavily_name_seeds(
-            company, domain, max_prospects, custom_patterns, title_hints, entity=entity, skips=skips,
+            company, domain, max_prospects, custom_patterns, title_hints, entity=entity, skips=skips, level=level,
         )
 
     from app.services.web_contact_discovery import (
@@ -782,8 +813,12 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     out.append(c)
             return out
 
+        def _matched(rows: list[dict] | None = None) -> int:
+            """Saved people at the level asked for: what the goal counts."""
+            return sum(1 for c in (saved_rows if rows is None else rows) if fit_level(c.get("title")) == level)
+
         def _found() -> str:
-            return f"Found {len(saved_rows)} of {max_prospects} qualified people · round {round_no}"
+            return f"Found {_matched()} of {max_prospects} {level_word} · round {round_no}"
 
         async def _pipe_progress(phase: str, done: int, total: int, detail: str = "") -> None:
             label = {
@@ -797,7 +832,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 span = {"identity": 4.0, "verify": 12.0, "ai": 28.0, "done": 4.0}.get(phase, 10.0)
                 pct = min(90.0, base + (done / max(total, 1)) * span)
             else:
-                pct = min(97.0, 40.0 + 55.0 * len(saved_rows) / max_prospects)
+                pct = min(97.0, 40.0 + 55.0 * _matched() / max_prospects)
             await _run_update(
                 run_id,
                 progress_pct=pct,
@@ -824,7 +859,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     email = sanitize_email(c.get("email") or "")
                     if not email or not is_employee_outreach_email(email):
                         continue
-                    score = _quality_score(c, title_hints)
+                    score = _quality_score(c, title_hints, level)
                     secondary = score - 3 if c.get("contact_source") == "linkedin_inferred" else score
                     linkedin = c.get("linkedin_url") or ""
                     evidence_obj = {
@@ -888,7 +923,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                                    updated_at=CURRENT_TIMESTAMP, lease_expires_at=datetime('now', ?)
                                WHERE id=? AND lease_token=? AND status='running'""",
                             (
-                                f"Found {len(saved_rows) + len(written)} of {max_prospects} qualified people"
+                                f"Found {_matched(saved_rows + written)} of {max_prospects} {level_word}"
                                 f" · round {round_no}",
                                 len(saved_rows) + len(written),
                                 f"+{lease_minutes} minutes",
@@ -945,7 +980,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             candidates = _gate_rows(
                 [c for c in verified if c.get("ai_verdict") != "junk"], entity, skips, company,
             )
-            candidates.sort(key=lambda row: _quality_score(row, title_hints), reverse=True)
+            candidates.sort(key=lambda row: _quality_score(row, title_hints, level), reverse=True)
             written = await _save(candidates)
             saved_rows.extend(written)
             return len(written)
@@ -956,7 +991,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         # previous round is being verified whenever even a clean sweep of that
         # round would leave the run short, so no search is spent on a run
         # that could already reach its target.
-        pool = round_query_pool(cn, domain, title_hints, entity) if web_on else []
+        pool = round_query_pool(cn, domain, title_hints, entity, level) if web_on else []
         # Why no further round was started. Only "exhausted" claims the company
         # has no more people; the others say the search itself stopped.
         state = {"rounds": 0, "why": None, "stop": "exhausted"}
@@ -975,13 +1010,13 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             if time.monotonic() - started >= DISCOVERY_RUN_BUDGET_SEC:
                 state["why"] = "time_budget"
                 return None
-            missing = max(1, max_prospects - len(saved_rows))
+            missing = max(1, max_prospects - _matched())
             size = min(DISCOVERY_ROUND_QUERIES, max(3, -(-missing // 4)))
             batch, pool = pool[:size], pool[size:]
             state["rounds"] += 1
             return asyncio.ensure_future(discover_contacts_from_web(
                 cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
-                queries=batch, seen=seen,
+                queries=batch, seen=seen, level=level,
             ))
 
         first = _fresh(merged)
@@ -992,7 +1027,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             # The first wave is the broad one; only later rounds can show the
             # sources running dry.
             exhausted = False
-            while len(saved_rows) < max_prospects:
+            while _matched() < max_prospects:
                 if pending is None:
                     if exhausted:
                         state["stop"] = "exhausted"
@@ -1008,9 +1043,9 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 # the last one; its successor is only fetched ahead when it
                 # could still be needed.
                 if (not exhausted and len(rows) >= DISCOVERY_ROUND_MIN_NEW
-                        and len(saved_rows) + len(rows) < max_prospects):
+                        and _matched() + len(rows) < max_prospects):
                     pending = _next_round()
-                await _run_update(run_id, progress_pct=min(97.0, 40.0 + 55.0 * len(saved_rows) / max_prospects),
+                await _run_update(run_id, progress_pct=min(97.0, 40.0 + 55.0 * _matched() / max_prospects),
                                   progress_message=_found())
                 exhausted = await _qualify(rows) < DISCOVERY_ROUND_MIN_NEW
         finally:
@@ -1026,11 +1061,12 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         end_search_run(search_token)
 
     inserted = len(saved_rows)
+    matched = sum(1 for c in saved_rows if fit_level(c.get("title")) == level)
     shortfall = None
-    if inserted < max_prospects:
-        shortfall = {"target": max_prospects, "found": inserted, "reason": state["stop"]}
+    if matched < max_prospects:
+        shortfall = {"target": max_prospects, "found": matched, "reason": state["stop"], "level": level}
     short_clause = (
-        f" · {inserted} of {max_prospects} qualified people ({_STOP_LABEL.get(state['stop'], 'no more found')})"
+        f" · {matched} of {max_prospects} {level_word} ({_STOP_LABEL.get(state['stop'], 'no more found')})"
         if shortfall else ""
     )
     skipped = skipped_summary(skips, {person_name_key(c.get("name") or "") for c in saved_rows})
@@ -1071,6 +1107,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 "merged": totals["merged"],
                 "verified": totals["verified"],
                 "saved": inserted,
+                "level": level,
+                "level_found": matched,
                 "junk_filtered": totals["junk"],
                 "discovery_log_count": totals["log"],
                 "skipped": skipped,

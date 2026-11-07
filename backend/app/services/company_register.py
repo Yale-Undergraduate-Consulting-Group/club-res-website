@@ -313,6 +313,29 @@ def classify_person_level(title: str | None) -> str:
     return "unknown"
 
 
+# The same rule as the browser's isTooSenior (frontend/src/lib/recipients.ts):
+# a filing writes a CFO as "SVP, Chief Financial Officer", which the patterns
+# above read as working level, so the title decides who is too senior.
+_TOP_OFFICER = re.compile(
+    r"\b(?:c[efot]o|cmo|cio|ciso|cro|cpo|clo|chief\s+[a-z&,\s-]*officer|(?<!vice[\s-])(?<!vice\s)president"
+    r"|chair(?:man|woman|person)?|(?:co-?)?founder)\b", re.I)
+_SENIOR_VP = re.compile(r"\b(?:[escg]vp|(?:executive|senior|corporate|group)\s+vice[\s-]president)\b", re.I)
+_BOARD_SEAT = re.compile(
+    r"\b(?:committee|board\s+(?:of\s+directors|member|director)|independent\s+director|non-executive|trustee)\b", re.I)
+
+
+def fit_level(title: str | None) -> str:
+    """The level a person counts as for "Who to look for": working (team
+    leads: directors, heads of, managers, leads), executive, board or unknown.
+    Chief officers, presidents, founders, EVPs/SVPs and board seats are never
+    team leads, whatever classify_person_level read."""
+    level = classify_person_level(title)
+    text = title or ""
+    if level != "board" and (_TOP_OFFICER.search(text) or _SENIOR_VP.search(text) or _BOARD_SEAT.search(text)):
+        return "executive"
+    return level
+
+
 async def _attach_people(people_by_key: dict[tuple[str, str], list[dict[str, Any]]]) -> int:
     if not people_by_key:
         return 0
