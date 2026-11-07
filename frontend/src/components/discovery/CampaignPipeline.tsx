@@ -545,8 +545,8 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   // What a search is told, read when it starts rather than when it was
   // queued: changing who to look for while companies wait changes what all
   // of them look for.
-  const searchOptionsRef = useRef({ titleHints: searchTitles, maxProspects });
-  useEffect(() => { searchOptionsRef.current = { titleHints: searchTitles, maxProspects }; }, [searchTitles, maxProspects]);
+  const searchOptionsRef = useRef({ titleHints: searchTitles, maxProspects, level });
+  useEffect(() => { searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level }; }, [searchTitles, maxProspects, level]);
 
   // One search, from wherever it is asked for: the lane, the sheet header for
   // the focused company, or on its own when a company arrives with nobody on file.

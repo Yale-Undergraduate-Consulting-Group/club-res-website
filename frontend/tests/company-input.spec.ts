@@ -203,6 +203,8 @@ test('who to look for sets the titles the search asks for', async ({ page }) => 
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
   expect(runsCreated[0].title_hints).toBe('Board member, Trustee, Director');
+  // The level reaches the server too: its goal counts board members, not anyone found.
+  expect(runsCreated[0].level).toBe('board');
 });
 
 test('a search refused by the hourly limit pauses with a notice, not an error', async ({ page }) => {
