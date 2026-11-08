@@ -1202,6 +1202,19 @@ async def drain_queued_yucgoutreach_runs() -> dict:
                    SELECT 1 FROM users u WHERE u.id=yucgoutreach_discovery_runs.user_id AND u.is_active=1
                )"""
         )
+        # The same for a member who lost access to Outreach.
+        from app.app_access import may_use_sql
+        access, access_params = may_use_sql("outreach", "u.id", "u.role")
+        await db.execute(
+            f"""UPDATE yucgoutreach_discovery_runs
+               SET status='failed', progress_pct=100, completed_at=CURRENT_TIMESTAMP,
+                   progress_message='Search cancelled because the member no longer has access to Outreach',
+                   error_message='No access to Outreach', updated_at=CURRENT_TIMESTAMP
+               WHERE status='queued' AND EXISTS (
+                   SELECT 1 FROM users u WHERE u.id=yucgoutreach_discovery_runs.user_id AND NOT {access}
+               )""",
+            access_params,
+        )
         await db.commit()
         # Members first: a member's search is someone watching a progress bar,
         # a builder run is the catalog builder's unattended crawl. A builder

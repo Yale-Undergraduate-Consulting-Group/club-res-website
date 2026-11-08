@@ -62,12 +62,17 @@ class Module:
 
 
 def mount(app: FastAPI, modules: list[Module]) -> None:
-    """Every app's routers, in manifest order."""
-    signed_in = [Depends(get_current_user)]
+    """Every app's routers, in manifest order. Every route of an app other
+    than core also checks that the signed-in member may use that app
+    (app.app_access); the platform's own routes are open to every member."""
+    from app.app_access import CORE, require_app
+
     for module in modules:
+        access = [] if module.id == CORE else [Depends(require_app(module.id, module.title))]
         for route in module.routes:
+            session = [Depends(get_current_user)] if route.signed_in else []
             app.include_router(route.router, prefix=route.prefix, tags=[route.tag],
-                               dependencies=signed_in if route.signed_in else None)
+                               dependencies=(session + access) or None)
 
 
 async def start(modules: list[Module]) -> None:

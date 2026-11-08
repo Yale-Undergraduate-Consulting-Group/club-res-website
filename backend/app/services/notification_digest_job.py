@@ -55,7 +55,9 @@ async def run_notification_digests() -> dict:
                     for r in audit_rows:
                         parts.append(f"• {r['action']} {r['resource_type'] or ''} {r['resource_id'] or ''}")
 
-            if campaign_summary:
+            # Outreach activity goes only to members who may use Outreach.
+            from app.app_access import may_use
+            if campaign_summary and await may_use(db, user_id, "outreach"):
                 cursor = await db.execute(
                     """SELECT c.name, COUNT(cc.id) as sent
                        FROM campaigns c
