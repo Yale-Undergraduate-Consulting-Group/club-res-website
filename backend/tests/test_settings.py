@@ -1,9 +1,10 @@
 """Each app's settings (docs/PLATFORM.md step 4).
 
-A deployed server (APP_ENV set) refuses to start without a required setting,
-so the deploy's health check fails and the previous release keeps serving;
-local development (no APP_ENV) needs no cloud settings. Admins see which
-settings each app has, by name only.
+The production server refuses to start without a required setting, so the
+deploy's health check fails and the previous release keeps serving. Dev
+(APP_ENV=beta) runs without some on purpose - it has no Google sign-in - and
+only logs them; local development (no APP_ENV) needs no cloud settings.
+Admins see which settings each app has, by name only.
 From backend/: python tests/test_settings.py
 """
 import os
@@ -46,15 +47,21 @@ def tests() -> None:
     # Local development: no APP_ENV, no cloud settings, and it starts.
     assert starts()
 
-    # A deployed server without Google sign-in refuses to start, naming what
-    # is missing; with every required setting it starts, optional ones unset.
-    with patch.dict(os.environ, {"APP_ENV": "beta", **{k: v for k, v in REQUIRED.items() if k != "GOOGLE_CLIENT_SECRET"}}):
+    # Production without Google sign-in refuses to start, naming what is
+    # missing; with every required setting it starts, optional ones unset.
+    without_secret = {k: v for k, v in REQUIRED.items() if k != "GOOGLE_CLIENT_SECRET"}
+    with patch.dict(os.environ, {"APP_ENV": "production", **without_secret}):
         try:
             with TestClient(main.app):
-                raise AssertionError("a deployed server must not start without a required setting")
+                raise AssertionError("production must not start without a required setting")
         except RuntimeError as exc:
             assert "GOOGLE_CLIENT_SECRET" in str(exc) and "GOOGLE_CLIENT_ID" not in str(exc), exc
-    with patch.dict(os.environ, {"APP_ENV": "beta", **REQUIRED}):
+    # Dev as it is deployed: Google keys present but empty. It starts and says so.
+    with patch.dict(os.environ, {"APP_ENV": "beta", **without_secret, "GOOGLE_CLIENT_SECRET": ""}):
+        with patch("logging.Logger.warning") as warned:
+            assert starts()
+        assert any("GOOGLE_CLIENT_SECRET" in str(call) for call in warned.call_args_list), warned.call_args_list
+    with patch.dict(os.environ, {"APP_ENV": "production", **REQUIRED}):
         assert starts()
 
         # Admins see each setting's state; values never leave the server.
