@@ -1,40 +1,22 @@
+import { MODULES, type AppNavItem } from '../modules';
+
 /**
- * Single source of truth for app navigation.
- * Update here when adding routes — shells (desktop + mobile) read from this module.
+ * Navigation layout. The items come from the apps' manifests (src/modules);
+ * this file only decides where they sit. Shells (desktop + mobile) read from
+ * this module.
  */
-export type NavItemId =
-  | 'dashboard'
-  | 'scraper'
-  | 'studio'
-  | 'analytics'
-  | 'outreach'
-  | 'admin';
+export type NavItem = AppNavItem;
+export type NavItemId = string;
 
-export type NavItem = {
-  id: NavItemId;
-  to: string;
-  label: string;
-  /** Shown under glyphs on mobile bottom nav */
-  shortLabel: string;
-};
+const ALL_ITEMS: NavItem[] = MODULES.flatMap((module) => module.nav);
 
-export const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', to: '/', label: 'Home', shortLabel: 'Home' },
-  { id: 'studio', to: '/studio', label: 'Drafts', shortLabel: 'Drafts' },
-  { id: 'outreach', to: '/outreach', label: 'Pipeline', shortLabel: 'Pipeline' },
-  { id: 'scraper', to: '/scraper', label: 'Find contacts', shortLabel: 'Contacts' },
-];
+export const NAV_ITEMS: NavItem[] = ALL_ITEMS.filter((item) => !item.adminOnly);
 
-export const ADMIN_NAV_ITEM: NavItem = {
-  id: 'admin',
-  to: '/admin',
-  label: 'Admin',
-  shortLabel: 'Admin',
-};
+export const ADMIN_NAV_ITEMS: NavItem[] = ALL_ITEMS.filter((item) => item.adminOnly);
 
 /**
  * Header layout. Every destination is reachable from TOP_LEVEL_IDS plus the
- * two NAV_GROUPS dropdowns - Home does not need to mirror this list with its
+ * NAV_GROUPS dropdowns - Home does not need to mirror this list with its
  * own tile grid. Home instead surfaces live work state (needs attention,
  * pipeline snapshot, leaderboard) that links into these same destinations.
  *
@@ -50,7 +32,7 @@ export const NAV_GROUPS: { label: string; ids: NavItemId[] }[] = [
 export const MOBILE_PRIMARY_IDS: NavItemId[] = ['dashboard', 'scraper', 'studio'];
 
 export function getNavItems(isAdmin: boolean): NavItem[] {
-  return isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+  return isAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
 }
 
 /** Match active route for nav highlighting */
