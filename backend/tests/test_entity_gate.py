@@ -389,8 +389,10 @@ async def slow_roster_does_not_hold_the_run() -> None:
     await _insert_run(12, None)
     finished = asyncio.Event()
 
+    # The refresh takes far longer than the run may: a busy CI runner can take
+    # half a second over a run, which said nothing about waiting for the roster.
     async def slow_refresh(company, domain, **_kw):
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(3.0)
         finished.set()
         return []
 
@@ -408,11 +410,11 @@ async def slow_roster_does_not_hold_the_run() -> None:
             started = time.monotonic()
             await D.execute_yucgoutreach_run(12)
             elapsed = time.monotonic() - started
-            assert elapsed < 0.5, f"the run waited for the roster: {elapsed:.2f}s"
+            assert elapsed < 2.0, f"the run waited for the roster: {elapsed:.2f}s"
             assert (await _run_row(12))["status"] == "completed"
             # The refresh was not cancelled: it finishes for the next search.
             assert D._BACKGROUND and not finished.is_set()
-            await asyncio.wait_for(finished.wait(), 2)
+            await asyncio.wait_for(finished.wait(), 5)
             await asyncio.sleep(0)
             assert not D._BACKGROUND
     finally:
