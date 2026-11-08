@@ -321,6 +321,9 @@ async def get_me(user: dict | None = Depends(get_current_user_optional)):
     """Current user from Authorization: Bearer or X-API-Key."""
     if not user:
         return {"authenticated": False, "user": None}
+    from app.app_access import apps_for
+    from app.modules import all_modules
+
     return {
         "authenticated": True,
         "user": {
@@ -329,6 +332,9 @@ async def get_me(user: dict | None = Depends(get_current_user_optional)):
             "name": user.get("name"),
             "picture": user.get("picture"),
             "role": user.get("role") or "standard",
+            # The apps this member may use; the menu shows only these. The
+            # server checks every route regardless (app.app_access).
+            "apps": await apps_for(user, [m.id for m in all_modules()]),
         },
     }
 
