@@ -12,6 +12,7 @@ Protect client information and keep local development independent of cloud crede
 
 - Read the relevant sections of [docs/CI_CD.md](docs/CI_CD.md) before changing delivery, hosting, identity, or data behavior.
 - Treat that document as the architecture map, not proof of a live deployment.
+- Read [docs/PLATFORM.md](docs/PLATFORM.md) before adding an app or feature: every app is a manifest on the shared platform, not a new deployment.
 - Ground implementation claims in code; ground deployed-state claims in authorized, read-only service queries.
 - Distinguish implemented code, proposed settings, deployed resources, and verified behavior.
 - Check current files and permissions before relying on remembered application gaps or account roles.
