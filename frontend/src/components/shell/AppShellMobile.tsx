@@ -8,7 +8,7 @@ type AppShellMobileProps = {
 
 /**
  * Mobile shell chrome: bottom nav + menu button (drawer trigger).
- * Hidden on lg+ via CSS in index.css — do not render a duplicate menu in the header.
+ * Hidden on lg+ via styles/shell.css — do not render a duplicate menu in the header.
  */
 export default function AppShellMobile({ items, onOpenMenu }: AppShellMobileProps) {
   const primaryItems = MOBILE_PRIMARY_IDS.map((id) =>
