@@ -1,0 +1,617 @@
+/* Outreach: Email Studio, its formatting bar, and Find people's research
+   workflow. Loaded last, so it may build on the shell and the kit. */
+
+.email-studio-input,
+.email-studio-body {
+  background-color: #ffffff;
+  color: var(--text-primary);
+  font-family: 'Lato', system-ui, sans-serif;
+}
+.dark .email-studio-input,
+.dark .email-studio-body {
+  background-color: #334155;
+  color: var(--text-primary);
+}
+
+/* Email Studio: attachments + editor blocks white in light mode */
+.email-studio-block {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  border-width: 1px;
+}
+.dark .email-studio-block {
+  background-color: rgba(51, 65, 85, 0.3);
+  border-color: #475569;
+}
+
+/* Email Studio: generator header white in light mode (no gray) */
+.email-generator-header {
+  background-color: #ffffff;
+}
+.dark .email-generator-header {
+  background-color: var(--bg-card);
+}
+
+/* Email Studio: editor column matches theme surfaces */
+.email-studio-editor-column {
+  background-color: var(--bg-card);
+}
+
+/* Email Studio page: Lato everywhere (native <select> often defaults to system font) */
+.email-studio,
+.email-studio input,
+.email-studio select,
+.email-studio textarea,
+.email-studio button {
+  font-family: 'Lato', system-ui, sans-serif;
+}
+.email-studio option {
+  font-family: 'Lato', system-ui, sans-serif;
+}
+
+/*
+ * Email Studio — Gmail preview: explicit colors so .dark .bg-slate-* hacks don't flatten contrast.
+ */
+.email-studio-gmail-rail {
+  background-color: #cbd5e1; /* slate-300: clearly grey vs white card */
+}
+.dark .email-studio-gmail-rail {
+  background-color: #3f4f63; /* between slate-700–800, lighter than page #0f172a */
+}
+.email-studio-gmail-card {
+  background-color: #ffffff;
+  border: 1px solid #94a3b8;
+  box-shadow: var(--shadow-md);
+}
+.dark .email-studio-gmail-card {
+  background-color: #f8fafc;
+  border-color: #64748b;
+  box-shadow: var(--shadow-lg);
+}
+.email-studio-gmail-body {
+  background-color: #ffffff;
+}
+.dark .email-studio-gmail-body {
+  background-color: #f8fafc;
+}
+.email-studio-gmail-toolbar {
+  background-color: #e2e8f0; /* slate-200 */
+  border-bottom: 1px solid #cbd5e1;
+}
+.dark .email-studio-gmail-toolbar {
+  background-color: #4b556a;
+  border-bottom-color: #64748b;
+}
+.email-studio-gmail-toolbar button,
+.email-studio-gmail-toolbar span {
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+.dark .email-studio-gmail-toolbar span {
+  color: var(--text-primary);
+}
+
+@layer components {
+  .email-studio.app-workspace {
+    max-width: min(100%, 1920px);
+  }
+}
+
+.email-studio-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.studio-workbench-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.studio-workbench-bar > div { display: flex; gap: 0.5rem; }
+/* The focus toggle is only useful beside the preview rail, so it hides below it. */
+@media (max-width: 1279px) {
+  .studio-workbench-bar .studio-workbench-bar__focus { display: none; }
+}
+.studio-address-check { margin: 0; padding: 0.75rem 1rem; font-size: 0.8125rem; color: var(--text-primary); }
+.studio-address-check span { display: block; margin-top: 0.25rem; color: var(--text-muted); }
+.email-studio:not(.studio-preview-open) .email-studio-gmail-rail { display: none; }
+.email-studio:not(.studio-preview-open) .email-studio-compose { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1280px) {
+  .email-studio.studio-focus .email-studio-layout > .studio-step,
+  .email-studio.studio-focus #email-generator-section { display: none; }
+  .email-studio.studio-focus #email-editor-section { max-width: 100%; }
+}
+
+.email-studio-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.email-studio-generator-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  min-width: 0;
+}
+
+.email-studio-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.email-studio-grow-field {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.email-studio-brief-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .email-studio-brief-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.email-studio-compose {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+}
+
+.email-studio-editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.email-studio-body-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .email-studio-compose {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1280px) {
+  .app-shell:has(.email-studio) {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .app-shell-body:has(.email-studio) {
+    min-height: 0;
+  }
+
+  .app-shell-main:has(.email-studio),
+  .app-shell-main:has(.email-studio) .app-shell-main-inner {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .email-studio {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .email-studio .app-page-header {
+    flex-shrink: 0;
+    margin-bottom: 1rem;
+  }
+
+  .email-studio-layout {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  /* One interpolable size per panel. Collapsing used to swap the sizing
+     class, which moved the size between flex-basis and width — two
+     discontinuous values, so nothing animated and the panel snapped shut. */
+  .email-studio-contacts {
+    --panel-width: 280px;
+    flex: 0 0 var(--panel-width);
+    max-width: var(--panel-width);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .email-studio-contacts[data-collapsed='true'],
+  .email-studio-generator[data-collapsed='true'] {
+    --panel-width: 3.5rem;
+  }
+
+  .email-studio-contacts-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .email-studio-generator {
+    --panel-width: 22rem;
+    flex: 0 0 var(--panel-width);
+    max-width: var(--panel-width);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .email-studio-generator-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* The assistant is a narrow rail; viewport breakpoints must not split its
+     fields into cramped two-column controls. */
+  .email-studio-generator .email-studio-brief-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .email-studio-field--grow {
+    flex: 1 1 5.5rem;
+    min-height: 5.5rem;
+  }
+
+  .email-studio-field--grow .email-studio-grow-field {
+    flex: 1 1 auto;
+    min-height: 5rem;
+  }
+
+  .email-studio-main {
+    flex-direction: row;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  #email-editor-section.studio-step {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* Only the compose area gives up height. The heading, the address check
+     and the campaign toggle were allowed to shrink too, and on a short
+     column were squeezed below their own line height and clipped in half;
+     now they keep their height and the section scrolls instead. */
+  #email-editor-section.studio-step > :not(.email-studio-compose) {
+    flex-shrink: 0;
+  }
+
+  .email-studio-campaign {
+    max-height: calc(100% - 18rem);
+    overflow: auto;
+  }
+
+  .email-studio-compose {
+    flex: 1 1 auto;
+    min-height: 18rem;
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  .email-studio-editor-column,
+  .email-studio-gmail-rail {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .email-studio-editor-column > :not(.email-studio-editor-stack),
+  .email-studio-gmail-rail > h3 {
+    flex-shrink: 0;
+  }
+
+  .studio-draft-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-block: 0.5rem;
+    background: var(--surface);
+  }
+
+  .email-studio-editor-stack {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
+  .email-studio-body-wrap {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 17.5rem;
+  }
+
+  .email-studio-body {
+    flex: 1 1 auto;
+    min-height: 17.5rem;
+    padding-bottom: 5rem;
+  }
+
+  .email-studio-gmail-card {
+    flex: 1 1 auto;
+    min-height: 17.5rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .email-studio-gmail-body {
+    flex: 1 1 auto;
+  }
+}
+
+.studio-generate-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding: 0.75rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.studio-generate-row__go {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+/* Research audience workflow (Find contacts) */
+.research-workspace { display: grid; gap: 1.5rem; }
+
+.research-brief-form,
+.research-brief-field,
+.research-review-field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.research-brief-form {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-panel, 0.5rem);
+}
+
+.research-brief-form input,
+.research-brief-form select,
+.research-brief-form textarea,
+.research-review-field textarea {
+  min-height: var(--control-height, 2.5rem);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control, 0.375rem);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.research-brief-form > button { justify-self: start; }
+.research-brief-field p { margin: 0; color: var(--ink-muted); font-size: 0.75rem; }
+.research-brief-select { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
+.research-brief-select select { min-height: var(--control-height, 2.5rem); }
+
+.research-queue-tab {
+  min-height: var(--control-height, 2.5rem);
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.research-queue-tab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  border-bottom-color: transparent;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.research-queue-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.research-recommendations,
+.research-companies,
+.research-jobs,
+.research-sources {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.research-recommendations > li,
+.research-companies > li,
+.research-jobs > li {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-panel, 0.5rem);
+}
+
+.research-recommendations h3,
+.research-companies h3,
+.research-jobs h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.research-recommendations p,
+.research-companies p,
+.research-jobs p { margin: 0; color: var(--ink-muted); }
+
+.research-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.research-dimensions { display: grid; gap: 0.5rem; margin: 0; }
+.research-dimensions > div { display: grid; grid-template-columns: minmax(9rem, 1fr) 2fr; gap: 0.5rem; }
+.research-dimensions dt { color: var(--ink-muted); font-weight: 700; }
+.research-dimensions dd { margin: 0; color: var(--ink); }
+.research-dimensions-inline { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; color: var(--ink-muted); }
+.research-drawer { width: min(44rem, 100%); max-height: min(80vh, 44rem); overflow-y: auto; }
+.research-evidence { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
+.research-evidence h3 { margin: 0.5rem 0 0; font-size: 0.9rem; color: var(--ink); }
+.research-evidence p { margin: 0; color: var(--ink-muted); }
+.research-evidence blockquote { margin: 0.25rem 0 0; padding: 0.5rem; border-left: 3px solid var(--border); background: var(--surface-subtle); color: var(--ink); }
+.research-sources li { display: grid; gap: 0.25rem; }
+.research-error { color: var(--danger, #b42318); }
+
+@media (prefers-reduced-motion: reduce) {
+  .research-workspace * { transition: none !important; animation: none !important; }
+}
+
+.studio-mobile-steps {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .studio-mobile-steps {
+    display: grid;
+    max-width: 100%;
+    overflow-x: auto;
+    grid-template-columns: repeat(3, max-content);
+    justify-content: start;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .studio-mobile-steps button { width: 100%; }
+
+  .email-studio .studio-step:not(.is-active) {
+    display: none;
+  }
+
+  .email-studio .studio-step.is-active {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-shell-main {
+    padding: 0.75rem;
+    padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .yucg-photo-banner__title { font-size: 1.15rem; }
+  .yucg-photo-banner__subtitle { font-size: 0.8125rem; }
+  .app-page-header .yucg-photo-banner--strip { min-height: 5.5rem; }
+  .ui-dialog__actions { flex-direction: column-reverse; }
+  .ui-dialog__actions .ui-button { width: 100%; }
+
+  .slate-table th:nth-child(4),
+  .slate-table td:nth-child(4),
+  .slate-table th:nth-child(5),
+  .slate-table td:nth-child(5),
+  .ingestion-table th:nth-child(n + 4),
+  .ingestion-table td:nth-child(n + 4) {
+    display: none;
+  }
+
+  .ingestion-table,
+  .slate-table {
+    min-width: 100%;
+    table-layout: auto;
+  }
+}
+
+/* ——— Message formatting bar ——— */
+.email-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.email-toolbar__button {
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.email-toolbar__button:hover { background: var(--surface-subtle); }
+
+.email-toolbar__button.is-active {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+}
+
+.email-toolbar__select { height: var(--control-height-sm); min-height: var(--control-height-sm); width: auto; max-width: 8.5rem; }
+
+.email-toolbar__divider {
+  width: 1px;
+  height: 1.25rem;
+  margin: 0 0.25rem;
+  background: var(--border);
+}
+
+.email-toolbar__color {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border-radius: var(--radius-control);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.email-toolbar__color:hover { background: var(--surface-subtle); }
+.email-toolbar__color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.dark .email-toolbar { background: var(--bg-card); border-color: var(--border); }

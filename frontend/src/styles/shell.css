@@ -1,0 +1,1692 @@
+/* The platform: brand and photo banners, form and preference rules, the
+   navigation, app shell, page menus and page chrome every app sits in. */
+
+/* ——— YUCG brand: Lato + photo banners (not full-page overlay) ——— */
+html.yucg-brand-redesign {
+  --yucg-tint: rgba(0, 53, 107, 0.58);
+  --yucg-tint-strong: rgba(26, 47, 90, 0.72);
+  --banner-ink: #ffffff;
+  --banner-ink-muted: rgba(255, 255, 255, 0.88);
+}
+
+html.yucg-brand-redesign.dark {
+  --yucg-tint: rgba(0, 34, 68, 0.68);
+  --yucg-tint-strong: rgba(8, 15, 28, 0.78);
+  --banner-ink: #f1f5f9;
+  --banner-ink-muted: rgba(226, 232, 240, 0.85);
+}
+
+html.yucg-brand-redesign body {
+  background-color: var(--bg-primary);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+html.yucg-brand-redesign .app-shell,
+html.yucg-brand-redesign .app-shell-main {
+  background: var(--bg-primary);
+}
+
+/* Photo banner blocks (login, outreach landing, etc.) */
+.yucg-photo-banner {
+  position: relative;
+  overflow: hidden;
+  background-image:
+    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    var(--yucg-banner-image, url('/yucg-bg/pauli-murray-tower.jpg'));
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: multiply, normal;
+  border: 2px solid var(--deep-navy);
+}
+
+html.yucg-brand-redesign.dark .yucg-photo-banner {
+  border-color: var(--border);
+  background-blend-mode: soft-light, normal;
+}
+
+.yucg-photo-banner--hero {
+  min-height: 11rem;
+}
+
+@media (min-width: 768px) {
+  .yucg-photo-banner--hero {
+    min-height: 14rem;
+  }
+}
+
+.yucg-photo-banner--strip {
+  min-height: 7rem;
+}
+
+.yucg-photo-banner__content {
+  position: relative;
+  z-index: 1;
+  padding: 1.25rem 1.5rem;
+  max-width: min(42rem, 100%);
+  min-width: 0;
+}
+
+.yucg-photo-banner__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--banner-ink);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .yucg-photo-banner__title {
+    font-size: 1.65rem;
+  }
+}
+
+.yucg-photo-banner__subtitle {
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--banner-ink-muted);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+/* Login — full-viewport campus photo + Yale blue tint, centered frosted card */
+html.yucg-brand-redesign .app-auth-shell {
+  background-color: var(--deep-navy);
+  background-image:
+    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    url('/yucg-bg/pauli-murray-tower.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-blend-mode: multiply, normal;
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell {
+  background-color: #0f172a;
+  background-blend-mode: soft-light, normal;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+body {
+  margin: 0;
+  font-family: 'Lato', system-ui, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+#root {
+  min-height: 100vh;
+  font-family: 'Lato', system-ui, sans-serif;
+}
+
+/*
+ * Light mode fields: same ink as body; background from theme.
+ * Excludes checkbox/radio/color/file/etc. so native controls stay usable.
+ */
+html:not(.dark) input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+html:not(.dark) select,
+html:not(.dark) textarea {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+}
+
+/* Plain contenteditable (e.g. rich text): default typing uses theme ink */
+[contenteditable="true"] {
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+}
+
+/* Autofill should keep readable ink in both themes */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+}
+
+/* Shared panels use one restrained frame and radius. */
+html:not(.dark) .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+.dark .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+/* ——— Top navigation ——— */
+.app-top-nav {
+  background: var(--bg-card);
+  border-bottom: 3px solid var(--deep-navy);
+  box-shadow: none;
+}
+
+.app-nav-menu {
+  flex-wrap: nowrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  display: none;
+}
+
+.app-shell-desktop-nav {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-desktop-nav {
+    display: flex;
+  }
+}
+
+.app-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--deep-navy);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.app-nav-link:last-child {
+  border-right: none;
+}
+
+.app-nav-link:hover {
+  background: var(--pale-sky);
+  color: var(--deep-navy);
+}
+
+.app-nav-link--active,
+.app-nav-link.active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-nav-link {
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border-right-color: var(--border);
+}
+
+.dark .app-nav-link:hover {
+  background: #334155;
+}
+
+.dark .app-nav-link--active,
+.dark .app-nav-link.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.app-avatar {
+  width: 2rem;
+  height: 2rem;
+  object-fit: cover;
+  border: 2px solid var(--deep-navy);
+  border-radius: 999px !important;
+}
+
+/* ——— App shell (desktop + mobile) ——— */
+.app-shell {
+  background: var(--bg-primary);
+}
+
+.app-shell-header-inner {
+  max-width: 1920px;
+  margin: 0 auto;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .app-shell-header-inner {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+.app-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.app-shell-logo {
+  height: 1.75rem;
+  width: auto;
+  flex-shrink: 0;
+  display: block;
+  outline: none;
+  user-select: none;
+}
+
+.app-shell-title {
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--deep-navy);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.dark .app-shell-title {
+  color: var(--text-primary);
+}
+
+.app-shell-subtitle {
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 0.125rem;
+}
+
+.app-shell-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding-left: 0.5rem;
+  margin-left: 0.25rem;
+  border-left: 2px solid var(--border);
+}
+
+.app-shell-header-avatar,
+.app-shell-header-profile,
+.ui-button.app-shell-header-logout {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .app-shell-header-avatar {
+    display: block;
+  }
+
+  .app-shell-header-profile {
+    display: inline;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ui-button.app-shell-header-logout {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1023px) {
+  .app-shell-header-actions {
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
+  }
+}
+
+.app-shell-profile-link {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--deep-navy);
+  text-decoration: none;
+}
+
+.app-shell-profile-link:hover {
+  text-decoration: underline;
+}
+
+.dark .app-shell-profile-link {
+  color: var(--text-primary);
+}
+
+.app-shell-main {
+  padding: 1rem;
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .app-shell-main {
+    padding: 1.5rem;
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell-main {
+    padding: 2rem;
+    padding-bottom: 2rem;
+  }
+}
+
+.app-shell-aside {
+  min-height: calc(100vh - 3.5rem);
+}
+
+/* ——— Mobile shell (< lg) ——— */
+.app-mobile-shell {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .app-mobile-shell {
+    display: none;
+  }
+}
+
+.app-mobile-nav {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  background: var(--bg-card);
+  border-top: 3px solid var(--deep-navy);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.app-mobile-nav-menu-btn {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 3.75rem;
+  padding: 0.625rem 0.5rem;
+  border: none;
+  border-right: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.app-mobile-nav-menu-btn:hover {
+  background: var(--pale-sky);
+}
+
+.dark .app-mobile-nav-menu-btn {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.dark .app-mobile-nav-menu-btn:hover {
+  background: #334155;
+}
+
+.app-mobile-nav-menu-glyph {
+  display: block;
+  width: 1rem;
+  height: 0.125rem;
+  background: currentColor;
+  box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor;
+}
+
+.app-mobile-nav-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.app-mobile-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.app-mobile-nav-item {
+  flex: 1 0 auto;
+  min-width: max-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 0.75rem;
+  text-decoration: none;
+  color: var(--deep-navy);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+
+.app-mobile-nav-item:last-child {
+  border-right: none;
+}
+
+.app-mobile-nav-item:hover {
+  background: var(--pale-sky);
+}
+
+.app-mobile-nav-item--active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-mobile-nav-item {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-right-color: var(--border);
+}
+
+.dark .app-mobile-nav-item--active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.app-mobile-nav-label {
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mobile drawer (< lg only) */
+.app-shell-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-drawer-root {
+    display: none !important;
+  }
+}
+
+.app-shell-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  border: none;
+  cursor: pointer;
+}
+
+.app-shell-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(100%, 20rem);
+  background: var(--bg-card);
+  border-left: 3px solid var(--deep-navy);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.app-shell-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+/* Auth shell (login) */
+.app-auth-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-primary);
+}
+
+/* Responsive page menus — scroll on narrow viewports */
+@media (max-width: 1023px) {
+  .app-tab-menu {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-tab-menu-item {
+    flex: 0 0 auto;
+  }
+
+  .app-subnav {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* ——— Page tab menus (Outreach, Admin, Profile) ——— */
+.app-tab-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 2px solid var(--deep-navy);
+  border-bottom: none;
+  background: var(--bg-secondary);
+}
+
+.app-tab-menu-item {
+  flex: 1 1 auto;
+  min-width: max-content;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding: 0 1rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.app-tab-menu-item:last-child {
+  border-right: none;
+}
+
+.app-tab-menu-item:hover {
+  background: var(--pale-sky);
+}
+
+.app-tab-menu-item--active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-tab-menu-item {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-right-color: var(--border);
+}
+
+.dark .app-tab-menu-item--active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.app-tab-panel {
+  border: 2px solid var(--deep-navy);
+  border-top: none;
+  background: var(--bg-secondary);
+  padding: 0.75rem 1rem;
+}
+
+.dark .app-tab-panel {
+  background: var(--bg-card);
+}
+
+/* ——— Segmented subnav (Scraper, Profile settings) ——— */
+.app-subnav {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+}
+
+.app-subnav-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding: 0 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.app-subnav-item:last-child {
+  border-right: none;
+}
+
+.app-subnav-item:hover {
+  background: var(--pale-sky);
+}
+
+.app-subnav-item--active {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.dark .app-subnav-item {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.dark .app-subnav-item--active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* ——— Community sidebar ——— */
+.app-sidebar {
+  border-left: 3px solid var(--deep-navy);
+  background: var(--bg-card);
+}
+
+.app-sidebar-section-title {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--deep-navy);
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.app-sidebar-link {
+  display: block;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.app-sidebar-link:hover {
+  background: var(--pale-sky);
+  border-left-color: var(--steel-blue);
+}
+
+.app-sidebar-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.dark .app-sidebar-section-title {
+  color: var(--text-primary);
+}
+
+.app-subnav--stretch {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+/* A stretched subnav sits in narrow columns (the Studio sidebar). Wrapping
+   there stacked the two pills and stretched every control beside them. */
+.app-subnav--stretch {
+  flex-wrap: nowrap;
+}
+
+.app-subnav--stretch .app-subnav-item {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.app-sidebar-integration {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.app-sidebar-integration + .app-sidebar-integration {
+  margin-top: 0.5rem;
+}
+
+.app-fab {
+  position: fixed;
+  z-index: 40;
+  width: 3rem;
+  height: 3rem;
+  border: 2px solid var(--deep-navy);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.app-fab:hover {
+  background: var(--btn-primary-hover);
+}
+
+.app-fab--above-mobile-nav {
+  bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  right: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .app-fab--above-mobile-nav {
+    bottom: 1.5rem;
+    right: 1.5rem;
+  }
+}
+
+.app-fab-badge {
+  position: absolute;
+  top: -0.125rem;
+  right: -0.125rem;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  border: 2px solid var(--deep-navy);
+  background: #f59e0b;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* Checklist overlay — fits viewport, clears mobile bottom nav */
+.checklist-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 1rem;
+  padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+  .checklist-overlay {
+    padding: 1.5rem;
+    padding-bottom: 1.5rem;
+  }
+}
+
+.checklist-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.dark .checklist-overlay-backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.checklist-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 22rem);
+  max-height: min(32rem, calc(100dvh - 6.5rem - env(safe-area-inset-bottom, 0px)));
+  overflow: hidden;
+  pointer-events: auto;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-card);
+}
+
+@media (min-width: 1024px) {
+  .checklist-panel {
+    max-height: min(36rem, calc(100dvh - 3rem));
+  }
+}
+
+.checklist-panel-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+}
+
+.checklist-panel-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--deep-navy);
+}
+
+.dark .checklist-panel-title {
+  color: var(--text-primary);
+}
+
+.checklist-panel-close {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.checklist-panel-close:hover {
+  background: var(--pale-sky);
+}
+
+.checklist-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+.checklist-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.checklist-add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.checklist-add-btn {
+  flex-shrink: 0;
+  padding: 0.5rem 0.875rem;
+  border: 2px solid var(--deep-navy);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checklist-add-btn:hover {
+  background: var(--btn-primary-hover);
+}
+
+.checklist-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checklist-empty {
+  padding: 1rem 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  min-width: 0;
+}
+
+.checklist-item--done {
+  background: var(--bg-primary);
+  opacity: 0.85;
+}
+
+.checklist-item-check {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.checklist-item-check--done {
+  background: var(--success);
+  border-color: var(--success);
+  color: #ffffff;
+}
+
+.checklist-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.checklist-item--done .checklist-item-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.checklist-item-remove {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.checklist-item-remove:hover {
+  color: #dc2626;
+}
+
+.checklist-panel-footer {
+  flex-shrink: 0;
+  padding: 0.5rem 1rem;
+  border-top: 2px solid var(--border);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+}
+
+.app-toast {
+  border: 2px solid var(--border);
+  box-shadow: none;
+  border-radius: var(--radius-panel);
+}
+
+.dark .app-sidebar-link:hover {
+  background: #334155;
+}
+
+/* Inputs & buttons share the same control radius as everything else. */
+html:not(.dark) input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
+html:not(.dark) select,
+html:not(.dark) textarea,
+.dark input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
+.dark select,
+.dark textarea {
+  border-radius: var(--radius-control) !important;
+}
+
+/* Single-line text inputs and selects get a height floor so a field on one
+   page matches a field on another - a textarea is naturally multi-line and
+   is excluded, and this is a floor (min-height), not a forced height, so an
+   input that already needs more room for its own content is unaffected. */
+input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
+select {
+  min-height: var(--control-height);
+}
+
+
+/* Standardized button press animation site-wide */
+button:not([disabled]) {
+  transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.15s ease;
+}
+button:not([disabled]):active {
+  transform: scale(0.98);
+}
+
+/* Pillbox toggle animation */
+@keyframes pillbox-pop {
+  0% { transform: scale(0.96); opacity: 0.9; }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.pillbox-pill {
+  transition: background-color 0.25s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.pillbox-pill:active {
+  animation: pillbox-pop 0.35s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-enter {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* User preferences: compact mode */
+body.yucg-compact main {
+  padding: 0.5rem 0.75rem;
+}
+body.yucg-compact {
+  font-size: 14px;
+}
+
+/* User preferences: UI font size */
+body[data-ui-font="small"] {
+  font-size: 14px;
+}
+body[data-ui-font="large"] {
+  font-size: 17px;
+}
+
+/*
+ * Unified foreground: neutral Tailwind text-* utilities map to --text-primary.
+ * Semantic colors (red/green/amber/blue links, text-white on buttons, etc.) unchanged.
+ */
+html:not(.dark) .text-slate-50,
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-slate-200,
+html:not(.dark) .text-slate-300,
+html:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-500,
+html:not(.dark) .text-slate-600,
+html:not(.dark) .text-slate-700,
+html:not(.dark) .text-slate-800,
+html:not(.dark) .text-slate-900,
+html:not(.dark) .text-slate-950,
+html:not(.dark) .text-gray-50,
+html:not(.dark) .text-gray-100,
+html:not(.dark) .text-gray-200,
+html:not(.dark) .text-gray-300,
+html:not(.dark) .text-gray-400,
+html:not(.dark) .text-gray-500,
+html:not(.dark) .text-gray-600,
+html:not(.dark) .text-gray-700,
+html:not(.dark) .text-gray-800,
+html:not(.dark) .text-gray-900,
+html:not(.dark) .text-gray-950,
+html:not(.dark) .text-zinc-500,
+html:not(.dark) .text-zinc-600,
+html:not(.dark) .text-zinc-700,
+html:not(.dark) .text-zinc-800,
+html:not(.dark) .text-zinc-900,
+html:not(.dark) .text-steel-blue,
+html:not(.dark) .text-slate-blue,
+html:not(.dark) .text-mid-navy,
+html:not(.dark) .text-light-steel {
+  color: var(--text-primary);
+}
+
+html.dark .text-slate-50,
+html.dark .text-slate-100,
+html.dark .text-slate-200,
+html.dark .text-slate-300,
+html.dark .text-slate-400,
+html.dark .text-slate-500,
+html.dark .text-slate-600,
+html.dark .text-slate-700,
+html.dark .text-slate-800,
+html.dark .text-slate-900,
+html.dark .text-slate-950,
+html.dark .text-gray-50,
+html.dark .text-gray-100,
+html.dark .text-gray-200,
+html.dark .text-gray-300,
+html.dark .text-gray-400,
+html.dark .text-gray-500,
+html.dark .text-gray-600,
+html.dark .text-gray-700,
+html.dark .text-gray-800,
+html.dark .text-gray-900,
+html.dark .text-gray-950,
+html.dark .text-zinc-400,
+html.dark .text-zinc-500,
+html.dark .text-zinc-600,
+html.dark .text-zinc-700,
+html.dark .text-zinc-800,
+html.dark .text-zinc-900,
+html.dark .text-steel-blue,
+html.dark .text-slate-blue,
+html.dark .text-mid-navy,
+html.dark .text-light-steel {
+  color: var(--text-primary);
+}
+
+/* dark:* text utilities (same specificity as Tailwind; !important wins tie) */
+html.dark .dark\:text-slate-100,
+html.dark .dark\:text-slate-200,
+html.dark .dark\:text-slate-300,
+html.dark .dark\:text-slate-400,
+html.dark .dark\:text-slate-500,
+html.dark .dark\:text-slate-600,
+html.dark .dark\:text-slate-700,
+html.dark .dark\:text-slate-800,
+html.dark .dark\:text-gray-100,
+html.dark .dark\:text-gray-200,
+html.dark .dark\:text-gray-300,
+html.dark .dark\:text-gray-400,
+html.dark .dark\:text-gray-500,
+html.dark .dark\:text-gray-600,
+html.dark .dark\:text-gray-700,
+html.dark .dark\:text-zinc-100,
+html.dark .dark\:text-zinc-200,
+html.dark .dark\:text-zinc-300,
+html.dark .dark\:text-zinc-400,
+html.dark .dark\:text-zinc-500 {
+  color: var(--text-primary) !important;
+}
+
+/*
+ * Fields: placeholders same ink family as typed text (lighter via mix; beats Tailwind placeholder:*).
+ */
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-primary) 58%, transparent) !important;
+  opacity: 1 !important;
+}
+
+/* Native select menus (best-effort; OS may still theme the dropdown) */
+select option,
+select optgroup {
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+}
+
+html.dark select option,
+html.dark select optgroup {
+  color: var(--text-primary);
+  background-color: #334155;
+}
+
+/*
+ * Elevation: map Tailwind shadow-* to theme tokens site-wide (light + dark).
+ * Unlayered so these win over default Tailwind shadows.
+ */
+.shadow-sm {
+  box-shadow: var(--shadow-sm);
+}
+.shadow {
+  box-shadow: var(--shadow-md);
+}
+.shadow-md {
+  box-shadow: var(--shadow-md);
+}
+.shadow-lg {
+  box-shadow: var(--shadow-lg);
+}
+.shadow-xl {
+  box-shadow: var(--shadow-xl);
+}
+.shadow-2xl {
+  box-shadow: var(--shadow-2xl);
+}
+
+/* User preferences: reduce motion */
+body.yucg-reduce-motion *,
+body.yucg-reduce-motion *::before,
+body.yucg-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* YUCG redesign — must follow base .surface-card rules (cascade fix) */
+html.yucg-brand-redesign:not(.dark) .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+html.yucg-brand-redesign.dark .surface-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+html.yucg-brand-redesign:not(.dark) .app-auth-shell .surface-card {
+  background-color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(15, 32, 58, 0.22);
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell .surface-card {
+  background-color: rgba(30, 41, 59, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell .bg-slate-50 {
+  background-color: rgba(51, 65, 85, 0.65);
+}
+
+html.yucg-brand-redesign.dark .app-auth-shell .text-deep-navy,
+html.yucg-brand-redesign.dark .app-auth-shell h1 {
+  color: var(--text-primary);
+}
+
+html.yucg-brand-redesign.dark .text-slate-600,
+html.yucg-brand-redesign.dark .text-slate-500,
+html.yucg-brand-redesign.dark .text-slate-700 {
+  color: var(--text-primary);
+  opacity: 0.88;
+}
+
+html.yucg-brand-redesign:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
+html.yucg-brand-redesign:not(.dark) select,
+html.yucg-brand-redesign:not(.dark) textarea {
+  background-color: #ffffff;
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+html.yucg-brand-redesign.dark input:not([type="checkbox"]):not([type="radio"]),
+html.yucg-brand-redesign.dark select,
+html.yucg-brand-redesign.dark textarea {
+  background-color: #334155;
+  color: var(--text-primary);
+  border-color: #475569;
+}
+
+html.yucg-brand-redesign .yucg-photo-banner table thead th,
+html.yucg-brand-redesign .yucg-coordinator-table thead th {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+html.yucg-brand-redesign.dark .bg-slate-50 {
+  background-color: #334155;
+}
+
+html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
+  border-color: var(--border);
+}
+
+/* Page chrome — photo banner + optional actions */
+.app-page-header {
+  margin: 0 0 1.5rem;
+}
+
+.app-page-header .yucg-photo-banner {
+  margin: 0;
+}
+
+.app-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.app-week-guide__title {
+  margin: 0 0 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--steel-blue);
+}
+
+.app-week-guide__list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-card);
+}
+
+@media (min-width: 900px) {
+  .app-week-guide__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.app-week-guide__item {
+  min-width: 0;
+}
+
+.app-week-guide__item + .app-week-guide__item {
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 900px) {
+  .app-week-guide__item:nth-child(2) {
+    border-top: none;
+    border-left: 1px solid var(--border);
+  }
+
+  .app-week-guide__item:nth-child(3) {
+    border-top: 1px solid var(--border);
+  }
+
+  .app-week-guide__item:nth-child(4) {
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+}
+
+.app-week-guide__link {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  text-decoration: none;
+  color: var(--deep-navy);
+}
+
+.app-week-guide__link:hover {
+  background: var(--pale-sky);
+}
+
+.app-week-guide__n {
+  flex: 0 0 1.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--deep-navy);
+  font-size: 0.8rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.app-week-guide__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.app-week-guide__door {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--steel-blue);
+}
+
+.app-week-guide__name {
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.app-week-guide__how {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.app-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.app-stat {
+  display: block;
+  padding: 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-stat__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--steel-blue);
+}
+
+.app-stat__value {
+  margin-top: 0.25rem;
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--deep-navy);
+}
+
+.app-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-tool {
+  display: block;
+  height: 100%;
+  padding: 0.875rem 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-tool:hover {
+  border-color: var(--steel-blue);
+}
+
+.app-tool__name {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--deep-navy);
+}
+
+.app-tool__what {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--slate-blue, #64748b);
+}
+
+.app-ai-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.app-ai-select-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--deep-navy);
+}
+
+.app-ai-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border: 2px solid var(--deep-navy);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.app-ai-select-wrap--compact {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.app-auth-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--deep-navy);
+  background-image:
+    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    url('/yucg-bg/pauli-murray-tower.jpg');
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: multiply, normal;
+}
+
+.app-page-header .yucg-photo-banner--strip {
+  min-height: 6.5rem;
+}
+
+.app-page-header .yucg-photo-banner__content {
+  padding: 1.125rem 1.25rem;
+}
+
+@layer components {
+  .app-workspace {
+    width: 100%;
+    max-width: 90rem;
+    margin-inline: auto;
+  }
+}
+
+.app-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app-toolbar input,
+.app-toolbar select {
+  min-height: var(--control-height);
+}
+
+.app-section-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+/* One persistent navigation bar; page sections scroll with their content. */
+.app-nav-group { position: relative; }
+.app-nav-group summary { cursor: pointer; list-style: none; height: 100%; }
+.app-nav-group summary::-webkit-details-marker { display: none; }
+.app-nav-group-panel { position: absolute; top: calc(100% + 0.5rem); left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--border); box-shadow: 0 8px 24px rgb(15 23 42 / 0.12); }
+.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0.75rem 1rem; }
+.app-nav-group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+@media (min-width: 768px) {
+  .app-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+  .app-page-header-actions { margin-top: 0; flex-shrink: 0; }
+}

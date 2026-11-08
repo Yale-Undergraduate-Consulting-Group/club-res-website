@@ -1,0 +1,160 @@
+/* Design tokens: the dark variant, Tailwind theme, colour and radius
+   variables for both themes, and the page's base type. Every app uses these;
+   change a token here rather than restating a colour in an app's styles. */
+
+/* Only treat as dark when <html class="dark"> — not OS prefers-color-scheme (fixes grey tabs/cards in app light mode). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-deep-navy: #1a2f5a;
+  --color-mid-navy: #1e3a6e;
+  --color-slate-blue: #3d5c82;
+  --color-steel-blue: #5b7fa6;
+  --color-light-steel: #8aaabf;
+  --color-pale-sky: #c8dced;
+}
+
+:root {
+  /* Canonical product tokens. Legacy aliases below remain during component migration. */
+  --canvas: #f5f7fa;
+  --surface: #ffffff;
+  --surface-subtle: #eef2f6;
+  --surface-raised: #ffffff;
+  --ink: #102442;
+  --ink-muted: #52647a;
+  --focus: #286dc0;
+  --danger: #b42318;
+  --danger-soft: #fff1f0;
+  --success-soft: #ecfdf3;
+  --warning-soft: #fffaeb;
+  --info-soft: #eff8ff;
+  --radius-control: 0.5rem;
+  --radius-panel: 0.5rem;
+  --control-height: 2.75rem;
+  --control-height-sm: 2.25rem;
+  --yale-blue: #00356b;
+  --yale-blue-light: #286dc0;
+  --yale-blue-dark: #002244;
+  --deep-navy: #1a2f5a;
+  --mid-navy: #1e3a6e;
+  --slate-blue: #3d5c82;
+  --steel-blue: #42658a;
+  --light-steel: #8aaabf;
+  --pale-sky: #c8dced;
+  --bg-primary: var(--canvas);
+  --bg-secondary: var(--surface);
+  --bg-card: var(--surface);
+  --text-primary: var(--ink);
+  --text-muted: var(--ink-muted);
+  --accent: var(--yale-blue);
+  --accent-hover: var(--yale-blue-dark);
+  --border: #cbd5df;
+  /* Chart ramp: the club's own blue ladder, dark to pale, so a chart reads as
+     part of the product rather than a stock palette dropped in. Danger stays
+     the product's danger red because a bounce is the one bad outcome. */
+  /* Blues and greys only, separated by lightness rather than hue so adjacent
+     slices stay legible without leaving the club's palette. */
+  --chart-1: #00356b;
+  --chart-2: #2f5585;
+  --chart-3: #5b7fa6;
+  --chart-4: #8aaabf;
+  --chart-5: #a9b8c6;
+  --chart-6: #c8dced;
+  /* A reply is the outcome that matters, so it takes the strongest blue; a
+     bounce is inert grey; queued is barely there. */
+  --chart-good: #00356b;
+  --chart-bad: #5a6675;
+  --chart-idle: #d7dee7;
+  --success: #16794b;
+  --warning: #9a5b00;
+  /* Primary CTAs: same hue family as headings and links (--accent from :root or user prefs) */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-text: #ffffff;
+  /* Elevation: bright highlight + pale-sky tint — no heavy black drop shadow */
+  --shadow-sm: 0 1px 2px rgba(255, 255, 255, 0.92), 0 2px 8px rgba(200, 220, 237, 0.42);
+  --shadow-md: 0 2px 4px rgba(255, 255, 255, 0.88), 0 6px 16px rgba(200, 220, 237, 0.36);
+  --shadow-lg: 0 4px 8px rgba(255, 255, 255, 0.82), 0 10px 28px rgba(200, 220, 237, 0.32);
+  --shadow-xl: 0 8px 16px rgba(255, 255, 255, 0.78), 0 14px 40px rgba(200, 220, 237, 0.28);
+  --shadow-2xl: 0 12px 24px rgba(255, 255, 255, 0.72), 0 22px 56px rgba(200, 220, 237, 0.22);
+}
+
+/* Dark mode (YUCG palette adapted) */
+.dark {
+  --canvas: #0f172a;
+  --surface: #1e293b;
+  --surface-subtle: #273449;
+  --surface-raised: #243247;
+  --ink: #f1f5f9;
+  --ink-muted: #cbd5e1;
+  --focus: #8ab4e6;
+  --danger: #fda29b;
+  --danger-soft: #4a1d22;
+  --success-soft: #123a2d;
+  --warning-soft: #493616;
+  --info-soft: #173455;
+  --bg-primary: var(--canvas);
+  --bg-secondary: var(--surface);
+  --bg-card: var(--surface);
+  --text-primary: var(--ink);
+  --text-muted: var(--ink-muted);
+  --accent: #5b7fa6;
+  --accent-hover: #8aaabf;
+  --border: #334155;
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-text: #ffffff;
+  /* Dark: soft white rim + airy lift (not black blobs) */
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 2px 10px rgba(255, 255, 255, 0.05);
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 4px 16px rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.11), 0 8px 28px rgba(255, 255, 255, 0.07);
+  --shadow-xl: 0 0 0 1px rgba(255, 255, 255, 0.13), 0 12px 36px rgba(255, 255, 255, 0.08);
+  --shadow-2xl: 0 0 0 1px rgba(255, 255, 255, 0.15), 0 20px 50px rgba(255, 255, 255, 0.09);
+}
+
+.dark body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Dark: field text matches --text-primary (same as rest of UI) */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+.dark select,
+.dark textarea {
+  background-color: #334155;
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+  border-color: #475569;
+}
+
+.dark .bg-white { background-color: var(--bg-card); }
+.dark .bg-slate-50 { background-color: #334155; }
+.dark .bg-pale-sky\/50 { background-color: rgba(91, 127, 166, 0.2); }
+.dark .bg-pale-sky\/20 { background-color: rgba(91, 127, 166, 0.15); }
+.dark .bg-pale-sky\/30 { background-color: rgba(91, 127, 166, 0.2); }
+.dark .border-pale-sky,
+.dark .border-slate-200,
+.dark .border-slate-300 { border-color: #475569; }
+.dark .text-deep-navy { color: var(--text-primary); }
+.dark nav.border-b { border-color: #334155; }
+.dark .hover\:bg-slate-50:hover { background-color: #334155; }
+.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(91, 127, 166, 0.2); }
+.dark .bg-red-50 { background-color: rgba(185, 28, 28, 0.15); }
+.dark .bg-green-50 { background-color: rgba(5, 150, 105, 0.15); }
+.dark .bg-amber-50 { background-color: rgba(180, 83, 9, 0.15); }
+.dark .bg-slate-50 { background-color: #334155; }
+.dark code { background-color: #475569; color: #e2e8f0; }
+
+html {
+  font-family: 'Lato', system-ui, sans-serif;
+}
+
+/* Form controls and tables do not inherit the page font by default, which is
+   why buttons and selects were rendering in the system face. */
+button,
+input,
+select,
+textarea,
+table {
+  font-family: inherit;
+}
