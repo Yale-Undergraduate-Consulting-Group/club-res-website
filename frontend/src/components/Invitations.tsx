@@ -76,13 +76,15 @@ export default function Invitations() {
     {error && <p role="alert" className="text-red-700 my-2">{error}</p>}
     <div className="overflow-x-auto"><table className="w-full mt-4 text-left"><thead><tr><th>Email</th><th>Membership</th><th>Delivery</th><th>Actions</th></tr></thead>
       <tbody>{items.map(item => <tr key={item.id}><td>{item.email}</td><td>{item.state}</td><td>{deliveryLabel(item.delivery_state)}{item.delivery_error && <p className="text-sm">{item.delivery_error}</p>}</td><td>
-        {item.state === 'pending' && <div className="space-y-2">
-          {links[item.id] ? <div className="flex min-w-72 gap-2">
-            <input aria-label={`Invitation link for ${item.email}`} className="ui-input min-w-0 flex-1 text-xs" readOnly value={links[item.id]} onFocus={event => event.currentTarget.select()} />
-            <button className="ui-button ui-button--secondary" disabled={busy} onClick={() => void copyLink(links[item.id])}>Copy link</button>
-          </div> : <button className="ui-button ui-button--secondary" disabled={busy} onClick={() => setReplaceItem(item)}>Replace with shareable link</button>}
-          <div className="flex gap-2"><button className="ui-button ui-button--secondary" disabled={busy || item.delivery_state !== 'ready'} onClick={() => void act(item, true)}>Send invitation</button>
-          <button className="ui-button ui-button--secondary" disabled={busy} onClick={() => void act(item, false)}>Revoke</button></div>
+        {item.state === 'pending' && <div className="min-w-80 max-w-md space-y-2">
+          {links[item.id] && <input aria-label={`Invitation link for ${item.email}`} className="ui-input w-full text-xs" readOnly value={links[item.id]} onFocus={event => event.currentTarget.select()} />}
+          <div className={`grid gap-2 ${item.delivery_state === 'ready' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {links[item.id]
+              ? <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => void copyLink(links[item.id])}>Copy link</button>
+              : <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => setReplaceItem(item)}>Replace with shareable link</button>}
+            {item.delivery_state === 'ready' && <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => void act(item, true)}>Send invitation</button>}
+            <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => void act(item, false)}>Revoke</button>
+          </div>
         </div>}
       </td></tr>)}</tbody></table></div>
     <p className="text-xs mt-2">Gmail accepting a send does not prove it reached the inbox. If it is missing, check spam first. A shareable replacement invalidates the emailed link; send the new link directly.</p>
