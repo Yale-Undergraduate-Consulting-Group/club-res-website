@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { api, type AppAccess as AppAccessRow, type Member } from '../../api';
+import { api, type AppAccess as AppAccessRow, type AppSetting, type Member } from '../../api';
 import { useToast } from '../../contexts/useToast';
 import { Button, Chip, EmptyState, Notice, StatusBadge } from '../ui/Primitives';
 
 /**
- * Who may use each app. Every app is open to all active members until an
- * admin restricts it; a restricted app is open to the members ticked here and
- * to admins. The server checks this on every route and background job.
+ * Who may use each app, and what each app needs. Every app is open to all
+ * active members until an admin restricts it; a restricted app is open to the
+ * members ticked here and to admins. The server checks this on every route
+ * and background job. Settings show by name only: whether this server has
+ * them, never their values.
  */
 export default function AppAccess() {
   const toast = useToast();
@@ -15,13 +17,15 @@ export default function AppAccess() {
   const [drafts, setDrafts] = useState<Record<string, AppAccessRow>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [settings, setSettings] = useState<AppSetting[]>([]);
 
   useEffect(() => {
-    Promise.all([api.admin.apps.list(), api.admin.users.list()])
-      .then(([rows, users]) => {
+    Promise.all([api.admin.apps.list(), api.admin.users.list(), api.admin.apps.settings()])
+      .then(([rows, users, appSettings]) => {
         setApps(rows);
         setMembers(users.filter((u) => u.is_active && u.role !== 'system'));
         setDrafts(Object.fromEntries(rows.map((row) => [row.app, row])));
+        setSettings(appSettings);
       })
       .catch((e: Error) => setError(e.message));
   }, []);
@@ -49,6 +53,10 @@ export default function AppAccess() {
       <p className="text-sm text-slate-600">
         Every app is open to all active members unless you restrict it. Admins can always use every app.
       </p>
+      <section className="surface-card rounded-xl p-6 space-y-3" data-testid="app-settings-core">
+        <h2 className="font-semibold text-deep-navy">Platform</h2>
+        <SettingsList rows={settings.filter((s) => s.app === 'core')} />
+      </section>
       {apps.map((saved) => {
         const draft = drafts[saved.app];
         const changed = JSON.stringify(draft) !== JSON.stringify(saved);
@@ -94,12 +102,34 @@ export default function AppAccess() {
                 ))}
               </fieldset>
             )}
+            <SettingsList rows={settings.filter((s) => s.app === saved.app)} />
             <Button size="sm" disabled={!changed || saving === saved.app} onClick={() => void save(saved.app)}>
               {saving === saved.app ? 'Saving…' : 'Save'}
             </Button>
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/** An app's settings on this server: set or missing, and what each turns on. */
+function SettingsList({ rows }: { rows: AppSetting[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <h3 className="mb-1 text-xs font-medium text-slate-600">Settings on this server</h3>
+      <ul className="space-y-1 text-sm">
+        {rows.map((s) => (
+          <li key={s.name} className="flex flex-wrap items-center gap-2" data-testid={`setting-${s.name}`}>
+            <StatusBadge tone={s.configured ? 'success' : s.required ? 'danger' : 'neutral'}>
+              {s.configured ? 'Set' : s.required ? 'Missing (required)' : 'Not set'}
+            </StatusBadge>
+            <code className="text-xs">{s.name}</code>
+            <span className="text-slate-600">{s.purpose}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

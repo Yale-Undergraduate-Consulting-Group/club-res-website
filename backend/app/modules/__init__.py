@@ -50,6 +50,19 @@ class Job:
 
 
 @dataclass(frozen=True)
+class Setting:
+    """An environment variable an app reads. ``required`` ones must be set on
+    a deployed server (``APP_ENV`` is set by ops/restart-yucg.sh): without them
+    it refuses to start, which fails the deploy's health check and keeps the
+    previous release serving - in dev before prod. Optional ones each turn
+    one feature on; ``purpose`` says which. Admins see which are set, by name
+    only (Admin → Apps); values never leave the server."""
+    name: str
+    purpose: str
+    required: bool = False
+
+
+@dataclass(frozen=True)
 class Module:
     id: str
     title: str
@@ -59,6 +72,8 @@ class Module:
     #: Schema changes after the frozen baseline (app.database.init_db), in
     #: version order from 1. The rules are in app/migrations.py.
     migrations: tuple[Migration, ...] = ()
+    #: The environment variables the app reads that matter to operators.
+    settings: tuple[Setting, ...] = ()
 
 
 def mount(app: FastAPI, modules: list[Module]) -> None:
@@ -79,6 +94,26 @@ async def start(modules: list[Module]) -> None:
     for module in modules:
         for hook in module.startup:
             await hook()
+
+
+def missing_settings(modules: list[Module]) -> list[str]:
+    """Required settings that are not set (empty counts as not set)."""
+    import os
+
+    return [s.name for m in modules for s in m.settings if s.required and not (os.getenv(s.name) or "").strip()]
+
+
+def check_settings(modules: list[Module]) -> None:
+    """On a deployed server (APP_ENV set), refuse to start without a required
+    setting. Local development sets no APP_ENV and needs no cloud settings."""
+    import os
+
+    if not (os.getenv("APP_ENV") or "").strip():
+        return
+    missing = missing_settings(modules)
+    if missing:
+        raise RuntimeError("Required settings are not set: " + ", ".join(missing)
+                           + ". Add them to the environment's app secret (docs/PLATFORM.md).")
 
 
 def schedule(scheduler: Any, modules: list[Module], *, beta: bool) -> None:

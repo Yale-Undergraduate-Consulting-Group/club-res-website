@@ -114,6 +114,21 @@ def _apps() -> dict[str, str]:
     return {m.id: m.title for m in all_modules() if m.id != CORE}
 
 
+@router.get("/settings")
+async def list_app_settings(admin: dict = Depends(get_current_admin)) -> list[dict]:
+    """Each app's settings and whether this server has them - names and
+    purposes only, never values."""
+    import os
+
+    from app.modules import all_modules
+
+    return [
+        {"app": m.id, "title": m.title, "name": s.name, "purpose": s.purpose, "required": s.required,
+         "configured": bool((os.getenv(s.name) or "").strip())}
+        for m in all_modules() for s in m.settings
+    ]
+
+
 @router.get("")
 async def list_app_access(admin: dict = Depends(get_current_admin)) -> list[dict]:
     apps = _apps()

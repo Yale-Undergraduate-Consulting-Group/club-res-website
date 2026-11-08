@@ -100,8 +100,21 @@ change in behaviour.
    (the campaign then needs attention), follow-ups, queued searches
    (cancelled), reply sync, and the Outreach part of the daily digest.
    `/api/auth/me` returns the member's apps; the menu shows only those.
-4. **Settings each app needs.** An app lists its environment variables; the
-   server refuses to start without them, and CI checks dev and prod both have them.
+4. **Settings each app needs** — done. Each manifest lists the environment
+   variables that matter (`Setting`: name, purpose, `required`). On a deployed
+   server (`APP_ENV`, set by `ops/restart-yucg.sh`) a missing required setting
+   stops the server from starting; the deploy's health check then fails and
+   the previous release keeps serving, in dev before prod, so dev and prod are
+   both checked on every promotion without new AWS permissions. Local
+   development sets no `APP_ENV` and needs no cloud settings. Required today:
+   `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BACKEND_URL`,
+   `FRONTEND_URL` (both environments have them). Optional settings each turn
+   one feature on. Admin → Apps shows each app's settings on that server, by
+   name only; values never leave the server. Found when this was built
+   (2026-11-08): dev lacked `MONID_API_KEY`, `FIRECRAWL_URL`,
+   `COMPANIES_HOUSE_API_KEY` and `SEC_CONTACT_EMAIL`, so Find people could not
+   search there; `APIFY_API_TOKEN` is stored in both environments and read by
+   no code.
 5. **UI kit and new-app template.** Split `index.css` into tokens, the kit and
    per-app styles; a generator creates a new app's manifests, a migration, a
    smoke test and a docs entry.
