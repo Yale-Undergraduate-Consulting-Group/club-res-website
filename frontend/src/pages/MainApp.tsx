@@ -9,7 +9,7 @@ import { api } from '../api';
 import { applyStoredPreferences } from '../lib/userPreferences';
 
 type MainAppProps = {
-  user: { email: string; name?: string; picture?: string; role?: string };
+  user: { email: string; name?: string; picture?: string; role?: string; apps?: string[] };
   onLogout: () => void;
 };
 

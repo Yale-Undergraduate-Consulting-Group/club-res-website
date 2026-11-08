@@ -66,6 +66,17 @@ async def get_db():
 
 
 async def init_db():
+    """Bring the database to the current schema: the frozen baseline, then
+    every app's numbered migrations (app/migrations.py). Every caller - the
+    server's startup, scripts, tests - gets the same schema."""
+    await _baseline_schema()
+    from app.migrations import migrate
+    from app.modules import all_modules
+
+    await migrate(all_modules())
+
+
+async def _baseline_schema():
     """The frozen schema baseline. It runs on every start, as it always has,
     because it also does start-time upkeep (the first member becomes admin
     when there is none). Do not add schema here: every change after this

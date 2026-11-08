@@ -1,9 +1,11 @@
 """Versioned schema changes, per app (docs/PLATFORM.md, step 2).
 
-``init_db`` is the frozen baseline: it still runs on every start, exactly as
-before, because it also does start-time upkeep (the first member becomes admin
-when there is none). Every schema change after it is a numbered ``Migration``
-in its app's manifest, applied once and recorded in ``schema_migrations``.
+``app.database._baseline_schema`` is the frozen baseline: it still runs on
+every start, exactly as before, because it also does start-time upkeep (the
+first member becomes admin when there is none). Every schema change after it
+is a numbered ``Migration`` in its app's manifest, applied once and recorded
+in ``schema_migrations``. ``app.database.init_db`` runs both, so the server,
+scripts and tests all reach the same schema.
 
 Each migration runs in one ``BEGIN IMMEDIATE`` transaction together with its
 record, so two containers starting at once (a blue/green overlap) apply it
