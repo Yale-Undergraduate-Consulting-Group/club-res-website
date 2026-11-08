@@ -72,6 +72,8 @@ export type FirecrawlStatus = {
 };
 /** One app's access setting, as Admin → Apps edits it. */
 export type AppAccess = { app: string; title: string; restricted: boolean; member_ids: number[] };
+/** One environment setting an app reads, and whether this server has it set. */
+export type AppSetting = { app: string; title: string; name: string; purpose: string; required: boolean; configured: boolean };
 
 /** Monid as the last real call left it; no call is made to read it. */
 export type SearchProviderHealth = {
@@ -961,6 +963,8 @@ export const api = {
     /** Who may use each app; restricted apps are open to listed members and admins. */
     apps: {
       list: () => fetchApi<AppAccess[]>('/api/admin/apps'),
+      /** Each app's settings and whether this server has them; names only, never values. */
+      settings: () => fetchApi<AppSetting[]>('/api/admin/apps/settings'),
       update: (app: string, body: { restricted: boolean; member_ids: number[] }) =>
         fetchApi<{ ok: boolean }>(`/api/admin/apps/${encodeURIComponent(app)}`, { method: 'PUT', body: JSON.stringify(body) }),
     },

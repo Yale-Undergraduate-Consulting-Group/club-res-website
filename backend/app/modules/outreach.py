@@ -4,7 +4,7 @@ and must never move."""
 import os
 from datetime import timedelta
 
-from app.modules import Job, Module, Route
+from app.modules import Job, Module, Route, Setting
 from app.routers import analytics, campaigns, contacts, emails, outreach, releases, track, yucg_prospects, yucgoutreach
 from app.routers.campaigns import drain_releasing_campaigns
 from app.services.catalog_builder import builder_tick
@@ -32,6 +32,15 @@ MODULE = Module(
         Route(releases.router, "/api/yucg/releases", "releases", signed_in=True),
     ),
     startup=(recover_interrupted_yucgoutreach_runs, enroll_prospect_companies),
+    settings=(
+        Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),
+        Setting("FIRECRAWL_URL", "Fallback web search and page reading"),
+        Setting("COMPANIES_HOUSE_API_KEY", "UK company officers"),
+        Setting("SEC_CONTACT_EMAIL", "SEC filings (EDGAR refuses requests without a contact address)"),
+        Setting("VERIFALIA_API_KEY", "Mailbox verification of guessed addresses"),
+        Setting("TAVILY_API_KEY", "Optional extra web search"),
+        Setting("CATALOG_BUCKET", "The prospect spreadsheet and catalog exports"),
+    ),
     jobs=(
         Job("company_discovery_queue", drain_queued_yucgoutreach_runs, "interval", {"seconds": 10}),
         # Catalog builder: off until an admin turns it on. Each tick queues at
