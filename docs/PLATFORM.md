@@ -55,7 +55,7 @@ change in behaviour.
 | Settings | `backend/app/services/settings_service.py` |
 | AI (Bedrock) | `backend/app/services/llm.py` |
 | Gmail (member's own account and name) | `backend/app/services/gmail_api.py` |
-| UI primitives | `frontend/src/components/ui/Primitives.tsx`, tokens in `index.css` |
+| UI kit and styles | `frontend/src/components/ui/Primitives.tsx`; styles in `frontend/src/styles/` (below) |
 | App shell and navigation | `frontend/src/components/shell/`, `frontend/src/lib/navConfig.ts` |
 
 ## Apps today
@@ -117,16 +117,37 @@ change in behaviour.
    `MONID_API_KEY`, `FIRECRAWL_URL`, `COMPANIES_HOUSE_API_KEY` and
    `SEC_CONTACT_EMAIL`, so Find people cannot search there; `APIFY_API_TOKEN`
    is stored in both environments and read by no code.
-5. **UI kit and new-app template.** Split `index.css` into tokens, the kit and
-   per-app styles; a generator creates a new app's manifests, a migration, a
-   smoke test and a docs entry.
+5. **UI kit and new-app template** — done. `frontend/src/index.css` only loads
+   the fonts, Tailwind and, in cascade order, `styles/tokens.css` (theme and
+   colour variables), `styles/shell.css` (brand, forms, preferences,
+   navigation, page chrome), `styles/kit.css` (the classes behind
+   `Primitives.tsx` and the shared opening motion) and one file per app under
+   `styles/apps/` (`outreach.css`: Email Studio and Find people). The split
+   kept every rule; the rules whose order changed were checked pair by pair
+   and none can apply to the same element. `scripts/new_module.py` creates a
+   new app (below).
 
-## Adding an app (after step 5 this is a generator)
+## Adding an app
 
-1. `backend/app/modules/<app>.py` with `MODULE = Module(...)`, and add it to
-   `all_modules()`. Its routers live under `backend/app/routers/`, its services
-   under `backend/app/services/`.
-2. An `AppModule` in `frontend/src/modules/index.tsx`, pages in
-   `frontend/src/pages/`, and its menu placement in `lib/navConfig.ts`.
-3. Run `backend/tests/test_modules.py` and the frontend unit tests; add the
-   app to the table above.
+```sh
+python3 scripts/new_module.py <id> "<Title>" "<what it is for>"
+```
+
+It writes a working app, open to every member until an admin restricts it:
+a manifest with a signed-in router at `/api/<id>` and migration 1 (a table of
+each member's own items), the page at `/<id>` with its header entry, a smoke
+test (`backend/tests/test_<id>.py`: sign-in, each member sees only their own
+items, access), and its row in the table above. It refuses an id, URL or file
+that is taken, and writes nothing then. Then:
+
+1. Replace the item list with the app's real data: new tables are new
+   migrations (`Migration(2, …)`), never edits to an applied one. Keep the
+   smoke test's access checks.
+2. Settings it reads go in the manifest's `settings`; scheduled work in
+   `jobs` (mark mail jobs `sends_mail`). Styles the kit lacks go in
+   `frontend/src/styles/apps/<id>.css`, imported last in `index.css`.
+3. A client-facing app does not belong here: it needs its own reviewed design
+   and data boundary.
+4. Run `backend/tests/test_<id>.py`, `test_modules.py`, and the frontend
+   unit tests and lint; `backend/tests/test_new_module.py` keeps the
+   generator itself working.
