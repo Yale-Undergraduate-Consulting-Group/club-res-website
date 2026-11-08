@@ -74,9 +74,18 @@ change in behaviour.
    built from manifests. Verified: all 183 API paths and all 213 path/method
    pairs resolve to the same handlers as before, and the same 12 production
    and 8 beta jobs are scheduled.
-2. **Versioned migrations.** A `schema_migrations` table and per-app migration
-   files replace the single `init_db`; today's schema becomes migration 001.
-   A migration must leave the previous release working (blue/green overlap).
+2. **Versioned migrations** — done. `app.database.init_db` is the frozen
+   baseline: it still runs on every start (it also promotes the first member
+   to admin when there is none), and nothing new is added to it. Every schema
+   change after it is a numbered `Migration` in its app's manifest, applied
+   once by `app/migrations.py` and recorded in `schema_migrations`. Rules: a
+   migration only adds (tables, nullable or defaulted columns, indexes) so the
+   previous release keeps working during the blue/green overlap; it is quick,
+   because it holds the write lock and the running release waits at most five
+   seconds (big backfills are batched leader-only jobs); it uses `execute`,
+   never `commit` or `executescript`. A failure applies nothing, records
+   nothing, and stops the new container from starting, so the old one keeps
+   serving. Versions run 1, 2, 3 per app (`test_modules.py`).
 3. **Access per app.** Default all members; admins can restrict an app. Checked
    on the server for every route and job of the app.
 4. **Settings each app needs.** An app lists its environment variables; the

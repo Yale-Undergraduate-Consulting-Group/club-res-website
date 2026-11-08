@@ -66,7 +66,11 @@ async def get_db():
 
 
 async def init_db():
-    """Initialize database schema."""
+    """The frozen schema baseline. It runs on every start, as it always has,
+    because it also does start-time upkeep (the first member becomes admin
+    when there is none). Do not add schema here: every change after this
+    baseline is a numbered Migration in its app's manifest (app/migrations.py,
+    docs/PLATFORM.md)."""
     db = await get_db()
     try:
         await db.executescript("""
