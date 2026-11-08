@@ -51,12 +51,13 @@ class Job:
 
 @dataclass(frozen=True)
 class Setting:
-    """An environment variable an app reads. ``required`` ones must be set on
-    a deployed server (``APP_ENV`` is set by ops/restart-yucg.sh): without them
-    it refuses to start, which fails the deploy's health check and keeps the
-    previous release serving - in dev before prod. Optional ones each turn
-    one feature on; ``purpose`` says which. Admins see which are set, by name
-    only (Admin → Apps); values never leave the server."""
+    """An environment variable an app reads. Without a ``required`` one the
+    production server (``APP_ENV=production``, set by ops/restart-yucg.sh)
+    refuses to start, which fails the deploy's health check and keeps the
+    previous release serving. Dev only logs it: dev runs without some of them
+    on purpose (it has no Google sign-in). Optional ones each turn one feature
+    on; ``purpose`` says which. Admins see which are set, by name only
+    (Admin → Apps); values never leave the server."""
     name: str
     purpose: str
     required: bool = False
@@ -104,16 +105,19 @@ def missing_settings(modules: list[Module]) -> list[str]:
 
 
 def check_settings(modules: list[Module]) -> None:
-    """On a deployed server (APP_ENV set), refuse to start without a required
-    setting. Local development sets no APP_ENV and needs no cloud settings."""
+    """Production refuses to start without a required setting; dev logs which
+    are missing. Local development sets no APP_ENV and needs no cloud settings."""
+    import logging
     import os
 
-    if not (os.getenv("APP_ENV") or "").strip():
+    env = (os.getenv("APP_ENV") or "").strip()
+    missing = missing_settings(modules) if env else []
+    if not missing:
         return
-    missing = missing_settings(modules)
-    if missing:
-        raise RuntimeError("Required settings are not set: " + ", ".join(missing)
-                           + ". Add them to the environment's app secret (docs/PLATFORM.md).")
+    message = "Required settings are not set: " + ", ".join(missing)
+    if env == "production":
+        raise RuntimeError(message + ". Add them to the environment's app secret (docs/PLATFORM.md).")
+    logging.getLogger(__name__).warning("%s (allowed in %s; production would not start).", message, env)
 
 
 def schedule(scheduler: Any, modules: list[Module], *, beta: bool) -> None:
