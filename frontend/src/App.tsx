@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import MainApp from './pages/MainApp';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -7,15 +7,7 @@ import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AiModelProvider } from './contexts/AiModelContext';
 import { API_BASE } from './api';
-
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Scraper = lazy(() => import('./pages/Scraper'));
-const EmailStudio = lazy(() => import('./pages/EmailStudio'));
-const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
-const Analytics = lazy(() => import('./pages/Analytics'));
-const Outreach = lazy(() => import('./pages/Outreach'));
-const Admin = lazy(() => import('./pages/Admin'));
-const Profile = lazy(() => import('./pages/Profile'));
+import { MODULES } from './modules';
 
 function AppContent() {
   const [user, setUser] = useState<{ id?: number; email: string; name?: string; picture?: string; role?: string } | null>(null);
@@ -100,19 +92,11 @@ function AppContent() {
           )
         }
       >
-        <Route index element={<Dashboard />} />
-        <Route path="scraper" element={<Scraper />} />
-        <Route path="studio" element={<EmailStudio />} />
-        {/* The campaign list is disabled: Home shows a member's own
-            campaigns now, so a stray link or bookmark lands there instead
-            of an empty shell - the same courtesy /settings already gets. */}
-        <Route path="campaigns" element={<Navigate to="/" replace />} />
-        <Route path="campaigns/:id" element={<CampaignDetail />} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="outreach" element={<Outreach />} />
-        <Route path="admin" element={<Admin />} />
-        <Route path="profile" element={<Profile />} />
-        <Route path="settings" element={<Navigate to="/profile?tab=settings" replace />} />
+        {MODULES.flatMap((module) => module.routes.map((route) => (
+          'index' in route
+            ? <Route key={`${module.id}:index`} index element={route.element} />
+            : <Route key={`${module.id}:${route.path}`} path={route.path} element={route.element} />
+        )))}
       </Route>
     </Routes>
   );

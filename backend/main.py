@@ -16,7 +16,6 @@ else:
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
 import logging
 from app.log_redaction import RedactAccessPath
 logging.getLogger("uvicorn.access").addFilter(RedactAccessPath())
@@ -29,21 +28,11 @@ from app.services.llm import list_models
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import init_db
-from app.routers import contacts, emails, campaigns, analytics, settings, auth, outreach, track, admin, attachments, telemetry, operations, yucgoutreach, yucg_prospects, releases, projects
-from app.routers.campaigns import drain_releasing_campaigns
-from app.services.follow_up_job import run_follow_up_sequences
-from app.services.notification_digest_job import run_notification_digests
-from app.services.gmail_reply_sync import sync_replies_all_senders
-from app.services.yucgoutreach_discovery import (
-    drain_queued_yucgoutreach_runs,
-    recover_interrupted_yucgoutreach_runs,
-)
-from app.services.company_register import backfill_register_entities, drain_company_register
-from app.services.roster_watch import drain_roster_queue, enroll_prospect_companies
-from app.services.roster_email import drain_roster_emails, drain_roster_verification
-from app.services.roster_adjudicate import drain_roster_adjudication
-from app.services.catalog_builder import builder_tick
-from app.services.scheduler_lease import keep_lease, leader_only
+from app.modules import all_modules, mount, schedule, start
+from app.services.scheduler_lease import keep_lease
+
+# Every app on the platform, core first (app/modules, docs/PLATFORM.md).
+MODULES = all_modules()
 
 # CORS: use CORS_ORIGINS env (comma-separated) when going public; default localhost for dev
 _default_origins = [
@@ -57,130 +46,13 @@ CORS_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _co
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    await recover_interrupted_yucgoutreach_runs()
-    await enroll_prospect_companies()
+    await start(MODULES)
     # A deploy overlaps the old and new containers; only the lease holder runs jobs.
     lease_stop = asyncio.Event()
     lease_task = asyncio.create_task(keep_lease(lease_stop))
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        leader_only(drain_queued_yucgoutreach_runs),
-        "interval",
-        seconds=10,
-        id="company_discovery_queue",
-        max_instances=1,
-        coalesce=True,
-    )
-    # Catalog builder: off until an admin turns it on. Each tick queues at
-    # most one company, and only when no builder run is open and the club is
-    # under the builder's share of search and AI budgets.
-    scheduler.add_job(
-        leader_only(builder_tick),
-        "interval",
-        seconds=60,
-        id="catalog_builder",
-        max_instances=1,
-        coalesce=True,
-    )
-    # Bulk register ingest: one step per pass (ticker list, then a Form D
-    # quarter, then sector backfill), so no pass is long or bursty at SEC.
-    scheduler.add_job(
-        leader_only(drain_company_register),
-        "interval",
-        minutes=int(os.getenv("REGISTER_INGEST_MINUTES", "20") or 20),
-        id="company_register_ingest",
-        max_instances=1,
-        coalesce=True,
-    )
-    # Public name / entity key / hide reason for register rows that have none
-    # yet (the first deploy of the columns, rows the previous release inserted
-    # during a deploy overlap, a bumped DERIVATION_VERSION). It reads only the
-    # derived_version index, so a tick with nothing to derive costs nothing;
-    # the first tick runs shortly after start rather than a full interval later.
-    scheduler.add_job(
-        leader_only(backfill_register_entities),
-        "interval",
-        minutes=5,
-        id="company_register_derive",
-        max_instances=1,
-        coalesce=True,
-        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
-    )
-    scheduler.add_job(
-        leader_only(drain_roster_queue),
-        "interval",
-        seconds=60,
-        id="company_roster_watch",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        leader_only(drain_roster_emails),
-        "interval",
-        seconds=300,
-        id="company_roster_emails",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        leader_only(drain_roster_adjudication),
-        "interval",
-        minutes=20,
-        id="company_roster_adjudicate",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        leader_only(drain_roster_verification),
-        "cron",
-        hour=7,
-        minute=30,
-        id="company_roster_verification",
-        max_instances=1,
-        coalesce=True,
-    )
-    if os.getenv('APP_ENV', 'production').lower() == 'beta':
-        # Beta neither sends mail nor synchronizes real Gmail accounts in background jobs.
-        scheduler.start()
-        yield
-        scheduler.shutdown(wait=False)
-        lease_stop.set()
-        await lease_task
-        return
-    scheduler.add_job(
-        leader_only(run_follow_up_sequences),
-        "cron",
-        hour=8,
-        minute=0,
-        id="follow_up_sequences",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        leader_only(run_notification_digests),
-        "cron",
-        hour=8,
-        minute=5,
-        id="notification_digests",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        leader_only(sync_replies_all_senders),
-        "cron",
-        minute="*/2",
-        id="gmail_reply_sync",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        leader_only(drain_releasing_campaigns),
-        "cron",
-        minute="*/5",
-        id="campaign_drain",
-        max_instances=1,
-        coalesce=True,
-    )
+    # Beta neither sends mail nor synchronizes real Gmail accounts in background jobs.
+    schedule(scheduler, MODULES, beta=os.getenv('APP_ENV', 'production').lower() == 'beta')
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)
@@ -213,31 +85,7 @@ async def private_api_headers(request, call_next):
     return response
 
 
-_require_user = [Depends(get_current_user)]
-app.include_router(contacts.router, prefix="/api/contacts", tags=["contacts"], dependencies=_require_user)
-app.include_router(emails.router, prefix="/api/emails", tags=["emails"], dependencies=_require_user)
-app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"], dependencies=_require_user)
-app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"], dependencies=_require_user)
-from app.routers import invitations, workspace, activity
-app.include_router(activity.router, prefix="/api/activity", tags=["activity"])
-app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
-app.include_router(invitations.router, prefix="/api/admin/invitations", tags=["invitations"])
-app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
-app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(outreach.router, prefix="/api/outreach", tags=["outreach"], dependencies=_require_user)
-app.include_router(track.router, prefix="/api/track", tags=["track"])
-# Slack signs its own requests and carries no club session, so this door
-# authenticates itself rather than using the session dependency.
-from app.routers import slack as slack_router
-app.include_router(slack_router.router, prefix="/api/slack", tags=["slack"])
-app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
-app.include_router(attachments.router, prefix="/api/attachments", tags=["attachments"])
-app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
-app.include_router(operations.router, prefix="/api/admin/operations", tags=["operations"])
-app.include_router(yucgoutreach.router, prefix="/api/yucgoutreach", tags=["yucgoutreach"])
-app.include_router(yucg_prospects.router, prefix="/api/yucg", tags=["yucg-coordinator"])
-app.include_router(releases.router, prefix="/api/yucg/releases", tags=["releases"], dependencies=_require_user)
-app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+mount(app, MODULES)
 
 
 @app.get("/api/health")
