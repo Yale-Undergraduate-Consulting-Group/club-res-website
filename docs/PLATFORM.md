@@ -74,11 +74,13 @@ change in behaviour.
    built from manifests. Verified: all 183 API paths and all 213 path/method
    pairs resolve to the same handlers as before, and the same 12 production
    and 8 beta jobs are scheduled.
-2. **Versioned migrations** — done. `app.database.init_db` is the frozen
-   baseline: it still runs on every start (it also promotes the first member
-   to admin when there is none), and nothing new is added to it. Every schema
-   change after it is a numbered `Migration` in its app's manifest, applied
-   once by `app/migrations.py` and recorded in `schema_migrations`. Rules: a
+2. **Versioned migrations** — done. `app.database._baseline_schema` is the
+   frozen baseline: it still runs on every start (it also promotes the first
+   member to admin when there is none), and nothing new is added to it. Every
+   schema change after it is a numbered `Migration` in its app's manifest,
+   applied once by `app/migrations.py` and recorded in `schema_migrations`.
+   `app.database.init_db` runs the baseline and then the migrations, so the
+   server, scripts and tests reach the same schema. Rules: a
    migration only adds (tables, nullable or defaulted columns, indexes) so the
    previous release keeps working during the blue/green overlap; it is quick,
    because it holds the write lock and the running release waits at most five
@@ -86,8 +88,18 @@ change in behaviour.
    never `commit` or `executescript`. A failure applies nothing, records
    nothing, and stops the new container from starting, so the old one keeps
    serving. Versions run 1, 2, 3 per app (`test_modules.py`).
-3. **Access per app.** Default all members; admins can restrict an app. Checked
-   on the server for every route and job of the app.
+3. **Access per app** — done. Every app is open to all active members until an
+   admin restricts it (Admin → Apps); a restricted app is open to the members
+   listed for it and to admins. Core (sign-in, profile, admin) and the
+   catalog builder's `system` account are never restricted. `app/app_access.py`
+   holds the rule (tables `app_access` and `app_members`, migration `core:1`).
+   The registry adds the check to every route of every app except core, so a
+   signed-in member without access gets 403; a request with no session (the
+   tracking pixel, Slack's signed requests) keeps its own check. Jobs that act
+   for a member check it next to the inactive-member check: campaign sending
+   (the campaign then needs attention), follow-ups, queued searches
+   (cancelled), reply sync, and the Outreach part of the daily digest.
+   `/api/auth/me` returns the member's apps; the menu shows only those.
 4. **Settings each app needs.** An app lists its environment variables; the
    server refuses to start without them, and CI checks dev and prod both have them.
 5. **UI kit and new-app template.** Split `index.css` into tokens, the kit and

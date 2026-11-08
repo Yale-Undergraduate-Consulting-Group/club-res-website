@@ -39,7 +39,11 @@ async def run_follow_up_sequences() -> dict:
             if not sender_user_id or camp["owner_user_id"] != sender_user_id:
                 errors.append({"campaign_id": cid, "error": "Sender ownership requires reconciliation"})
                 continue
-
+            # A sender who lost access to Outreach sends no more follow-ups.
+            from app.app_access import may_use
+            if not await may_use(db, sender_user_id, "outreach"):
+                errors.append({"campaign_id": cid, "error": "Sender no longer has access to Outreach"})
+                continue
 
             # Campaign contacts: initial send done, sequence not finished, no reply yet
             cursor = await db.execute(

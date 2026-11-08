@@ -67,3 +67,12 @@ const outreach: AppModule = {
 
 /** Every app, core first. */
 export const MODULES: AppModule[] = [core, outreach];
+
+/**
+ * The apps this member may use, as the server reported them on sign-in.
+ * Core always is; without a list (an older server) every app shows, and the
+ * server still refuses a route the member may not use.
+ */
+export function usableModules(apps?: string[]): AppModule[] {
+  return MODULES.filter((module) => module.id === 'core' || !apps || apps.includes(module.id));
+}

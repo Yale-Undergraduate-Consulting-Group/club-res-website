@@ -1,6 +1,8 @@
 """The platform's own surface: sign-in, members, settings, admin and the
 integrations every app shares. Paths here are called from outside the app
 (Google's OAuth callback, Slack's signed events) and must never move."""
+from app import app_access
+from app.migrations import Migration
 from app.modules import Module, Route
 from app.routers import activity, admin, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
 
@@ -20,5 +22,9 @@ MODULE = Module(
         Route(attachments.router, "/api/attachments", "attachments"),
         Route(telemetry.router, "/api/telemetry", "telemetry"),
         Route(operations.router, "/api/admin/operations", "operations"),
+        Route(app_access.router, "/api/admin/apps", "apps"),
+    ),
+    migrations=(
+        Migration(1, "app access", app_access.create_tables),
     ),
 )

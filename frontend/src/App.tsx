@@ -7,10 +7,10 @@ import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AiModelProvider } from './contexts/AiModelContext';
 import { API_BASE } from './api';
-import { MODULES } from './modules';
+import { usableModules } from './modules';
 
 function AppContent() {
-  const [user, setUser] = useState<{ id?: number; email: string; name?: string; picture?: string; role?: string } | null>(null);
+  const [user, setUser] = useState<{ id?: number; email: string; name?: string; picture?: string; role?: string; apps?: string[] } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const checkAuth = () => {
@@ -92,7 +92,7 @@ function AppContent() {
           )
         }
       >
-        {MODULES.flatMap((module) => module.routes.map((route) => (
+        {usableModules(user?.apps).flatMap((module) => module.routes.map((route) => (
           'index' in route
             ? <Route key={`${module.id}:index`} index element={route.element} />
             : <Route key={`${module.id}:${route.path}`} path={route.path} element={route.element} />

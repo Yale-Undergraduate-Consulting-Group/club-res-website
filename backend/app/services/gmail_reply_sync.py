@@ -213,10 +213,17 @@ async def sync_replies_for_user(user_id: int, *, auto_sort_contacted: bool = Tru
 
 
 async def sync_replies_all_senders() -> dict[str, Any]:
+    from app.app_access import may_use_sql
+
+    # Only members who may still use Outreach have their mailbox read.
+    condition, params = may_use_sql("outreach", "u.id", "u.role")
     db = await get_db()
     try:
         rows = await (await db.execute(
-            "SELECT DISTINCT sent_by_user_id FROM campaign_contacts WHERE sent_by_user_id IS NOT NULL AND sent_at IS NOT NULL"
+            f"""SELECT DISTINCT cc.sent_by_user_id FROM campaign_contacts cc
+                JOIN users u ON u.id = cc.sent_by_user_id
+                WHERE cc.sent_by_user_id IS NOT NULL AND cc.sent_at IS NOT NULL AND {condition}""",
+            params,
         )).fetchall()
     finally:
         await db.close()

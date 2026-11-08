@@ -8,7 +8,7 @@ import GuideBubble from '../GuideBubble';
 import Tour from '../Tour';
 
 type AppShellProps = {
-  user: { id?: number; email: string; name?: string; picture?: string; role?: string };
+  user: { id?: number; email: string; name?: string; picture?: string; role?: string; apps?: string[] };
   onLogout: () => void;
   pageKey?: string;
   headerExtra?: ReactNode;
@@ -17,7 +17,7 @@ type AppShellProps = {
 export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppShellProps) {
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const navItems = getNavItems(user.role === 'admin');
+  const navItems = getNavItems(user.role === 'admin', user.apps);
 
   const handleLogout = () => {
     onLogout();

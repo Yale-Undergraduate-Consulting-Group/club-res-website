@@ -44,6 +44,8 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
           ))}
           {groups.map((group, index) => {
             const items = navItems.filter(item => group.ids.includes(item.id));
+            // A member who may not use an app gets no empty dropdown for it.
+            if (items.length === 0) return null;
             const active = items.some(item => pathname === item.to || pathname.startsWith(item.to + '/'));
             return <details key={`${pathname}:${group.label}`} ref={node => { dropdowns.current[index] = node; }} className="app-nav-group" onKeyDown={event => {
               if (event.key === 'Escape') {

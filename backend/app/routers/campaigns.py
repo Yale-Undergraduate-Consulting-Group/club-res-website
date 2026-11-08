@@ -130,6 +130,11 @@ async def require_campaign_owner(db, campaign_id: int, user_id: int):
     active = await (await db.execute("SELECT is_active FROM users WHERE id = ?", (user_id,))).fetchone()
     if not active or not active["is_active"]:
         raise HTTPException(403, "Sender account is inactive")
+    # Background sends too: a sender who lost access to Outreach stops sending,
+    # and the scheduled drain marks the campaign as needing attention.
+    from app.app_access import may_use
+    if not await may_use(db, user_id, "outreach"):
+        raise HTTPException(403, "Sender no longer has access to Outreach")
     return row
 
 

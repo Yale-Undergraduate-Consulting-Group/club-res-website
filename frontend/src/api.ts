@@ -70,6 +70,9 @@ export type FirecrawlStatus = {
   firecrawl: BackendProbeStatus;
   effective: { fetch: WebProbeResult; search: WebProbeResult; note: string };
 };
+/** One app's access setting, as Admin → Apps edits it. */
+export type AppAccess = { app: string; title: string; restricted: boolean; member_ids: number[] };
+
 /** Monid as the last real call left it; no call is made to read it. */
 export type SearchProviderHealth = {
   configured: boolean;
@@ -955,6 +958,12 @@ export const api = {
         prefixes: { prefix: string; objects: StoredObject[] }[];
       }>('/api/admin/catalog'),
     loginLog: () => fetchApi<LogEntry[]>('/api/admin/login-log'),
+    /** Who may use each app; restricted apps are open to listed members and admins. */
+    apps: {
+      list: () => fetchApi<AppAccess[]>('/api/admin/apps'),
+      update: (app: string, body: { restricted: boolean; member_ids: number[] }) =>
+        fetchApi<{ ok: boolean }>(`/api/admin/apps/${encodeURIComponent(app)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
     users: {
       list: () => fetchApi<Member[]>('/api/admin/users'),
       invite: (email: string) =>
