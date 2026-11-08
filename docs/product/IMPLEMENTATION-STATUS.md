@@ -38,7 +38,7 @@ Removed the fixed backdrop, competing main scroll container and route-entry moti
 
 ## 3. Invitations and account admission
 
-Persistent invitations record creator, exact email, assigned projects, expiry, revocation and delivery state. Only the creating member can send the invitation through their connected Gmail account. Uncertain delivery remains visible. Google admission requires verified identity and an existing roster entry or matching valid invitation. Browser-bound, single-use OAuth challenges prevent replay; ordinary identity login is separate from Gmail authorization. Access logs redact OAuth/invitation query parameters and shared-link tokens.
+Persistent invitations record creator, exact email, assigned projects, expiry, revocation and delivery state. Only the creating member can send the invitation through their connected Gmail account. “Accepted by Gmail” is not presented as inbox delivery: an unreceived invite can be replaced with a shareable link. Replacement explicitly invalidates the emailed token, stores only the new hash and returns the sole plaintext copy to its creator; a newly created link stays copyable in that browser session without rotation. Uncertain delivery remains visible. Google admission requires verified identity and an existing roster entry or matching valid invitation. Browser-bound, single-use OAuth challenges prevent replay; ordinary identity login is separate from Gmail authorization. Access logs redact OAuth/invitation query parameters and shared-link tokens.
 
 ## 4. Private project/document workspace
 

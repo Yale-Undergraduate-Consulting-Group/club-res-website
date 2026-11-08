@@ -94,6 +94,45 @@ async def send_invitation(invitation_id: int, payload: InvitationSend, admin: di
     finally:
         await db.close()
 
+@router.post('/{invitation_id}/link')
+async def replace_with_shareable_link(invitation_id: int, admin: dict = Depends(get_current_admin)):
+    """Rotate a pending invite's hashed token and return the only plaintext copy.
+
+    This is the recovery path when the recipient cannot find an email. It
+    deliberately invalidates that email's link rather than storing a reusable
+    invite secret in the database.
+    """
+    from app.routers.auth import BACKEND_URL
+
+    db = await get_db()
+    try:
+        await db.execute('BEGIN IMMEDIATE')
+        row = await (await db.execute(
+            'SELECT * FROM membership_invitations WHERE id=?', (invitation_id,))).fetchone()
+        if not row:
+            raise HTTPException(404, 'Invitation not found')
+        if row['created_by'] != admin['id']:
+            raise HTTPException(403, 'Only the invitation creator may replace its link')
+        if row['state'] != 'pending' or row['expires_at'] <= time.time():
+            raise HTTPException(409, 'Invitation is no longer pending')
+        token = secrets.token_urlsafe(32)
+        await db.execute(
+            """UPDATE membership_invitations
+               SET token_hash=?, delivery_state='manual',
+                   delivery_error='The emailed link was replaced. Share the new link directly.'
+               WHERE id=?""",
+            (digest(token), invitation_id),
+        )
+        await audit(db, admin['id'], 'invitation_link_rotate', 'invitation', invitation_id)
+        await db.commit()
+        return {
+            'link': f'{BACKEND_URL}/api/auth/google?invitation={token}',
+            'expires_at': row['expires_at'],
+        }
+    finally:
+        await db.close()
+
+
 @router.delete('/{invitation_id}')
 async def revoke_invitation(invitation_id: int, admin: dict = Depends(get_current_admin)):
     db = await get_db()
