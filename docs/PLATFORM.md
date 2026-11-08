@@ -100,8 +100,23 @@ change in behaviour.
    (the campaign then needs attention), follow-ups, queued searches
    (cancelled), reply sync, and the Outreach part of the daily digest.
    `/api/auth/me` returns the member's apps; the menu shows only those.
-4. **Settings each app needs.** An app lists its environment variables; the
-   server refuses to start without them, and CI checks dev and prod both have them.
+4. **Settings each app needs** — done. Each manifest lists the environment
+   variables that matter (`Setting`: name, purpose, `required`). Production
+   (`APP_ENV=production`, set by `ops/restart-yucg.sh`) does not start without
+   a required setting; the deploy's health check then fails and the previous
+   release keeps serving. Dev (`beta`) only logs the missing ones, because it
+   runs without some on purpose: its Google keys are empty (no sign-in on dev).
+   A first version refused in dev too, and the 2026-11-08 dev deploy stopped
+   there before prod, so a gap in prod's settings is caught only at prod's own
+   deploy (safely: blue/green keeps the old release). Local development sets
+   no `APP_ENV` and needs no cloud settings. Required: `JWT_SECRET`,
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BACKEND_URL`, `FRONTEND_URL`,
+   all set in prod (checked 2026-11-08). Optional settings each turn one
+   feature on. Admin → Apps shows each app's settings on that server, by name
+   only; values never leave the server. Also found then: dev lacks
+   `MONID_API_KEY`, `FIRECRAWL_URL`, `COMPANIES_HOUSE_API_KEY` and
+   `SEC_CONTACT_EMAIL`, so Find people cannot search there; `APIFY_API_TOKEN`
+   is stored in both environments and read by no code.
 5. **UI kit and new-app template.** Split `index.css` into tokens, the kit and
    per-app styles; a generator creates a new app's manifests, a migration, a
    smoke test and a docs entry.

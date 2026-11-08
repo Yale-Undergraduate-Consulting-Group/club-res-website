@@ -14,6 +14,10 @@ async function mock(page: Page, user: typeof ADMIN) {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path === '/api/auth/me') return route.fulfill({ json: { authenticated: true, user } });
+    if (path === '/api/admin/apps/settings') return route.fulfill({ json: [
+      { app: 'core', title: 'Platform', name: 'GOOGLE_CLIENT_ID', purpose: 'Google sign-in and Connect Gmail', required: true, configured: true },
+      { app: 'outreach', title: 'Outreach', name: 'MONID_API_KEY', purpose: 'People search', required: false, configured: false },
+    ] });
     if (path === '/api/admin/apps') return route.fulfill({ json: [outreach, { app: 'projects', title: 'Projects', restricted: false, member_ids: [] }] });
     if (path === '/api/admin/apps/outreach' && request.method() === 'PUT') {
       const body = request.postDataJSON();
@@ -43,6 +47,10 @@ test('an admin restricts Outreach to chosen members from Admin → Apps', async 
   const card = page.getByTestId('app-access-outreach');
   await expect(card.getByText('All members', { exact: true }).first()).toBeVisible();
   await expect(card.getByRole('button', { name: 'Save' })).toBeDisabled();
+  // Each app lists what it needs on this server, by name only.
+  await expect(page.getByTestId('app-settings-core').getByTestId('setting-GOOGLE_CLIENT_ID')).toContainText('Set');
+  await expect(card.getByTestId('setting-MONID_API_KEY')).toContainText('Not set');
+  await expect(card.getByTestId('setting-MONID_API_KEY')).toContainText('People search');
 
   await card.getByRole('radio', { name: 'Only chosen members' }).click();
   await card.getByRole('checkbox', { name: 'Ana' }).check();

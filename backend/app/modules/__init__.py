@@ -50,6 +50,20 @@ class Job:
 
 
 @dataclass(frozen=True)
+class Setting:
+    """An environment variable an app reads. Without a ``required`` one the
+    production server (``APP_ENV=production``, set by ops/restart-yucg.sh)
+    refuses to start, which fails the deploy's health check and keeps the
+    previous release serving. Dev only logs it: dev runs without some of them
+    on purpose (it has no Google sign-in). Optional ones each turn one feature
+    on; ``purpose`` says which. Admins see which are set, by name only
+    (Admin → Apps); values never leave the server."""
+    name: str
+    purpose: str
+    required: bool = False
+
+
+@dataclass(frozen=True)
 class Module:
     id: str
     title: str
@@ -59,6 +73,8 @@ class Module:
     #: Schema changes after the frozen baseline (app.database.init_db), in
     #: version order from 1. The rules are in app/migrations.py.
     migrations: tuple[Migration, ...] = ()
+    #: The environment variables the app reads that matter to operators.
+    settings: tuple[Setting, ...] = ()
 
 
 def mount(app: FastAPI, modules: list[Module]) -> None:
@@ -79,6 +95,29 @@ async def start(modules: list[Module]) -> None:
     for module in modules:
         for hook in module.startup:
             await hook()
+
+
+def missing_settings(modules: list[Module]) -> list[str]:
+    """Required settings that are not set (empty counts as not set)."""
+    import os
+
+    return [s.name for m in modules for s in m.settings if s.required and not (os.getenv(s.name) or "").strip()]
+
+
+def check_settings(modules: list[Module]) -> None:
+    """Production refuses to start without a required setting; dev logs which
+    are missing. Local development sets no APP_ENV and needs no cloud settings."""
+    import logging
+    import os
+
+    env = (os.getenv("APP_ENV") or "").strip()
+    missing = missing_settings(modules) if env else []
+    if not missing:
+        return
+    message = "Required settings are not set: " + ", ".join(missing)
+    if env == "production":
+        raise RuntimeError(message + ". Add them to the environment's app secret (docs/PLATFORM.md).")
+    logging.getLogger(__name__).warning("%s (allowed in %s; production would not start).", message, env)
 
 
 def schedule(scheduler: Any, modules: list[Module], *, beta: bool) -> None:
