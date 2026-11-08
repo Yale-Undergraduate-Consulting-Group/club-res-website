@@ -41,6 +41,13 @@ test('a missing invitation email can be replaced with a link to send directly', 
   await expect(page.getByText('Share the new link directly.')).toBeVisible();
   expect(state.rotations()).toBe(1);
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('https://site.example/api/auth/google?invitation=replacement-token');
+  await expect(page.getByRole('button', { name: 'Send invitation' })).toHaveCount(0);
+  const copyBox = await page.getByRole('button', { name: 'Copy link' }).boundingBox();
+  const revokeBox = await page.getByRole('button', { name: 'Revoke' }).boundingBox();
+  expect(copyBox).not.toBeNull();
+  expect(revokeBox).not.toBeNull();
+  expect(Math.abs(copyBox!.width - revokeBox!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(copyBox!.height - revokeBox!.height)).toBeLessThanOrEqual(1);
 });
 
 test('a newly created invitation exposes its existing link without rotating it', async ({ page }) => {
