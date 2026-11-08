@@ -536,7 +536,7 @@ This recovery diagram is an operator procedure, not an automated rollback workfl
 | Review/hold/current-base rule blocks | No eligible promotion | Resolve the brake; synchronize source with destination; rerun checks |
 | AWS variable missing | Deployment fails before AWS calls | Configure the exact environment |
 | Backend runtime changed | Ship fails if the image push, SSM command, or the new container's health check fails; the serving container keeps running and is not touched | Read the SSM command output, fix forward on a `feature/<user>` branch, and redeploy |
-| Required setting missing | The new container refuses to start (`Required settings are not set: …` in its log), so its health check fails and the serving container keeps running; dev fails before prod | Add the named key to that environment's app secret (`club-res-website/<env>/app`), then redeploy. Admin → Apps lists each app's settings by name (docs/PLATFORM.md) |
+| Required setting missing in prod | The new prod container refuses to start (`Required settings are not set: …` in its log), so its health check fails and the serving container keeps running. Dev only logs missing ones (it has no Google sign-in), so this is not caught in dev | Add the named key to `club-res-website/prod/app`, then redeploy. Admin → Apps lists each app's settings by name (docs/PLATFORM.md) |
 | Upload or invalidation fails | Publication may be partial | Inspect S3 and CloudFront before retry or restoration |
 | Index differs | Deployment fails despite HTTP availability | Inspect caching and content; do not record a successful release |
 | Dev deployment evidence missing | Production promotion stops | Deploy that exact dev commit or prove the complete diff is documentation-only |
