@@ -39,6 +39,10 @@ def tests() -> None:
     assert FIXED_PREFIXES <= set(prefixes), FIXED_PREFIXES - set(prefixes)
     job_ids = [j.id for m in modules for j in m.jobs]
     assert len(job_ids) == len(set(job_ids)), job_ids
+    # Each app numbers its migrations 1, 2, 3... with no gaps or repeats.
+    for module in modules:
+        versions = sorted(m.version for m in module.migrations)
+        assert versions == list(range(1, len(versions) + 1)), (module.id, versions)
 
     # Every members-only router answers 401 to a request with no session, on
     # every route in it.

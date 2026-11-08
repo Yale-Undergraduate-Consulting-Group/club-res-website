@@ -28,6 +28,7 @@ from app.services.llm import list_models
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import init_db
+from app.migrations import migrate
 from app.modules import all_modules, mount, schedule, start
 from app.services.scheduler_lease import keep_lease
 
@@ -46,6 +47,8 @@ CORS_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _co
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Schema changes after the frozen baseline, once each (app/migrations.py).
+    await migrate(MODULES)
     await start(MODULES)
     # A deploy overlaps the old and new containers; only the lease holder runs jobs.
     lease_stop = asyncio.Event()

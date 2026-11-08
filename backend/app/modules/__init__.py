@@ -15,11 +15,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from fastapi import APIRouter, Depends, FastAPI
 
 from app.auth_deps import get_current_user
+
+if TYPE_CHECKING:
+    from app.migrations import Migration
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,9 @@ class Module:
     routes: tuple[Route, ...] = ()
     jobs: tuple[Job, ...] = ()
     startup: tuple[Callable[[], Awaitable[Any]], ...] = field(default_factory=tuple)
+    #: Schema changes after the frozen baseline (app.database.init_db), in
+    #: version order from 1. The rules are in app/migrations.py.
+    migrations: tuple[Migration, ...] = ()
 
 
 def mount(app: FastAPI, modules: list[Module]) -> None:
