@@ -100,6 +100,17 @@ async def run():
         assert rotated['token_hash'] != i.digest(reloaded['token'])
         assert rotated['delivery_state']=='sent'
         assert reloaded['token'] not in delivered.call_args.kwargs['body']
+        await denied(i.replace_with_shareable_link(reloaded['id'],a),403)
+        replacement = await i.replace_with_shareable_link(reloaded['id'],admin)
+        replacement_token = replacement['link'].split('invitation=',1)[1]
+        manual = await (await db.execute(
+            'SELECT token_hash,delivery_state,delivery_error FROM membership_invitations WHERE id=?',
+            (reloaded['id'],))).fetchone()
+        assert manual['token_hash'] == i.digest(replacement_token)
+        assert manual['token_hash'] != rotated['token_hash'], 'The emailed link still worked after replacement'
+        assert manual['delivery_state'] == 'manual'
+        assert 'Share the new link directly' in manual['delivery_error']
+        assert 'reloaded@yale.edu' not in replacement['link']
         # Quota reservations serialize across requests and count unfinished uploads.
         await w.set_storage_quota(1,w.StorageQuota(quota_bytes=8),admin)
         request = w.UploadRequest(filename='reserved',byte_size=4,content_type='text/plain')
@@ -161,7 +172,7 @@ async def run():
         actions = {row['action'] for row in logs}
         assert {'document_create','document_update','document_upload_reserve','document_upload_complete',
                 'document_share_create','document_share_revoke','invitation_create','invitation_send_claim',
-                'invitation_send_ambiguous','invitation_revoke','storage_quota_update'} <= actions
+                'invitation_send_ambiguous','invitation_link_rotate','invitation_revoke','storage_quota_update'} <= actions
         assert all(invite['token'] not in row['details'] for row in logs)
         # Other members can read release summaries but cannot mutate owned work.
         from app.routers import releases
