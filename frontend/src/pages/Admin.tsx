@@ -6,7 +6,7 @@ import SearchProviderStatus from '../components/admin/SearchProviderStatus';
 import { useEffect, useState, Fragment } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import QRCode from 'qrcode';
-import { api, type FirecrawlStatus } from '../api';
+import { api, type FirecrawlStatus, type Readiness } from '../api';
 import { StatusBadge } from '../components/ui/Primitives';
 import { useToast } from '../contexts/useToast';
 import { AnimatedEventTypeChart, AnimatedResourceChart } from '../components/AnimatedOperationsCharts';
@@ -23,6 +23,7 @@ export default function Admin() {
   );
   const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof api.admin.catalog>> | null>(null);
   const [users, setUsers] = useState<Awaited<ReturnType<typeof api.admin.users.list>>>([]);
+  const [readiness, setReadiness] = useState<Record<number, Readiness>>({});
   const [projects, setProjects] = useState<Awaited<ReturnType<typeof api.admin.projects.list>>>([]);
   const [projectForm, setProjectForm] = useState({ name: '', semester: '', description: '', client_name: '', discussable: false });
   const [selectedProject, setSelectedProject] = useState<Awaited<ReturnType<typeof api.admin.projects.list>>[number] | null>(null);
@@ -59,7 +60,12 @@ export default function Admin() {
 
   useEffect(() => {
     if (user?.role !== 'admin') return;
-    if (activeTab === 'users') api.admin.users.list().then(setUsers).catch((e: Error) => setError(e.message));
+    if (activeTab === 'users') {
+      api.admin.users.list().then(setUsers).catch((e: Error) => setError(e.message));
+      api.admin.users.readiness()
+        .then((rows) => setReadiness(Object.fromEntries(rows.map((r) => [r.user_id, r]))))
+        .catch(() => setReadiness({}));
+    }
     if (activeTab === 'projects') api.admin.projects.list().then(setProjects).catch((e: Error) => setError(e.message));
     if (activeTab === 'audit') api.admin.auditLog().then(setAuditLog).catch(() => setAuditLog([]));
     if (activeTab === 'apikeys') api.admin.apiKeys.list().then(setApiKeys).catch(() => setApiKeys([]));
@@ -260,7 +266,14 @@ export default function Admin() {
           <Invitations />
           <div className="surface-card rounded-xl p-6">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-              <h2 className="font-semibold text-deep-navy">Members</h2>
+              <div>
+                <h2 className="font-semibold text-deep-navy">Members</h2>
+                {Object.keys(readiness).length > 0 && (
+                  <p className="text-sm text-slate-600" data-testid="members-ready-summary">
+                    {Object.values(readiness).filter((r) => r.ready_to_send).length} of {Object.keys(readiness).length} active members ready to send
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={async () => {
@@ -284,6 +297,7 @@ export default function Admin() {
                     <th className="text-left py-2">Name</th>
                     <th className="text-left py-2">Role</th>
                     <th className="text-left py-2">Status</th>
+                    <th className="text-left py-2">Setup</th>
                     <th className="text-left py-2">Actions</th>
                   </tr>
                 </thead>
@@ -312,6 +326,7 @@ export default function Admin() {
                         </select>
                       </td>
                       <td className="py-2">{u.is_active ? 'Active' : 'Inactive'}</td>
+                      <td className="py-2" data-testid={`setup-${u.id}`}><SetupCell facts={readiness[u.id]} /></td>
                       <td className="py-2">
                         {u.id !== user?.id && (
                           <button
@@ -967,3 +982,22 @@ export default function Admin() {
     </div>
   );
 }
+
+/** What a member still has to set up; only Gmail blocks sending. */
+function SetupCell({ facts }: { facts?: Readiness }) {
+  if (!facts) return <span className="text-slate-500">—</span>;
+  const missing = [
+    !facts.signed_in && 'never signed in',
+    !facts.gmail && 'Gmail',
+    !facts.sign_off && 'sign-off',
+    !facts.slack && 'Slack',
+    !facts.project && 'project',
+  ].filter(Boolean) as string[];
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <StatusBadge tone={facts.ready_to_send ? 'success' : 'warning'}>{facts.ready_to_send ? 'Can send' : 'Cannot send'}</StatusBadge>
+      {missing.length > 0 && <span className="text-xs text-slate-600">Missing: {missing.join(', ')}</span>}
+    </div>
+  );
+}
+
