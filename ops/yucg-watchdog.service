@@ -1,0 +1,15 @@
+[Unit]
+Description=Restart the serving app container when it is unhealthy
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/etc/yucg/active-slot
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/bin/bash /opt/yucg/yucg-watchdog.sh
+TimeoutStartSec=2min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
