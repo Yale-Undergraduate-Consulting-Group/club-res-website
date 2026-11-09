@@ -542,7 +542,7 @@ This recovery diagram is an operator procedure, not an automated rollback workfl
 | Dev deployment evidence missing | Production promotion stops | Deploy that exact dev commit or prove the complete diff is documentation-only |
 | Plan identity/hash/age differs | Apply stops | Create and review a new plan |
 
-No uptime alarm, synthetic monitor, CloudFront access-log destination, central audit trail, or application error telemetry is provisioned here. AWS service metrics and account audit facilities require an operations review; do not infer alerting from a green deployment.
+Prod alarms (`terraform/alerts.tf`) email the budget address, and optionally a Slack channel: a failed AWS host check recovers the box, a failed instance check reboots it, and app error spikes and a sustained CloudFront 5xx rate notify. On the box, Docker restarts an exited or memory-capped container and the `yucg-watchdog` timer restarts an unhealthy one. There is no external synthetic probe: an outage with no traffic is noticed by the next request's 5xx, not by a probe. Operator details are in `terraform/README.md` (Alerts, Restoring the database).
 
 Branches can diverge when the destination receives real file changes, for example a hotfix applied directly. A maintainer can create `feature/sync` from `integration` and merge the destination history into it. That branch follows Intake and the normal reviewed sequence. Do not open a direct `prod → integration` PR: Intake rejects that source. No controller bypass exists. History-only divergence needs no sync (section 4).
 
@@ -625,11 +625,11 @@ After installing a ruleset, check that its bypass list shows **Repository admin*
 | Application frontend and backend | In this repository; deployed by the gates above once the environments exist |
 | Login, sessions, member roles | Implemented by the application (Google sign-in limited to `@yale.edu` plus an invitation); needs the Google OAuth client for each environment's URL |
 | NDA/client isolation and uploads | Row-level and workspace isolation exist in the application; storage encrypted per environment; no external authorization test suite yet |
-| Database and client-data retention | SQLite on an encrypted volume with snapshots and `.backup` copies; a deletion-evidence procedure and a restore drill are not done |
+| Database and client-data retention | SQLite on an encrypted volume with snapshots and `.backup` copies. Restore drill of the daily `.backup` set exercised on prod 2026-11-09 (`ops/restore-drill.sh`: checksum and integrity ok, app booted, 10.9 s); EBS-snapshot restore and a deletion-evidence procedure are not done |
 | Bedrock/model integration | Models are chosen by use: Haiku for ranking, Sonnet for writing and Slack, Opus on request (`backend/app/services/llm.py`), charged to one monthly club budget. Each tier falls back to its 4.x model while AWS has not enabled the 5.5 model. The six-model box role is applied in dev and prod (2026-11-06). At about 09:55 UTC on 2026-11-06 Haiku 4.5, Sonnet 4.6 and Opus 4.6 answered from the prod box; by 16:30 UTC every Bedrock model, from every provider and every role in the account, returned `ValidationException: Error 002: Access to Bedrock models is not allowed for this account`, and model features are unavailable. Restoration is requested in case `179398462200009`; 5.5 access in case `179393410200701` |
 | Legacy data migration | Done 2026-11-06: the legacy app in account `442429446212` was stopped (its container no longer restarts; the box and volumes are kept for rollback), its database copied with a verified SHA-256 and integrity check into prod, and `prospects/current.xlsx` copied to the prod catalog bucket. Row counts matched. The prod secret carries the legacy `JWT_SECRET`, so stored Gmail and Slack tokens remain readable |
 | Custom domain | Planned extension only; requires DNS and ACM configuration |
-| Automated rollback and continuous monitoring | Blue/green deploys keep the serving container until the new one is healthy; no uptime alarm or synthetic monitor |
+| Automated rollback and continuous monitoring | Blue/green deploys keep the serving container until the new one is healthy; container memory cap, health check and watchdog restart; prod alarms with EC2 auto-recovery (2026-11-09). No external synthetic probe |
 
 Do not interpret these gaps as permission to send confidential data through the public site.
 
@@ -653,7 +653,7 @@ Controls that exist: no SSH and no inbound listener except the CloudFront servic
 
 **Known limit: data can still leave over ports 80 and 443.** The application must crawl arbitrary company websites and resolve MX records for arbitrary recipient domains, so an egress domain allowlist would break the product. An attacker who controls the container can therefore reach arbitrary internet hosts. The mitigations are detection (DNS and flow logs, GuardDuty), minimal IAM, and the S3 endpoint policy, which stops uploads to buckets outside this environment. Revisit this with a filtering proxy if the crawl moves to a separate worker.
 
-**Known limit: one instance, one disk.** A stopped or failed instance is a full outage of the API, and SQLite allows one writer. Recovery is the latest EBS snapshot or `.backup` copy; no restore drill has been performed yet. To scale, move to a larger instance type through a reviewed Terraform plan before considering another database.
+**Known limit: one instance, one disk.** A stopped or failed instance is a full outage of the API, and SQLite allows one writer. Recovery is the latest `.backup` copy (drilled 2026-11-09) or EBS snapshot (not drilled); EC2 auto-recovery covers AWS host failure. To scale, move to a larger instance type through a reviewed Terraform plan before considering another database.
 
 ## 15. Organization and account vending
 
