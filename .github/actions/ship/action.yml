@@ -93,7 +93,7 @@ runs:
         ECR_HOST: ${{ steps.push.outputs.ecr_host }}
       run: |
         set -euo pipefail
-        OPS_BUNDLE="$(tar -czf - -C ops backup_sqlite.py backup-to-s3.sh yucg-backup.service yucg-backup.timer | base64 -w0)"
+        OPS_BUNDLE="$(tar -czf - -C ops backup_sqlite.py backup-to-s3.sh yucg-backup.service yucg-backup.timer yucg-watchdog.sh yucg-watchdog.service yucg-watchdog.timer | base64 -w0)"
         export OPS_BUNDLE
         # envsubst must receive the variable names, not their values.
         # shellcheck disable=SC2016
