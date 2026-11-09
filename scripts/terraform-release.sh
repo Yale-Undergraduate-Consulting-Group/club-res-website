@@ -52,7 +52,7 @@ if [ "${1:-}" = plan ]; then
     # Optional per-environment settings, e.g. TF_INSTANCE_TYPE=t3.medium or
     # TF_CATALOG_OPERATOR_PRINCIPAL_ARNS='["arn:aws:iam::<account>:role/<name>"]'. Unset keeps
     # the Terraform default; every value becomes part of the reviewed saved plan.
-    for name in instance_type data_volume_gb enable_edge enable_waf origin_read_timeout office_hours_enabled catalog_operator_principal_arns; do
+    for name in instance_type data_volume_gb enable_edge enable_waf origin_read_timeout office_hours_enabled catalog_operator_principal_arns slack_team_id slack_channel_id; do
       setting="TF_${name^^}"
       if [ -n "${!setting:-}" ]; then export "TF_VAR_${name}=${!setting}"; fi
     done
