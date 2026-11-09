@@ -212,6 +212,7 @@ async def resolve_company_endpoint(q: str, user: dict = Depends(get_current_user
 
 @router.get("/register")
 async def browse_register(
+    request: Request,
     q: str | None = None,
     tier: str | None = None,
     country: str | None = None,
@@ -230,20 +231,21 @@ async def browse_register(
     records behind it counted but not listed (see `/register/records`).
     Without a query, `sort=value` puts the companies worth reaching first;
     `sort=recent` is the newest-filing feed. Investment funds, acquisition
-    vehicles and IRS group returns are left out unless `include_hidden`."""
-    from app.services.company_register import browse_register as browse
+    vehicles and IRS group returns are left out unless `include_hidden`.
+    Shared and rate-limited by app/services/register_cache.py."""
+    from app.services import register_cache
 
-    return await browse(
-        q=q, tier=tier, country=country, sector=sector, min_amount=min_amount,
+    return await register_cache.browse(dict(
+        q=(q or "").strip() or None, tier=tier, country=country, sector=sector, min_amount=min_amount,
         with_officers=with_officers, include_hidden=include_hidden, limit=limit, offset=offset, sort=sort,
-    )
+    ), request.is_disconnected)
 
 
 @router.get("/register/summary")
-async def register_stats(user: dict = Depends(get_current_user)):
-    from app.services.company_register import register_summary
+async def register_stats(request: Request, user: dict = Depends(get_current_user)):
+    from app.services import register_cache
 
-    return await register_summary()
+    return await register_cache.summary(request.is_disconnected)
 
 
 @router.get("/register/records")
