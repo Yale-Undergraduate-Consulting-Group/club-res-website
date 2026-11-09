@@ -8,8 +8,8 @@ Nothing here is implemented or deployed. Each entry names the trigger that justi
 | Custom domain | A club domain exists | ACM certificate in us-east-1, DNS access (CI_CD.md section 7) |
 | Egress filtering proxy | Crawl and MX lookups move to a separate worker | A worker that needs no arbitrary internet access (section 14) |
 | Base images pinned by digest | Any reproducibility or supply-chain review | A reviewed process for bumping two digests |
-| Restore drill and deletion evidence | Before holding real client data in prod | An exercised EBS-snapshot and `.backup` restore |
-| Uptime alarm and synthetic check | Prod is live | A notification target |
+| Restore drill and deletion evidence | Before holding real client data in prod | `.backup` restore drilled 2026-11-09 (`ops/restore-drill.sh`); still needed: an EBS-snapshot restore and a deletion-evidence procedure |
+| External synthetic uptime check | An outage on an idle site must page someone | Route 53 health check on `/api/health` (about $1.50/month); alarms on host, errors and 5xx already exist (`terraform/alerts.tf`) |
 | Organization owned by the club | The host organization's owner changes or leaves | `organization/` re-applied from the new management account (section 15) |
 
 ## Managed knowledge base for the assistant

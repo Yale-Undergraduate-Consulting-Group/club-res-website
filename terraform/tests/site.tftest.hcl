@@ -67,6 +67,11 @@ mock_provider "aws" {
       arn = "arn:aws:cloudfront::123456789012:function/mock"
     }
   }
+  mock_resource "aws_sns_topic" {
+    defaults = {
+      arn = "arn:aws:sns:us-east-2:123456789012:mock-alerts"
+    }
+  }
 }
 
 mock_provider "aws" {
@@ -74,6 +79,11 @@ mock_provider "aws" {
   mock_resource "aws_wafv2_web_acl" {
     defaults = {
       arn = "arn:aws:wafv2:us-east-1:123456789012:global/webacl/mock/00000000-0000-0000-0000-000000000000"
+    }
+  }
+  mock_resource "aws_sns_topic" {
+    defaults = {
+      arn = "arn:aws:sns:us-east-1:123456789012:mock-alerts"
     }
   }
 }
@@ -227,6 +237,62 @@ run "office_hours_schedule_is_opt_in" {
     condition     = toset(keys(aws_scheduler_schedule.office_hours)) == toset(["start", "stop"]) && aws_scheduler_schedule.office_hours["stop"].target[0].arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
     error_message = "office_hours_enabled must add one start and one stop schedule for the box."
   }
+}
+
+run "dev_raises_no_alerts" {
+  command = plan
+
+  assert {
+    condition     = length(aws_sns_topic.alerts) == 0 && length(aws_cloudwatch_metric_alarm.box_system) == 0 && length(aws_chatbot_slack_channel_configuration.alerts) == 0
+    error_message = "The dev box stops nightly; it must not page anyone."
+  }
+}
+
+run "prod_alerts_by_email_and_recovers_the_box" {
+  command = plan
+
+  variables {
+    environment = "prod"
+  }
+
+  assert {
+    condition     = length(aws_sns_topic_subscription.alerts_email) == 1 && aws_sns_topic_subscription.alerts_email[0].endpoint == "treasurer@example.org" && length(aws_sns_topic_subscription.alerts_edge_email) == 1
+    error_message = "Prod alerts must email budget_email from both regions' topics."
+  }
+  assert {
+    condition     = contains(aws_cloudwatch_metric_alarm.box_system[0].alarm_actions, "arn:aws:automate:us-east-2:ec2:recover") && contains(aws_cloudwatch_metric_alarm.box_instance[0].alarm_actions, "arn:aws:automate:us-east-2:ec2:reboot")
+    error_message = "Failed status checks must recover or reboot the box, not only notify."
+  }
+  assert {
+    condition     = length(aws_chatbot_slack_channel_configuration.alerts) == 0 && length(aws_iam_role.chatbot) == 0
+    error_message = "Slack delivery needs an authorized workspace and channel; without them alerts are email only."
+  }
+}
+
+run "slack_alerts_cannot_run_commands" {
+  command = plan
+
+  variables {
+    environment      = "prod"
+    slack_team_id    = "T01234567AB"
+    slack_channel_id = "C01234567AB"
+  }
+
+  assert {
+    condition     = length(aws_chatbot_slack_channel_configuration.alerts[0].guardrail_policy_arns) == 1 && contains(aws_chatbot_slack_channel_configuration.alerts[0].guardrail_policy_arns, "arn:aws:iam::aws:policy/AWSDenyAll")
+    error_message = "The alert channel must not be able to run AWS commands."
+  }
+}
+
+run "rejects_malformed_slack_ids" {
+  command = plan
+
+  variables {
+    environment      = "prod"
+    slack_channel_id = "general"
+  }
+
+  expect_failures = [var.slack_channel_id]
 }
 
 run "rejects_unknown_environment" {
