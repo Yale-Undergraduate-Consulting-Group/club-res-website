@@ -339,6 +339,19 @@ async def get_me(user: dict | None = Depends(get_current_user_optional)):
     }
 
 
+@router.get("/readiness")
+async def my_readiness(user: dict = Depends(get_current_user)):
+    """The caller's own setup steps, for the Home checklist."""
+    from app.services.member_readiness import readiness
+
+    db = await get_db()
+    try:
+        mine = await readiness(db, [int(user["id"])])
+    finally:
+        await db.close()
+    return mine.get(int(user["id"])) or {}
+
+
 class TwoFactorLogin(BaseModel):
     code: str
 

@@ -11,9 +11,10 @@ async function mock(page: Page, initial: Invitation[]) {
     const path = new URL(request.url()).pathname;
     if (path === '/api/auth/me') return route.fulfill({ json: { authenticated: true, user: ADMIN } });
     if (path === '/api/admin/invitations' && request.method() === 'GET') return route.fulfill({ json: items });
-    if (path === '/api/admin/invitations' && request.method() === 'POST') {
-      items = [{ id: 13, email: request.postDataJSON().email, state: 'pending', delivery_state: 'ready', expires_at: 2_000_000_000 }];
-      return route.fulfill({ json: { id: 13, token: 'new-invitation-token' } });
+    if (path === '/api/admin/invitations/bulk' && request.method() === 'POST') {
+      const email = request.postDataJSON().emails[0];
+      items = [{ id: 13, email, state: 'pending', delivery_state: 'ready', expires_at: 2_000_000_000 }];
+      return route.fulfill({ json: { created: 1, skipped: 0, results: [{ email, status: 'created', id: 13, token: 'new-invitation-token' }] } });
     }
     if (path === '/api/admin/invitations/12/link' && request.method() === 'POST') {
       rotations += 1;
@@ -54,7 +55,7 @@ test('a newly created invitation exposes its existing link without rotating it',
   const state = await mock(page, []);
   await page.goto('/admin?view=members');
   await page.getByLabel('Email addresses').fill('new@yale.edu');
-  await page.getByRole('button', { name: 'Create invitations' }).click();
+  await page.getByRole('button', { name: 'Create 1 invitation' }).click();
 
   await expect(page.getByLabel('Invitation link for new@yale.edu')).toHaveValue(/\/api\/auth\/google\?invitation=new-invitation-token$/);
   expect(state.rotations()).toBe(0);

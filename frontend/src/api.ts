@@ -15,7 +15,9 @@ export type CitationSuggestions = {
   projects: { id: number; client_name?: string; description?: string; semester?: string }[];
   team_experience: { user_name?: string; role_in_project?: string; client_name?: string; semester?: string }[];
 };
-export type Member = { id: number; email: string; name?: string; role: string; is_active: number; last_login?: string };
+export type Member = { id: number; email: string; name?: string; role: string; is_active: number };
+/** A member's setup steps; only Gmail blocks sending (backend/app/services/member_readiness.py). */
+export type Readiness = { signed_in: boolean; gmail: boolean; sign_off: boolean; slack: boolean; project: boolean; has_sent: boolean; ready_to_send: boolean };
 export type LogEntry = { user_id?: number; name?: string; id: number; created_at: string; email?: string; user_email?: string; action?: string; details?: string; ip_address?: string; event_type?: string; resource_type?: string };
 export type ApiKey = { key_prefix?: string; id: number; name: string; scopes?: string; created_at?: string; last_used_at?: string };
 export type StoredObject = { byte_size?: number; source?: string; id: number; kind: string; s3_key: string; bytes?: number; created_at?: string };
@@ -935,6 +937,7 @@ export const api = {
         fetchApi<MemberProfile>('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
     },
     team: () => fetchApi<Member[]>('/api/auth/team'),
+    readiness: () => fetchApi<Partial<Readiness>>('/api/auth/readiness'),
     myProjects: () => fetchApi<Project[]>('/api/auth/my-projects'),
     notificationPrefs: {
       get: () => fetchApi<{ admin_digest: boolean; campaign_summary: boolean }>('/api/auth/notification-preferences'),
@@ -970,6 +973,7 @@ export const api = {
     },
     users: {
       list: () => fetchApi<Member[]>('/api/admin/users'),
+      readiness: () => fetchApi<(Readiness & { user_id: number })[]>('/api/admin/users/readiness'),
       invite: (email: string) =>
         fetchApi<unknown>('/api/admin/users/invite', { method: 'POST', body: JSON.stringify({ email }) }),
       updateRole: (userId: number, role: string) =>

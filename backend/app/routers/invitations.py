@@ -33,29 +33,86 @@ async def list_invitations(admin: dict = Depends(get_current_admin)):
     finally:
         await db.close()
 
+def _valid_yale(email: str) -> bool:
+    return (len(email) <= 254 and email.count('@') == 1 and email.endswith('@yale.edu')
+            and not any(c.isspace() for c in email) and bool(email.split('@')[0]))
+
+
+async def _insert(db, email: str, project_ids: list[int], admin: dict) -> dict:
+    token = secrets.token_urlsafe(32)
+    now = int(time.time())
+    cursor = await db.execute('''INSERT INTO membership_invitations
+        (email,token_hash,created_by,project_ids,expires_at,created_at) VALUES (?,?,?,?,?,?)''',
+        (email,digest(token),admin['id'],json.dumps(project_ids),now+7*86400,now))
+    await audit(db,admin['id'],'invitation_create','invitation',cursor.lastrowid,{'email':email,'project_ids':project_ids})
+    return {'id':cursor.lastrowid,'email':email,'token':token,'state':'pending'}
+
+
+async def _skip_reason(db, email: str) -> str | None:
+    if not _valid_yale(email):
+        return 'Not a Yale email address'
+    if await (await db.execute('SELECT 1 FROM users WHERE lower(email)=?', (email,))).fetchone():
+        return 'Already a member'
+    if await (await db.execute("SELECT 1 FROM membership_invitations WHERE email=? AND state='pending' AND expires_at>?", (email,int(time.time())))).fetchone():
+        return 'Invitation already pending'
+    return None
+
+
+async def _check_projects(db, project_ids: list[int]) -> list[int]:
+    for project in set(project_ids):
+        if not await (await db.execute('SELECT 1 FROM projects WHERE id=?',(project,))).fetchone():
+            raise HTTPException(400, 'Unknown project')
+    return sorted(set(project_ids))
+
+
 @router.post('')
 async def create_invitation(payload: InvitationCreate, admin: dict = Depends(get_current_admin)):
     email = payload.email.strip().lower()
-    if len(email) > 254 or email.count('@') != 1 or not email.endswith('@yale.edu') or any(c.isspace() for c in email) or not email.split('@')[0]:
+    if not _valid_yale(email):
         raise HTTPException(400, 'Enter a valid Yale email address')
     db = await get_db()
     try:
         await db.execute('BEGIN IMMEDIATE')
-        if await (await db.execute('SELECT 1 FROM users WHERE lower(email)=?', (email,))).fetchone():
+        reason = await _skip_reason(db, email)
+        if reason == 'Already a member':
             raise HTTPException(409, 'Member already exists; manage their access in Members')
-        if await (await db.execute("SELECT 1 FROM membership_invitations WHERE email=? AND state='pending' AND expires_at>?", (email,int(time.time())))).fetchone():
+        if reason:
             raise HTTPException(409, 'An invitation is already pending; revoke it before replacing it')
-        for project in set(payload.project_ids):
-            if not await (await db.execute('SELECT 1 FROM projects WHERE id=?',(project,))).fetchone():
-                raise HTTPException(400, 'Unknown project')
-        token = secrets.token_urlsafe(32)
-        now = int(time.time())
-        cursor = await db.execute('''INSERT INTO membership_invitations
-            (email,token_hash,created_by,project_ids,expires_at,created_at) VALUES (?,?,?,?,?,?)''',
-            (email,digest(token),admin['id'],json.dumps(sorted(set(payload.project_ids))),now+7*86400,now))
-        await audit(db,admin['id'],'invitation_create','invitation',cursor.lastrowid,{'email':email,'project_ids':sorted(set(payload.project_ids))})
+        created = await _insert(db, email, await _check_projects(db, payload.project_ids), admin)
         await db.commit()
-        return {'id':cursor.lastrowid,'email':email,'token':token,'state':'pending'}
+        return created
+    finally:
+        await db.close()
+
+
+class InvitationBulk(BaseModel):
+    emails: list[str] = Field(min_length=1, max_length=300)
+    project_ids: list[int] = Field(default_factory=list, max_length=100)
+
+
+@router.post('/bulk')
+async def create_invitations(payload: InvitationBulk, admin: dict = Depends(get_current_admin)):
+    """Invite a pasted list at once. Every address gets a result: created, or
+    skipped with the reason; one bad address never stops the rest."""
+    db = await get_db()
+    try:
+        await db.execute('BEGIN IMMEDIATE')
+        project_ids = await _check_projects(db, payload.project_ids)
+        results, seen = [], set()
+        for raw in payload.emails:
+            email = raw.strip().lower()
+            if not email or email in seen:
+                continue
+            seen.add(email)
+            reason = await _skip_reason(db, email)
+            if reason:
+                results.append({'email': email, 'status': 'skipped', 'reason': reason})
+            else:
+                results.append({**await _insert(db, email, project_ids, admin), 'status': 'created'})
+        await db.commit()
+        return {'results': results,
+                'created': sum(r['status'] == 'created' for r in results),
+                'skipped': sum(r['status'] == 'skipped' for r in results)}
     finally:
         await db.close()
 
