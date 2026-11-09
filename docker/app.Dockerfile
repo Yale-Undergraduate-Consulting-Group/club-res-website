@@ -29,4 +29,8 @@ RUN addgroup -g 10001 yucg && adduser -D -u 10001 -G yucg yucg \
     && mkdir -p /data && chown -R 10001:10001 /app /data
 USER 10001:10001
 EXPOSE 8000
+# Answers only if the event loop is serving. ops/yucg-watchdog.sh restarts the
+# serving container once Docker marks it unhealthy (about 90 s of failures).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
