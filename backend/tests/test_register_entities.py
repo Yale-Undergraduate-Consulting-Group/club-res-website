@@ -260,13 +260,17 @@ def list_tests() -> None:
         assert sorted(p['full_name'] for p in people) == ['Ada Lovelace', 'Grace Hopper']
 
         # The routes hand the same shapes to the browser.
+        class Connected:
+            async def is_disconnected(self) -> bool:
+                return False
+
         routed = asyncio.run(router.browse_register(
-            q=None, tier='us_public', country=None, sector=None, min_amount=None, with_officers=False,
+            Connected(), q=None, tier='us_public', country=None, sector=None, min_amount=None, with_officers=False,
             include_hidden=False, limit=10, offset=0, sort='value', user=user))
         assert [i['display_name'] for i in routed['items']] == ['Apple']
 
         # The summary counts companies, not records, and leaves hidden ones out.
-        summary = asyncio.run(router.register_stats(user=user))
+        summary = asyncio.run(router.register_stats(Connected(), user=user))
         counts = {t['tier']: t['n'] for t in summary['tiers']}
         assert counts == {'us_public': 1, 'us_employer': 2, 'us_private': 1, 'uk': 2,
                           'us_nonprofit': 3, 'club_targets': 1}, counts
