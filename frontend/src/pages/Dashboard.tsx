@@ -4,6 +4,7 @@ import { api, type LeaderboardRow, type CompanyReached, type Campaign, type Pipe
 import PageHeader from '../components/PageHeader';
 import GmailConnection from '../components/GmailConnection';
 import SlackIntegration from '../components/SlackIntegration';
+import GettingStarted from '../components/GettingStarted';
 import { canManageCampaign } from '../lib/campaignAccess';
 import OutcomePie from '../components/OutcomePie';
 import { StatusBadge } from '../components/ui/Primitives';
@@ -116,6 +117,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
         <div className="space-y-6 min-w-0">
+          <GettingStarted />
           {needsAttention.length > 0 && (
             <section className="surface-card p-5" aria-label="Needs your attention">
               <h2 className="app-section-title mb-3">Needs your attention</h2>

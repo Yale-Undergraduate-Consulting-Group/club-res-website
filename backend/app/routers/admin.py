@@ -72,6 +72,19 @@ async def list_users(admin: dict = Depends(get_current_admin)):
         await db.close()
 
 
+@router.get("/users/readiness")
+async def users_readiness(admin: dict = Depends(get_current_admin)):
+    """Each active member's setup steps; ready_to_send means Gmail is connected."""
+    from app.services.member_readiness import readiness
+
+    db = await get_db()
+    try:
+        rows = await readiness(db)
+    finally:
+        await db.close()
+    return [{"user_id": uid, **facts} for uid, facts in rows.items()]
+
+
 @router.get("/users/export", response_class=Response)
 async def export_users_excel(admin: dict = Depends(get_current_admin)):
     """Export all users and profile data to a styled Excel file. Admin only."""
