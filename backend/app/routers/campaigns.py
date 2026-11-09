@@ -42,6 +42,17 @@ class CampaignContactEmailUpdate(BaseModel):
 router = APIRouter()
 
 
+async def add_contact_times(db) -> None:
+    """Migration outreach:1. When a contact joined a campaign and when it was
+    first released, for the "released within a week" measure (Admin →
+    Metrics). Rows from before this migration keep NULL: their times were
+    never recorded."""
+    have = {r[1] for r in await (await db.execute("PRAGMA table_info(campaign_contacts)")).fetchall()}
+    for column in ("added_at", "released_at"):
+        if column not in have:
+            await db.execute(f"ALTER TABLE campaign_contacts ADD COLUMN {column} TEXT")
+
+
 @router.get("/{campaign_id}/dispatches")
 async def list_dispatches(campaign_id: int, user: dict = Depends(get_current_user)):
     db = await get_db()
@@ -561,8 +572,8 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
         )
         campaign_id = int(cur.lastrowid)
         await db.executemany(
-            """INSERT INTO campaign_contacts (campaign_id, contact_id, email_subject, email_body, status)
-               VALUES (?, ?, ?, ?, 'pending')""",
+            """INSERT INTO campaign_contacts (campaign_id, contact_id, email_subject, email_body, status, added_at)
+               VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)""",
             [(campaign_id, item["contact_id"], item["subject"], item["body"]) for item in ready],
         )
         await db.commit()
@@ -633,8 +644,8 @@ async def add_contacts_to_campaign(
                     body = body or (draft["body"] or "")
             await db.execute(
                 """INSERT INTO campaign_contacts
-                   (campaign_id, contact_id, email_subject, email_body, status)
-                   VALUES (?, ?, ?, ?, 'pending')""",
+                   (campaign_id, contact_id, email_subject, email_body, status, added_at)
+                   VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)""",
                 (campaign_id, cid, subj, body),
             )
             added += 1
@@ -891,6 +902,12 @@ async def release_campaign(campaign_id: int, user: dict = Depends(get_current_us
             for row in rows if row['id'] in newly_snapshotted
             for index, step in enumerate(steps)
         ])
+        if newly_snapshotted:
+            await db.execute(
+                f"""UPDATE campaign_contacts SET released_at = COALESCE(released_at, CURRENT_TIMESTAMP)
+                    WHERE id IN ({','.join('?' * len(newly_snapshotted))})""",
+                tuple(newly_snapshotted),
+            )
         await db.execute(
             "UPDATE campaigns SET status = 'releasing', released_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (user["id"], campaign_id),
