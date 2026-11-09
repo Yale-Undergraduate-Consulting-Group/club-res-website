@@ -24,7 +24,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf -- "$WORK" /etc/yucg/config.json.new /etc/yucg/app.env.new /etc/nginx/nginx.conf.new /etc/nginx/yucg-upstream.conf.new' EXIT
 # Box scripts from this revision's ops/ (base64 tar.gz); installed after a healthy release.
 base64 -d <<< '${OPS_BUNDLE}' | tar -xzf - -C "$WORK"
-for file in backup_sqlite.py backup-to-s3.sh yucg-backup.service yucg-backup.timer; do
+for file in backup_sqlite.py backup-to-s3.sh yucg-backup.service yucg-backup.timer yucg-watchdog.sh yucg-watchdog.service yucg-watchdog.timer; do
   [ -s "$WORK/$file" ] || { echo "Ops bundle lacks $file"; exit 1; }
 done
 
@@ -138,7 +138,9 @@ docker run --rm --network none --entrypoint python -v /data:/data "$IMAGE" -c 'i
 # serializes their writes, and the scheduler lease (app/services/scheduler_lease.py)
 # lets only one of them run background jobs.
 docker rm -f "$NEW_NAME" >/dev/null 2>&1 || true
-docker run -d --name "$NEW_NAME" --restart unless-stopped --env-file /etc/yucg/app.env \
+# The memory cap keeps a runaway container from starving the 2 GB box (and its
+# SSM agent); the kernel kills it and the restart policy brings it back.
+docker run -d --name "$NEW_NAME" --restart unless-stopped --memory 1g --memory-swap 1g --env-file /etc/yucg/app.env \
   -p "127.0.0.1:$NEW_PORT:8000" -v /data:/data --log-driver=awslogs \
   --log-opt awslogs-region="$REGION" --log-opt awslogs-group="$LOG_GROUP" \
   --log-opt awslogs-stream="api-$NEXT" "$IMAGE" >/dev/null
@@ -221,12 +223,14 @@ echo "$NEXT" > "$ACTIVE_FILE"
 # Retire the old container; stopping it releases the scheduler lease to the new one.
 [ -z "$OLD_NAME" ] || { docker stop -t 60 "$OLD_NAME" >/dev/null; docker rm "$OLD_NAME" >/dev/null; }
 
-# Daily off-box SQLite backup to the backups bucket, refreshed on every deploy.
+# Daily off-box SQLite backup to the backups bucket, and the health watchdog,
+# refreshed on every deploy.
 install -d -m 0755 /opt/yucg
-install -m 0700 "$WORK/backup_sqlite.py" "$WORK/backup-to-s3.sh" /opt/yucg/
-install -m 0644 "$WORK/yucg-backup.service" "$WORK/yucg-backup.timer" /etc/systemd/system/
+install -m 0700 "$WORK/backup_sqlite.py" "$WORK/backup-to-s3.sh" "$WORK/yucg-watchdog.sh" /opt/yucg/
+install -m 0644 "$WORK/yucg-backup.service" "$WORK/yucg-backup.timer" \
+  "$WORK/yucg-watchdog.service" "$WORK/yucg-watchdog.timer" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now yucg-backup.timer
+systemctl enable --now yucg-backup.timer yucg-watchdog.timer
 
 # Each release leaves the previous ~455 MB image behind and filled the 20 GB
 # root disk in the old stack. Keep only the serving image and its rollback target.

@@ -152,6 +152,26 @@ variable "catalog_operator_principal_arns" {
   }
 }
 
+variable "slack_team_id" {
+  type        = string
+  default     = ""
+  description = "Slack workspace ID for alert messages (prod). Authorize the workspace once in the console under Amazon Q Developer in chat applications; empty sends alerts by email only."
+  validation {
+    condition     = var.slack_team_id == "" || can(regex("^T[A-Z0-9]{8,}$", var.slack_team_id))
+    error_message = "slack_team_id must be a Slack workspace ID (T…) or empty."
+  }
+}
+
+variable "slack_channel_id" {
+  type        = string
+  default     = ""
+  description = "Slack channel ID that receives alert messages (prod); the Chatbot app must be invited to it."
+  validation {
+    condition     = var.slack_channel_id == "" || can(regex("^[CG][A-Z0-9]{8,}$", var.slack_channel_id))
+    error_message = "slack_channel_id must be a Slack channel ID (C… or G…) or empty."
+  }
+}
+
 data "aws_caller_identity" "current" {}
 
 locals {

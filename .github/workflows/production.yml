@@ -276,4 +276,6 @@ jobs:
         TF_ORIGIN_READ_TIMEOUT: ${{ vars.TF_ORIGIN_READ_TIMEOUT }}
         TF_OFFICE_HOURS_ENABLED: ${{ vars.TF_OFFICE_HOURS_ENABLED }}
         TF_CATALOG_OPERATOR_PRINCIPAL_ARNS: ${{ vars.TF_CATALOG_OPERATOR_PRINCIPAL_ARNS }}
+        TF_SLACK_TEAM_ID: ${{ vars.TF_SLACK_TEAM_ID }}
+        TF_SLACK_CHANNEL_ID: ${{ vars.TF_SLACK_CHANNEL_ID }}
       run: bash scripts/terraform-release.sh "$OPERATION"
