@@ -18,6 +18,17 @@ export type CitationSuggestions = {
 export type Member = { id: number; email: string; name?: string; role: string; is_active: number };
 /** A member's setup steps; only Gmail blocks sending (backend/app/services/member_readiness.py). */
 export type Readiness = { signed_in: boolean; gmail: boolean; sign_off: boolean; slack: boolean; project: boolean; has_sent: boolean; ready_to_send: boolean };
+/** One semester target in Admin → Metrics; `met` is null until `of` reaches the minimum sample. */
+export type MetricTarget = { key: string; label: string; count: number; of: number; value: number | null; target: string; met: boolean | null };
+export type MemberMetrics = { user_id: number; name: string; searches: number; drafts: number; sent: number; replies: number; bounces: number; ready_to_send: boolean };
+export type ClubMetrics = {
+  days: number;
+  min_sample: number;
+  targets: MetricTarget[];
+  waiting: { contacts: number; oldest_added_at: string | null };
+  members: MemberMetrics[];
+  not_measured: string[];
+};
 export type LogEntry = { user_id?: number; name?: string; id: number; created_at: string; email?: string; user_email?: string; action?: string; details?: string; ip_address?: string; event_type?: string; resource_type?: string };
 export type ApiKey = { key_prefix?: string; id: number; name: string; scopes?: string; created_at?: string; last_used_at?: string };
 export type StoredObject = { byte_size?: number; source?: string; id: number; kind: string; s3_key: string; bytes?: number; created_at?: string };
@@ -914,6 +925,8 @@ export const api = {
     campaignMetrics: (id: number) => fetchApi<unknown>(`/api/analytics/campaigns/${id}/metrics`),
     insights: () => fetchApi<{ insights: string[] }>('/api/analytics/insights'),
     dueFollowUps: () => fetchApi<{ count: number }>('/api/analytics/due-follow-ups'),
+    /** Admin only: the club against the semester targets over the last `days`. */
+    clubMetrics: (days: 7 | 30 | 90) => fetchApi<ClubMetrics>(`/api/analytics/club-metrics?days=${days}`),
     timeSeries: (days?: number) =>
       fetchApi<{ labels: string[]; sent: number[]; opened: number[]; replied: number[] }>(
         `/api/analytics/time-series${days != null ? `?days=${days}` : ''}`

@@ -4,6 +4,7 @@ and must never move."""
 import os
 from datetime import timedelta
 
+from app.migrations import Migration
 from app.modules import Job, Module, Route, Setting
 from app.routers import analytics, campaigns, contacts, emails, outreach, releases, track, yucg_prospects, yucgoutreach
 from app.routers.campaigns import drain_releasing_campaigns
@@ -32,6 +33,9 @@ MODULE = Module(
         Route(releases.router, "/api/yucg/releases", "releases", signed_in=True),
     ),
     startup=(recover_interrupted_yucgoutreach_runs, enroll_prospect_companies),
+    migrations=(
+        Migration(1, "campaign contact add and release times", campaigns.add_contact_times),
+    ),
     settings=(
         Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),
         Setting("FIRECRAWL_URL", "Fallback web search and page reading"),
