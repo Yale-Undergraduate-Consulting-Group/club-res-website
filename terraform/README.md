@@ -35,6 +35,39 @@ Later changes go through the reviewed saved-plan workflow. The Terraform role up
   `office_hours_enabled=true` adds a schedule: start 12:00 UTC Monday–Friday, stop 04:00 UTC Tuesday–Saturday.
 - Configuration changes are Terraform changes: the SSM parameter `/club-res-website/<env>/config` is rewritten and the next deploy copies it to the box. The first-boot script and AMI are ignored after creation, so Terraform never replaces the box by itself.
 - Growing `data_volume_gb` grows the EBS volume only; run `sudo xfs_growfs /data` on the box afterwards.
+- Self-healing: Docker restarts an app container that exits or is killed for exceeding its 1 GB memory cap, and the `yucg-watchdog` timer restarts the serving container once Docker marks it unhealthy (`/api/health` failing for about 90 s). Measured on dev 2026-11-09: a frozen process was serving again 231 s later. `journalctl -u yucg-watchdog` shows each restart.
+
+## Alerts (prod)
+
+`alerts.tf` emails `budget_email` from two SNS topics, `club-res-website-prod-alerts` in us-east-2 and in us-east-1 (CloudFront metrics live there). Each subscription must be confirmed once from its email. Alarms:
+
+| Alarm | Fires when | Automatic action |
+|---|---|---|
+| `…-box-hardware` | AWS host check fails 2 minutes | EC2 recovers the box onto new hardware (same ID, IP and volumes) |
+| `…-box-unresponsive` | Instance check fails 3 minutes | EC2 reboots the box |
+| `…-app-errors` | 5 or more `ERROR:`/traceback log lines in 5 minutes | none; read CloudWatch `/club-res-website-prod/app` |
+| `…-site-errors` | 25% or more of requests fail for 10 minutes (at least 3 requests per 5 minutes) | none |
+
+Test only the notify-only alarms: `aws cloudwatch set-alarm-state --alarm-name club-res-website-prod-app-errors --state-value ALARM --state-reason test` (it returns to OK at the next evaluation). Never force the two box alarms: their actions run and would reboot or move prod.
+
+Slack: authorize the workspace once under Amazon Q Developer in chat applications in the console, invite the app to the alert channel, then set `TF_SLACK_TEAM_ID` and `TF_SLACK_CHANNEL_ID` on both `infrastructure-prod-*` environments and apply a reviewed plan.
+
+## Restoring the database
+
+The verified path is the daily `.backup` set in the backups bucket (`sqlite/YYYY/MM/DD/<time>-…/`: `snapshot.db`, `restore-check.json`, `manifest.json` written last). At most a day of writes is lost (backups run 06:00 UTC); the five newest pre-deploy copies in `/data/backups/` are more recent after a release.
+
+Drill (read-only for the live site; run monthly): send `ops/restore-drill.sh` through `aws ssm send-command … AWS-RunShellScript`. It restores the newest set to a scratch directory, checks it against its manifest and live row counts, and boots the serving image on it without networking. 2026-11-09 on prod: 243 MB set, checksum and integrity ok, 93 of 94 tables identical to live, app healthy, 10.9 s total.
+
+Real restore (prod is down from step 3 to step 6; announce it):
+
+1. Run the drill commands to download and verify the chosen set into a scratch directory on the box.
+2. `exec 9>/var/lock/yucg-deploy.lock; flock 9` in the root shell, so neither a deploy nor the watchdog acts.
+3. `docker stop -t 60 yucg-$(cat /etc/yucg/active-slot)`.
+4. Keep the current files: `mkdir /data/backups/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)` and move `/data/clientreach.db`, `-wal` and `-shm` into it.
+5. `install -o 10001 -g 10001 -m 0600 <scratch>/snapshot.db /data/clientreach.db`.
+6. `docker start yucg-$(cat /etc/yucg/active-slot)`, then check `curl -s http://127.0.0.1/api/health` and a known row count; release the lock by closing the shell.
+
+The daily EBS snapshots (7 kept) are a second, crash-consistent copy; restoring one means a new volume from the snapshot and is not drilled.
 
 ## Replacing the box (operator credentials; the data volume is kept and reattached)
 
