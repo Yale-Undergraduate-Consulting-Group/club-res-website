@@ -5,13 +5,15 @@
 # $0.30/month); alarms stay within the free ten.
 #
 # ponytail: the topics are not KMS-encrypted. Messages carry only alarm names
-# and metric values, never client data, and encrypting them would mean granting
-# CloudWatch use of the client-data key.
+# and metric values, never client data. CloudWatch cannot publish to a topic
+# under the AWS-managed SNS key, so encryption would need a CMK per region
+# (about $1/month each) or CloudWatch access to the client-data key.
 locals {
   alerts       = local.edge
   slack_alerts = local.alerts && var.slack_team_id != "" && var.slack_channel_id != ""
 }
 
+# trivy:ignore:AVD-AWS-0095 reviewed 2026-11-09: alarm notifications only, no client data (see above).
 resource "aws_sns_topic" "alerts" {
   count = local.alerts ? 1 : 0
   name  = "${local.name}-alerts"
@@ -19,6 +21,7 @@ resource "aws_sns_topic" "alerts" {
 
 # CloudFront metrics exist only in us-east-1, and an alarm can notify only a
 # topic in its own region.
+# trivy:ignore:AVD-AWS-0095 reviewed 2026-11-09: alarm notifications only, no client data (see above).
 resource "aws_sns_topic" "alerts_edge" {
   count    = local.alerts ? 1 : 0
   provider = aws.us_east_1
