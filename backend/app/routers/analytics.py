@@ -2,11 +2,26 @@
 Analytics API - Intelligence Dashboard
 """
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends
-from app.auth_deps import get_current_user_optional
+from fastapi import APIRouter, Depends, HTTPException
+from app.auth_deps import get_current_admin, get_current_user_optional
 from app.database import get_db
 
 router = APIRouter()
+
+
+@router.get("/club-metrics")
+async def club_metrics_endpoint(days: int = 30, admin: dict = Depends(get_current_admin)):
+    """The club's numbers against the semester targets, and per member. Admin only."""
+    from app.services.club_metrics import club_metrics
+
+    if days not in (7, 30, 90):
+        raise HTTPException(422, "days must be 7, 30 or 90")
+
+    db = await get_db()
+    try:
+        return await club_metrics(db, days)
+    finally:
+        await db.close()
 
 
 
