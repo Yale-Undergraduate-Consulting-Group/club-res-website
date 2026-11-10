@@ -33,7 +33,7 @@ from app.services.company_email_cache import (  # noqa: E402
     build_email_for_person_sync,
     get_domain_patterns,
     load_reconcile_context,
-    record_verified_sample,
+    record_observed_sample,
 )
 from app.services.contact_intelligence import mailbox_from_legacy  # noqa: E402
 from app.services.contact_scraper import person_name_key  # noqa: E402
@@ -70,7 +70,7 @@ async def _core() -> None:
     mail = build_email_for_person_sync("Pedro Moreira Salles", "itau.com.br", ctx)
     assert mail == "pedro.salles@itaubba.com.br", mail
 
-    await record_verified_sample(
+    await record_observed_sample(
         "itau.com.br",
         "ada.silva@itaubba.com.br",
         "Ada Silva",

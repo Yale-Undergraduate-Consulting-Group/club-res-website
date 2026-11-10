@@ -146,48 +146,6 @@ def thread_has_bounce(thread: dict) -> bool:
     return False
 
 
-async def _record_pattern_outcome(db, contact_id: int, delivered: bool) -> None:
-    """Let a real delivery outcome correct the format it was derived from."""
-    from app.services.company_email_cache import record_send_outcome
-
-    row = await (await db.execute(
-        "SELECT email, name FROM contacts WHERE id = ?", (contact_id,)
-    )).fetchone()
-    if not row or not row["email"] or not row["name"]:
-        return
-    await record_send_outcome(
-        db,
-        email=row["email"],
-        full_name=row["name"],
-        delivered=delivered,
-        source="gmail_bounce" if not delivered else "gmail_reply",
-    )
-
-
-async def _mark_campaign_contact_bounced(db, cc_id: int, contact_id: int) -> None:
-    await db.execute(
-        """UPDATE campaign_contacts SET status = 'bounced' WHERE id = ?""",
-        (cc_id,),
-    )
-    await db.execute(
-        """UPDATE contacts SET email_verification_status = 'dead'
-           WHERE id = ?""",
-        (contact_id,),
-    )
-    await _record_pattern_outcome(db, contact_id, delivered=False)
-
-
-async def _mark_campaign_contact_replied(db, cc_id: int, contact_id: int) -> None:
-    await db.execute(
-        """UPDATE campaign_contacts SET replied_at = CURRENT_TIMESTAMP, status = 'replied' WHERE id = ?""",
-        (cc_id,),
-    )
-    await db.execute(
-        """UPDATE contacts SET pipeline_status = 'replied' WHERE id = ?
-           AND (pipeline_status IS NULL OR pipeline_status NOT IN ('meeting', 'closed'))""",
-        (contact_id,),
-    )
-    await _record_pattern_outcome(db, contact_id, delivered=True)
 
 
 async def apply_contacted_auto_sort(db, sent_by_user_id: int) -> int:

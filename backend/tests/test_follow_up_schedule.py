@@ -2,8 +2,8 @@
 
 A sequence runs unattended once a campaign is released. The steps were
 definable and the campaign readable, but nothing could answer "who hears from
-us tomorrow" - and a sequence that paused because its campaign needs attention
-looked exactly like one that had finished.
+us tomorrow". A campaign that needs attention keeps following up the people
+it already mailed; a paused one stops and says why.
 """
 import asyncio
 import os
@@ -29,23 +29,25 @@ async def _seed(db) -> None:
     await db.execute(
         """INSERT INTO campaigns(id,name,status,owner_user_id,sender_user_id,sequence_id)
            VALUES (1,'Acme first touch','sent',1,1,1),
-                  (2,'Paused run','needs_attention',1,1,1),
-                  (3,'Someone else','sent',2,2,1)""")
+                  (2,'Held run','needs_attention',1,1,1),
+                  (3,'Someone else','sent',2,2,1),
+                  (4,'Paused run','paused',1,1,1)""")
     people = [
         (1, 'Ada Lovelace', 'ada@acme.com'), (2, 'Grace Hopper', 'grace@acme.com'),
         (3, 'Alan Turing', 'alan@acme.com'), (4, 'Jean Bartik', 'jean@quiet.io'),
-        (5, 'Klara Dan', 'klara@other.com'),
+        (5, 'Klara Dan', 'klara@other.com'), (6, 'Hedy Lamarr', 'hedy@quiet.io'),
     ]
     for cid, name, email in people:
         await db.execute("INSERT INTO contacts(id,name,email,company,owner_id) VALUES (?,?,?,'Acme Corp',1)",
                          (cid, name, email))
-    # Overdue, upcoming, replied, in a paused campaign, and another member's.
+    # Overdue, upcoming, replied, in a held campaign, another member's, and in a paused campaign.
     rows = [
         (1, 1, 1, "datetime('now','-10 days')", None, 'sent'),
         (2, 1, 2, "datetime('now','-1 days')", None, 'sent'),
         (3, 1, 3, "datetime('now','-10 days')", "datetime('now','-2 days')", 'sent'),
         (4, 2, 4, "datetime('now','-10 days')", None, 'sent'),
         (5, 3, 5, "datetime('now','-10 days')", None, 'sent'),
+        (6, 4, 6, "datetime('now','-10 days')", None, 'sent'),
     ]
     for cc_id, campaign, contact, last_sent, replied, status in rows:
         await db.execute(
@@ -84,10 +86,10 @@ def tests() -> None:
             assert queued["Grace Hopper"]["due_on"], queued["Grace Hopper"]
 
             assert stopped["Alan Turing"] == "They replied"
-            # The one that matters: paused campaigns stop follow-ups and say
-            # so nowhere else in the app.
-            assert "needs_attention" in stopped["Jean Bartik"], stopped
-            assert "paused" in stopped["Jean Bartik"]
+            # A campaign that needs attention still follows up the people it mailed.
+            assert queued["Jean Bartik"]["overdue"] is True, stopped
+            # A paused campaign stops its follow-ups and says so.
+            assert "paused" in stopped["Hedy Lamarr"], stopped
 
             # Another member's campaign is not this member's schedule.
             assert "Klara Dan" not in queued and "Klara Dan" not in stopped

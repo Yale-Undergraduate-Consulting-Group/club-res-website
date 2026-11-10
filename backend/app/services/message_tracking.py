@@ -5,7 +5,7 @@ import asyncio
 import base64
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
 
@@ -121,6 +121,44 @@ async def _record_mailbox(db, outgoing: dict, state: str, reason: str) -> None:
     await record_mailbox_event(db, row['candidate_id'], outgoing['sender_id'], state, reason, outgoing['id'])
 
 
+async def record_mature_deliveries(db, sender_id: int, observed_at: str) -> int:
+    """Record messages that survived the bounce grace period once.
+
+    This runs only after a successful Gmail read. A delayed or bounced DSN
+    keeps the message unproven; a later bounce remains eligible for normal
+    event processing and reverses this proof.
+    """
+    from app.services.send_gating import grace_minutes
+
+    grace = grace_minutes()
+    cutoff = datetime.fromisoformat(observed_at) - timedelta(minutes=grace)
+    rows = await (await db.execute(
+        """SELECT m.* FROM outreach_messages m
+           WHERE m.sender_id=? AND m.sent_at IS NOT NULL
+             AND datetime(m.sent_at) <= datetime(?)
+             AND NOT EXISTS (
+                 SELECT 1 FROM outreach_events e
+                 WHERE e.message_id=m.id
+                   AND e.kind IN ('delivered','delayed','bounced','replied')
+             )""",
+        (sender_id, cutoff.isoformat()),
+    )).fetchall()
+    recorded = 0
+    for row in rows:
+        outgoing = dict(row)
+        if not await record_event(
+            db, outgoing, 'delivered', 'bounce-grace', observed_at,
+            f'No bounce observed after {grace} minutes',
+        ):
+            continue
+        await _record_mailbox(
+            db, outgoing, 'previously_delivered',
+            f'No bounce observed after {grace} minutes',
+        )
+        recorded += 1
+    return recorded
+
+
 async def sync_sender(user_id: int, *, auto_sort_contacted: bool = True) -> dict:
     lock = _locks.setdefault(user_id, asyncio.Lock())
     if lock.locked():
@@ -216,6 +254,7 @@ async def _sync_sender(user_id: int, auto_sort: bool) -> dict:
                     page_token = page.get('nextPageToken')
                     if not page_token:
                         break
+            await record_mature_deliveries(db, user_id, started)
         if auto_sort:
             from app.services.gmail_reply_sync import apply_contacted_auto_sort
             counts['pipeline_promoted_contacted'] = await apply_contacted_auto_sort(db, user_id)

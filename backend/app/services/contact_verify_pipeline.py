@@ -11,7 +11,7 @@ from typing import Any
 
 from app.services.company_email_cache import (
     ReconcileContext,
-    batch_record_verified_samples,
+    batch_record_observed_samples,
     build_email_for_person_sync,
     load_reconcile_context,
     pattern_for_email,
@@ -101,7 +101,6 @@ def _pattern_sample(
             "full_name": canonical,
             "source": contact.get("contact_source") or "scrape",
             "company_name": company_name,
-            "inferred": False,
         }
     if rebuilt and mx_valid:
         return {
@@ -110,7 +109,6 @@ def _pattern_sample(
             "full_name": canonical,
             "source": "pattern_inferred",
             "company_name": company_name,
-            "inferred": True,
         }
     return None
 
@@ -224,7 +222,7 @@ async def run_contact_verify_pipeline(
 
     verifications, ai_reviews = await asyncio.gather(_verify_track(), _ai_track())
 
-    pattern_samples: list[dict[str, Any]] = []
+    observed_samples: list[dict[str, Any]] = []
     out_rows: list[dict] = []
     discovery_log: list[dict] = []
     seen: set[str] = set()
@@ -291,7 +289,7 @@ async def run_contact_verify_pipeline(
             s["domain"], s["email"], s["canonical"], s["raw"], s["company"], s["rebuilt"], verification
         )
         if sample:
-            pattern_samples.append(sample)
+            observed_samples.append(sample)
 
         out_rows.append(row)
 
@@ -334,8 +332,8 @@ async def run_contact_verify_pipeline(
         )
         out_rows.append(row)
 
-    if pattern_samples:
-        await batch_record_verified_samples(pattern_samples)
+    if observed_samples:
+        await batch_record_observed_samples(observed_samples)
 
     await _emit("done", len(out_rows), len(staged), "Verification complete")
     return out_rows, discovery_log

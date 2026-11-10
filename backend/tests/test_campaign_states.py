@@ -17,6 +17,7 @@ _tmp.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 os.environ["JWT_SECRET"] = "campaign-state-test-secret-not-a-known-default"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
+os.environ["SEND_WINDOW_HOURS"] = "off"
 
 from app.database import get_db, init_db  # noqa: E402
 from app.routers.campaigns import (  # noqa: E402
@@ -26,6 +27,14 @@ from app.routers.campaigns import (  # noqa: E402
     resume_campaign,
     retry_failed_campaign_contacts,
 )
+import app.routers.campaigns as campaigns_router  # noqa: E402
+
+
+async def _no_immediate_drain(*_args):
+    return None
+
+
+campaigns_router._kick_campaign_drain = _no_immediate_drain
 from app.routers.contacts import list_contacts  # noqa: E402
 from app.routers.emails import (  # noqa: E402
     DraftSaveRequest,
