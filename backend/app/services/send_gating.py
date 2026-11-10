@@ -9,10 +9,10 @@ That is survivable for one address and damaging for thirty at once: a batch of
 hard bounces to a single domain is exactly the pattern spam filters score
 against the sending account, and the account here is a member's real Gmail.
 
-So the first address to an unproven company goes alone. What happens next is
-already wired: gmail_reply_sync runs every two minutes, marks a bounced row
-and feeds the outcome back into the format's confidence via
-record_send_outcome. This module only decides who is allowed to go now.
+So the first address to an unproven company goes alone. Message tracking turns
+a Gmail bounce or reply into a mailbox event; roster_email.apply_mailbox_proof
+then feeds that operational result back into the pattern's confidence. This
+module only decides who is allowed to go now.
 
 A company is proven when some format for its mail host has a delivery behind
 it (verified_samples) or a member stated it outright. Otherwise the campaign's
@@ -31,6 +31,7 @@ from typing import Any, Iterable
 HELD_PROBE_IN_FLIGHT = "probe_in_flight"
 HELD_PROBE_BOUNCED = "probe_bounced"
 HELD_TEAMMATE_SENT = "teammate_already_wrote"
+HELD_OUTSIDE_WINDOW = "outside_send_window"
 
 
 def teammate_quiet_days() -> int:
@@ -163,12 +164,15 @@ async def _host_history(db, campaign_id: int) -> dict[str, dict[str, Any]]:
     return history
 
 
-async def select_sendable(db, campaign_id: int, rows: list,
-                          sender_id: int | None = None) -> tuple[list, list[dict[str, Any]]]:
+async def select_sendable(db, campaign_id: int, rows: list, sender_id: int | None = None,
+                          probing: set[str] | None = None) -> tuple[list, list[dict[str, Any]]]:
     """Split claimable rows into those allowed to send now and those held.
 
     Rows are returned in their original order so the queue stays first-in
-    first-out within a company.
+    first-out within a company. A row that goes alone to an unproven company
+    is marked ``row["probe"] = True``. A caller that gates a queue in pages
+    passes the same ``probing`` set to every page, so one company still gets
+    one probe, not one per page.
     """
     rows = list(rows)
     if not rows:
@@ -183,7 +187,7 @@ async def select_sendable(db, campaign_id: int, rows: list,
 
     sendable: list = []
     held: list[dict[str, Any]] = []
-    probing: set[str] = set()
+    probing = set() if probing is None else probing
     for row in rows:
         # The club sends as individual members, so nothing downstream would
         # notice two of them writing to the same person. The recipient would.
@@ -217,7 +221,7 @@ async def select_sendable(db, campaign_id: int, rows: list,
             continue
         # Nothing tried yet at this company: this row is the probe, and it
         # goes alone.
-        sendable.append(row)
+        sendable.append({**row, "probe": True})
         probing.add(host)
     return sendable, held
 
@@ -229,6 +233,7 @@ def describe_hold(held: list[dict[str, Any]]) -> str:
     teammates = sorted({h.get("teammate") or "a teammate" for h in held if h["reason"] == HELD_TEAMMATE_SENT})
     bounced = sorted({h["host"] for h in held if h["reason"] == HELD_PROBE_BOUNCED})
     waiting = sorted({h["host"] for h in held if h["reason"] == HELD_PROBE_IN_FLIGHT})
+    window = [h for h in held if h["reason"] == HELD_OUTSIDE_WINDOW]
     parts: list[str] = []
     if teammates:
         held_n = sum(1 for h in held if h["reason"] == HELD_TEAMMATE_SENT)
@@ -237,13 +242,21 @@ def describe_hold(held: list[dict[str, Any]]) -> str:
             f"{teammate_quiet_days()} days. Remove them, or ask who is further along."
         )
     if bounced:
+        held_n = sum(1 for h in held if h["reason"] == HELD_PROBE_BOUNCED)
         parts.append(
-            f"{len(held)} email(s) held: the first address to {', '.join(bounced)} bounced, "
+            f"{held_n} email(s) held: the first address to {', '.join(bounced)} bounced, "
             "so the rest use a format that does not work. Set the company's email format, then retry."
         )
     elif waiting:
+        held_n = sum(1 for h in held if h["reason"] == HELD_PROBE_IN_FLIGHT)
         parts.append(
-            f"{len(held)} email(s) held until the first address to {', '.join(waiting)} is proven. "
+            f"{held_n} email(s) held until the first address to {', '.join(waiting)} is proven. "
             f"They send automatically within {grace_minutes()} minutes unless it bounces."
+        )
+    if window:
+        opens = min(h["opens_at"] for h in window)
+        parts.append(
+            f"{len(window)} email(s) wait for their recipients' business hours. "
+            f"They send automatically when it opens (next at {opens.strftime('%Y-%m-%d %H:%M')} UTC)."
         )
     return " ".join(parts)

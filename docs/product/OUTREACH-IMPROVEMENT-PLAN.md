@@ -27,6 +27,15 @@ small campaign end to end before building anything new.
   app consumes (`app/routers/releases.py`).
 - The mailbox-proof gate sends one address to an unproven company and holds the
   rest (`app/services/send_gating.py`).
+- **Format proof no longer comes from an MX-only scrape.**
+  *Resolved 2026-11-10: web-found addresses are unproven observations; only a
+  no-bounce delivery after the grace period, a human reply, or a member's
+  explicit format assertion proves the host. Outreach migration 3 corrects the
+  old scrape-inflated counts.*
+- **Successful sends now teach the format registry.**
+  *Resolved 2026-11-10: successful Gmail sync records one delivery proof after
+  the bounce grace period. The event is idempotent, and a later permanent
+  bounce removes that address's proof, lowers confidence, and holds the host.*
 - Follow-up plumbing is coherent. Release snapshots one immutable intent per
   step (`app/routers/campaigns.py:632`), the job sends when `days_after` has
   elapsed and `replied_at IS NULL` (`app/services/follow_up_job.py:70-85`), and
@@ -70,17 +79,29 @@ This is the weakest area, and it is not a rough edge; it is absent.
    mailbox-proof gate moves a campaign to `needs_attention` when a probe
    bounces, which is correct — but the follow-ups for everyone already mailed in
    that campaign then stop, with nothing saying so.
+   *Resolved 2026-11-10: the job follows up for `sent`, `needs_attention` and
+   `releasing` campaigns and stops only for `paused`; the gate's hold concerns
+   unsent rows. Follow-ups also count against the sender's own daily limit.*
 8. **The only stop condition is `replied_at`.** Not stopped by: a teammate
    getting a reply at the same company, a bounce, an opt-out phrase in a reply,
    a meeting being booked, or a cap on total touches per company.
+   *Resolved 2026-11-10 (bounce, opt-out reply, out of office; the rest stays open):*
+   a bounce and any reply (an opt-out is a reply) stop the sequence, and an
+   automatic reply defers the next step to two business days after it
+   (`follow_up_job.py`). A teammate's reply, a booked meeting and a per-company
+   touch cap are still open.
 9. **No send window.** The drain runs every five minutes and sends whenever it
    fires. No business hours, no recipient timezone, no "not 03:00 on Sunday".
    For a club whose account reputation is a member's personal Gmail, this is the
    cheapest deliverability win available.
+   *Resolved 2026-11-10: initial sends and follow-ups now stay queued outside
+   recipient-local Monday–Friday business hours. The company register supplies
+   a small US-state/UK zone map, unknown companies default to Eastern, and
+   `SEND_WINDOW_HOURS` configures the shared window.*
 
 ### C. Drafting does not learn
 
-10. **Outcomes feed email formats, never wording.** `record_send_outcome` moves
+10. **Outcomes feed email formats, never wording.** Delivery and reply proof moves
     pattern confidence; nothing records which *angle* earned a reply. The app
     cannot answer "which opening works", which is the one question worth
     asking after fifty sends.

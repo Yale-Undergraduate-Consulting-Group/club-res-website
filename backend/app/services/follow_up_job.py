@@ -1,34 +1,76 @@
 """
 Follow-up sequence job: send due follow-up emails for campaigns that have a sequence attached.
-Run daily. Uses the explicitly bound original sender and durable step claims.
+Runs hourly so recipient-local send windows in every time zone are reachable. Uses the explicitly
+bound original sender and durable step claims.
 
-Skips contacts who have already replied (replied_at set or status = 'replied'), so follow-ups
-only go to recipients who have not responded. Replies are recorded by sender-scoped Gmail sync
-or by the campaign owner's manual mark.
+A follow-up goes to a contact who was already mailed, so a campaign that is held for unsent rows
+(`needs_attention`) or still releasing keeps following up; only a paused campaign stops. A sequence
+stops for a contact who replied (an opt-out is a reply: `replied_at` is set) or whose address bounced.
+An automatic reply (out of office) pushes the next step back two business days from that reply
+rather than sending into the absence. A due step waits for the next run unless the recipient's local
+time is inside the send window, and it counts against the sender's own daily limit.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.database import get_db
+
+AUTO_REPLY_DEFER_BUSINESS_DAYS = 2
+# A paused campaign stops its follow-ups; the gate's hold concerns unsent rows only.
+FOLLOW_UP_CAMPAIGN_STATES = ("sent", "needs_attention", "releasing")
+
+
+def _add_business_days(day, days: int):
+    while days > 0:
+        day += timedelta(days=1)
+        if day.weekday() < 5:
+            days -= 1
+    return day
+
+
+async def _thread_signal(db, campaign_contact_id: int):
+    """(stopped, auto_reply_date): did the thread bounce or get a reply, and when did the
+    latest automatic reply arrive."""
+    rows = await (await db.execute(
+        """SELECT e.kind, MAX(e.occurred_at) AS at FROM outreach_events e
+           JOIN outreach_messages m ON m.id = e.message_id
+           WHERE m.campaign_contact_id = ? AND e.kind IN ('bounced', 'replied', 'auto_reply')
+           GROUP BY e.kind""",
+        (campaign_contact_id,),
+    )).fetchall()
+    kinds = {row["kind"]: row["at"] for row in rows}
+    if "bounced" in kinds or "replied" in kinds:
+        return True, None
+    auto = kinds.get("auto_reply")
+    if not auto:
+        return False, None
+    try:
+        return False, datetime.fromisoformat(str(auto).replace("Z", "+00:00")).date()
+    except ValueError:
+        return False, None
 
 
 async def run_follow_up_sequences() -> dict:
     """
     Find campaign_contacts where the next sequence step is due and send it.
-    Returns {"sent": count, "errors": [...]}.
+    Returns {"sent": count, "waiting": due steps held for the send window, "errors": [...]}.
     """
+    from app.services import send_window
     from app.services.gmail_api import send_via_gmail_api_with_tracking
 
     db = await get_db()
     try:
         # Campaigns with a sequence attached
+        marks = ",".join("?" * len(FOLLOW_UP_CAMPAIGN_STATES))
         cursor = await db.execute(
-            "SELECT id, sequence_id, owner_user_id, sender_user_id FROM campaigns WHERE sequence_id IS NOT NULL AND status = 'sent'"
+            f"SELECT id, sequence_id, owner_user_id, sender_user_id FROM campaigns WHERE sequence_id IS NOT NULL AND status IN ({marks})",
+            FOLLOW_UP_CAMPAIGN_STATES,
         )
         campaigns = await cursor.fetchall()
         if not campaigns:
-            return {"sent": 0, "errors": []}
+            return {"sent": 0, "waiting": 0, "errors": []}
 
         today = datetime.now(timezone.utc).date()
         sent = 0
+        waiting = 0
         errors = []
 
         for camp in campaigns:
@@ -45,7 +87,7 @@ async def run_follow_up_sequences() -> dict:
                 errors.append({"campaign_id": cid, "error": "Sender no longer has access to Outreach"})
                 continue
 
-            # Campaign contacts: initial send done, sequence not finished, no reply yet
+            # Campaign contacts: initial send done, sequence not finished, no reply or bounce yet
             cursor = await db.execute(
                 """SELECT cc.id, cc.contact_id, cc.sequence_step_sent, cc.last_sequence_sent_at, cc.sent_by_user_id
                    FROM campaign_contacts cc
@@ -80,9 +122,19 @@ async def run_follow_up_sequences() -> dict:
                         last_date = datetime.fromisoformat(str(last_sent).replace("Z", "+00:00")).date()
                 except Exception:
                     continue
-                from datetime import timedelta
                 due_date = last_date + timedelta(days=days_after)
                 if due_date > today:
+                    continue
+                stopped, auto_reply_on = await _thread_signal(db, cc["id"])
+                if stopped:
+                    continue
+                if auto_reply_on:
+                    # Out of office: wait two business days past the automatic reply.
+                    if _add_business_days(auto_reply_on, AUTO_REPLY_DEFER_BUSINESS_DAYS) > today:
+                        continue
+                # Outside the recipient's local business hours the step waits for a later run.
+                if not send_window.open_now(await send_window.recipient_zone(db, cc["contact_id"])):
+                    waiting += 1
                     continue
 
                 # Get contact email
@@ -100,12 +152,12 @@ async def run_follow_up_sequences() -> dict:
                 key = f"followup:{cc['id']}:{step_idx}"
                 await begin_write(db)
                 current = await (await db.execute(
-                    """SELECT cc.id FROM campaign_contacts cc JOIN campaigns camp ON camp.id=cc.campaign_id
+                    f"""SELECT cc.id FROM campaign_contacts cc JOIN campaigns camp ON camp.id=cc.campaign_id
                     JOIN users u ON u.id=camp.sender_user_id
                     WHERE cc.id=? AND cc.sequence_step_sent=? AND cc.status='sent' AND cc.replied_at IS NULL
                     AND cc.sent_by_user_id=? AND camp.sender_user_id=? AND camp.owner_user_id=?
-                    AND camp.status='sent' AND camp.sequence_id=? AND u.is_active=1""",
-                    (cc["id"], step_idx, sender_user_id, sender_user_id, sender_user_id, seq_id),
+                    AND camp.status IN ({marks}) AND camp.sequence_id=? AND u.is_active=1""",
+                    (cc["id"], step_idx, sender_user_id, sender_user_id, sender_user_id, *FOLLOW_UP_CAMPAIGN_STATES, seq_id),
                 )).fetchone()
                 if not current:
                     await db.commit()
@@ -168,6 +220,6 @@ async def run_follow_up_sequences() -> dict:
                     await db.commit()
                     errors.append({"campaign_contact_id": cc["id"], "error": str(e)})
 
-        return {"sent": sent, "errors": errors}
+        return {"sent": sent, "waiting": waiting, "errors": errors}
     finally:
         await db.close()

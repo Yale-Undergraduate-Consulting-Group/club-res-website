@@ -3,7 +3,6 @@
 Gmail has no idempotent send key: a timeout or process death can follow acceptance.
 Such work stays claimed/ambiguous for reconciliation, avoiding duplicate delivery.
 """
-import os
 
 from fastapi import HTTPException
 from app.database import is_postgres
@@ -59,8 +58,12 @@ async def snapshot_many(db, rows) -> set[str]:
 
 
 async def claim(db, key, sender):
-    """Caller holds write transaction; conditional update is durable before send."""
-    daily_limit = max(1, int(os.getenv("CAMPAIGN_DAILY_SEND_LIMIT", "100") or 100))
+    """Caller holds write transaction; conditional update is durable before send.
+
+    The ceiling is the sender's own daily limit (never above the club
+    default), shared by initial sends and follow-ups."""
+    from app.services.settings_service import member_daily_send_limit
+    daily_limit = await member_daily_send_limit(sender)
     used = await (await db.execute(
         """SELECT COUNT(*) AS n FROM outreach_dispatches
            WHERE sender_user_id=? AND claimed_at IS NOT NULL

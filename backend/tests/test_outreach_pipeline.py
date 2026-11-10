@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["JWT_SECRET"] = "outreach-pipeline-test-secret-xxxxxxxx"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
+os.environ["SEND_WINDOW_HOURS"] = "off"
 
 from fastapi import HTTPException
 from app.database import get_db, init_db
@@ -24,6 +25,14 @@ from app.routers.campaigns import (
     release_campaign,
     retry_failed_campaign_contacts,
 )
+import app.routers.campaigns as campaigns_router
+
+
+async def _no_immediate_drain(*_args):
+    return None
+
+
+campaigns_router._kick_campaign_drain = _no_immediate_drain
 from app.routers.yucgoutreach import YucgOutreachRunCreate, create_run
 from app.routers.outreach import (
     OutreachCampaignAddContacts,

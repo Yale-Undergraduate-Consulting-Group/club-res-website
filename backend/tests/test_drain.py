@@ -15,9 +15,18 @@ _tmp.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 os.environ["JWT_SECRET"] = "p-drain-test-secret-not-a-known-default-xx"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
+os.environ["SEND_WINDOW_HOURS"] = "off"
 
 from app.database import get_db, init_db  # noqa: E402
 from app.routers.campaigns import drain_campaign, release_campaign  # noqa: E402
+import app.routers.campaigns as campaigns_router  # noqa: E402
+
+
+async def _no_immediate_drain(*_args):
+    return None
+
+
+campaigns_router._kick_campaign_drain = _no_immediate_drain
 
 
 async def _seed(n: int = 10) -> int:
