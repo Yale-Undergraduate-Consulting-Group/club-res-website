@@ -129,7 +129,7 @@ export default function Outreach() {
   const [newNote, setNewNote] = useState('');
   const [newActivityType, setNewActivityType] = useState('email_sent');
   const [newActivityDetails, setNewActivityDetails] = useState('');
-  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [emailVerified, setEmailVerified] = useState<{ ok: boolean; label: string } | null>(null);
   const [templateForm, setTemplateForm] = useState({ name: '', subject: '', body: '', industry: '', use_case: '' });
   const [sequenceForm, setSequenceForm] = useState({ name: '', steps: [{ days_after: 3, subject: '', body: '' }] });
   const [loading, setLoading] = useState(false);
@@ -406,13 +406,17 @@ export default function Outreach() {
     }
   };
 
+  // The check reads syntax and the domain's mail route only; it never reaches
+  // the mailbox, so it says what it knows rather than "valid".
   const verifyEmail = async () => {
     if (!selectedContact?.email) return;
     try {
       const r = await api.outreach.verifyEmail(selectedContact.email);
-      setEmailVerified(r.valid);
+      setEmailVerified(!r.valid ? { ok: false, label: 'Invalid address' }
+        : r.mx_valid === false ? { ok: false, label: 'Domain has no mail route' }
+        : { ok: true, label: 'Domain accepts mail · mailbox not confirmed' });
     } catch {
-      setEmailVerified(false);
+      setEmailVerified({ ok: false, label: 'Check failed' });
     }
   };
 
@@ -845,11 +849,11 @@ export default function Outreach() {
                     onClick={verifyEmail}
                     className="ui-button ui-button--secondary ui-button--sm"
                   >
-                    Verify Email
+                    Check address
                   </button>
                   {emailVerified !== null && (
-                    <span className={`text-xs ${emailVerified ? 'text-green-600' : 'text-red-600'}`}>
-                      {emailVerified ? 'Valid' : 'Invalid'}
+                    <span className={`text-xs ${emailVerified.ok ? 'text-slate-600' : 'text-red-600'}`}>
+                      {emailVerified.label}
                     </span>
                   )}
                 </div>
