@@ -12,7 +12,7 @@ from typing import Any
 
 from app.services.company_email_cache import (
     ReconcileContext,
-    batch_record_verified_samples,
+    batch_record_observed_samples,
     build_email_for_person_sync,
     load_reconcile_context,
     pattern_for_email,
@@ -165,7 +165,6 @@ def _pattern_sample_payload(
             "full_name": canonical,
             "source": contact.get("contact_source") or "scrape",
             "company_name": company_name,
-            "inferred": False,
         }
     if rebuilt and mx_valid:
         return {
@@ -174,7 +173,6 @@ def _pattern_sample_payload(
             "full_name": canonical,
             "source": "pattern_inferred",
             "company_name": company_name,
-            "inferred": True,
         }
     return None
 
@@ -246,7 +244,7 @@ async def reconcile_contacts(
     else:
         verifications = [{"status": "unknown", "mx_valid": False} for _ in staged]
 
-    pattern_samples: list[dict[str, Any]] = []
+    observed_samples: list[dict[str, Any]] = []
     results: list[dict | None] = []
 
     for item, verification in zip(staged, verifications):
@@ -271,11 +269,11 @@ async def reconcile_contacts(
 
         sample = _pattern_sample_payload(dom, final_email, canonical, raw, row_company, rebuilt, verification)
         if sample:
-            pattern_samples.append(sample)
+            observed_samples.append(sample)
         results.append(out)
 
-    if pattern_samples:
-        await batch_record_verified_samples(pattern_samples)
+    if observed_samples:
+        await batch_record_observed_samples(observed_samples)
 
     reconciled: list[dict] = []
     seen: set[str] = set()

@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import os
+from datetime import datetime, timezone
 import sys
 import tempfile
 from pathlib import Path
@@ -143,6 +144,81 @@ async def test_storage_and_sync():
     await db.close()
 
 
+async def test_delivery_proof() -> None:
+    from app.services import message_tracking
+    from app.services.send_gating import proven_hosts
+
+    db = await get_db()
+    observed = datetime(2026, 1, 2, 12, tzinfo=timezone.utc)
+    try:
+        await db.execute(
+            """INSERT INTO company_email_patterns
+               (company_domain,pattern_key,pattern_template,confidence,sample_count,verified_samples,sources_json)
+               VALUES ('proof.example','first.last','{first}.{last}',0.38,1,0,'["domain_scrape"]')"""
+        )
+        await db.execute(
+            "INSERT INTO users(id,email) VALUES(20,'proof-sender@example.org')"
+        )
+        await db.execute(
+            "INSERT INTO contacts(id,name,email) VALUES (20,'Jane Doe','jane.doe@proof.example')"
+        )
+        await db.execute("INSERT INTO campaigns(id,name) VALUES (20,'Proof')")
+        await db.execute(
+            """INSERT INTO campaign_contacts
+               (id,campaign_id,contact_id,status,sent_at,sent_by_user_id)
+               VALUES (20,20,20,'sent','2026-01-02 10:00:00',20)"""
+        )
+        await db.execute(
+            """INSERT INTO outreach_messages
+               (id,campaign_contact_id,sender_id,recipient,tracking_token,rfc_message_id,sent_at)
+               VALUES (20,20,20,'jane.doe@proof.example','proof-token','<proof@example>','2026-01-02 10:00:00')"""
+        )
+        await db.execute(
+            """INSERT INTO people(id,canonical_key,name,normalized_name,created_at)
+               VALUES (20,'proof-jane','Jane Doe','jane doe',CURRENT_TIMESTAMP)"""
+        )
+        await db.execute(
+            """INSERT INTO email_candidates
+               (id,person_id,email,company_domain,origin,pattern_key,method,created_at)
+               VALUES (20,20,'jane.doe@proof.example','proof.example','published_by_company',
+                       'first.last','test',CURRENT_TIMESTAMP)"""
+        )
+        await db.execute(
+            "INSERT INTO catalog_evidence(contact_id,person_id,candidate_id) VALUES (20,20,20)"
+        )
+        await db.commit()
+
+        first = await message_tracking.record_mature_deliveries(db, 20, observed.isoformat())
+        second = await message_tracking.record_mature_deliveries(db, 20, observed.isoformat())
+        assert first == 1 and second == 0
+        pattern = await (await db.execute(
+            "SELECT confidence,verified_samples FROM company_email_patterns WHERE company_domain='proof.example'"
+        )).fetchone()
+        delivered_confidence = pattern["confidence"]
+        assert pattern["verified_samples"] == 1
+        assert await proven_hosts(db, {"proof.example"}) == {"proof.example"}
+        events = await (await db.execute(
+            "SELECT COUNT(*) AS n FROM outreach_events WHERE message_id=20 AND kind='delivered'"
+        )).fetchone()
+        assert events["n"] == 1
+
+        outgoing = dict(await (await db.execute(
+            "SELECT * FROM outreach_messages WHERE id=20"
+        )).fetchone())
+        assert await message_tracking.record_event(
+            db, outgoing, 'bounced', 'dsn:proof', observed.isoformat(), '5.1.1 mailbox missing'
+        )
+        bounced = await (await db.execute(
+            "SELECT confidence,verified_samples,failed_samples FROM company_email_patterns WHERE company_domain='proof.example'"
+        )).fetchone()
+        assert bounced["verified_samples"] == 0 and bounced["failed_samples"] == 1
+        assert bounced["confidence"] < delivered_confidence
+        assert await proven_hosts(db, {"proof.example"}) == set()
+        await db.commit()
+    finally:
+        await db.close()
+
+
 async def test_background_sync():
     from fastapi import BackgroundTasks
     from app.routers.outreach import sync_inbox_replies
@@ -184,5 +260,6 @@ if __name__ == '__main__':
     with tempfile.TemporaryDirectory() as directory:
         with patch.dict(os.environ, {'DATABASE_URL': f'sqlite:///{directory}/tracking.db'}):
             asyncio.run(test_storage_and_sync())
+            asyncio.run(test_delivery_proof())
             test_public_http_and_restart()
     print('tracking: ok')

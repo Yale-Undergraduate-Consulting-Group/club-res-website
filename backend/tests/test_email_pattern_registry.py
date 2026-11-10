@@ -135,33 +135,40 @@ def tests() -> None:
         assert client.put('/api/settings', json={'daily_send_limit': 0}).status_code == 400
         assert client.get('/api/settings').json()['daily_send_limit'] == 100
 
-        # A real send outcome corrects the format it was derived from. Crawling
-        # can only ever show an address exists somewhere; a bounce is the first
-        # evidence that a derived layout is wrong.
-        from app.services.company_email_cache import record_send_outcome
+        # A real mailbox outcome corrects the format. MX-only observations do
+        # not prove it; a reply does, repeats are idempotent, and a later bounce
+        # removes that address's proof and lowers confidence.
+        from app.services.contact_intelligence import record_mailbox_event
 
-        async def outcome(email: str, name: str, delivered: bool) -> bool:
+        async def outcome(email: str, name: str, domain: str, pattern: str,
+                          state: str, event_key: str) -> None:
             db = await get_db()
             try:
-                matched = await record_send_outcome(
-                    db, email=email, full_name=name, delivered=delivered, source='test')
+                person_key = email.lower()
+                await db.execute(
+                    """INSERT OR IGNORE INTO people
+                       (canonical_key,name,normalized_name,created_at)
+                       VALUES (?,?,?,CURRENT_TIMESTAMP)""",
+                    (person_key, name, name.lower()),
+                )
+                person = await (await db.execute(
+                    "SELECT id FROM people WHERE canonical_key=?", (person_key,)
+                )).fetchone()
+                await db.execute(
+                    """INSERT OR IGNORE INTO email_candidates
+                       (person_id,email,company_domain,origin,pattern_key,method,created_at)
+                       VALUES (?,?,?,?,?,'test',CURRENT_TIMESTAMP)""",
+                    (person["id"], email, domain, "published_by_company", pattern),
+                )
+                candidate = await (await db.execute(
+                    "SELECT id FROM email_candidates WHERE email=? COLLATE NOCASE", (email,)
+                )).fetchone()
+                await record_mailbox_event(
+                    db, candidate["id"], 1, state, "test outcome", event_key
+                )
                 await db.commit()
-                return matched
             finally:
                 await db.close()
-
-        before = asyncio.run(list_all_domain_patterns(q='learned.com'))['items'][0]
-        assert asyncio.run(outcome('jane.doe@learned.com', 'Jane Doe', False))
-        after = asyncio.run(list_all_domain_patterns(q='learned.com'))['items'][0]
-        assert after['failed_samples'] == 1, after
-        assert after['confidence'] < before['confidence'], 'a bounce must cost confidence'
-
-        # A reply proves the mailbox existed, which no crawl can establish. The
-        # learned pattern above is already at the confidence cap, so the gain is
-        # only observable on one that still has headroom.
-        assert asyncio.run(outcome('john.roe@learned.com', 'John Roe', True))
-        replied = asyncio.run(list_all_domain_patterns(q='learned.com'))['items'][0]
-        assert replied['verified_samples'] == before['verified_samples'] + 1
 
         async def seed_fresh() -> None:
             db = await get_db()
@@ -170,7 +177,7 @@ def tests() -> None:
                     """INSERT INTO company_email_patterns
                        (company_domain,company_name,pattern_key,pattern_template,confidence,
                         sample_count,verified_samples,sources_json)
-                       VALUES ('fresh.com','Fresh','first.last','{first}.{last}',0.50,1,1,
+                       VALUES ('fresh.com','Fresh','first.last','{first}.{last}',0.38,1,0,
                                '["web_discovery"]')"""
                 )
                 await db.commit()
@@ -178,28 +185,64 @@ def tests() -> None:
                 await db.close()
 
         asyncio.run(seed_fresh())
-        assert asyncio.run(outcome('jane.doe@fresh.com', 'Jane Doe', True))
-        grown = asyncio.run(list_all_domain_patterns(q='fresh.com'))['items'][0]
-        assert grown['confidence'] > 0.50, 'a reply must raise an unsaturated format'
+        before = asyncio.run(list_all_domain_patterns(q='fresh.com'))['items'][0]
+        asyncio.run(outcome(
+            'jane.doe@fresh.com', 'Jane Doe', 'fresh.com', 'first.last',
+            'human_reply_observed', 'reply:1',
+        ))
+        replied = asyncio.run(list_all_domain_patterns(q='fresh.com'))['items'][0]
+        assert replied['verified_samples'] == 1
+        assert replied['confidence'] > before['confidence']
+        asyncio.run(outcome(
+            'jane.doe@fresh.com', 'Jane Doe', 'fresh.com', 'first.last',
+            'human_reply_observed', 'reply:1',
+        ))
+        repeated = asyncio.run(list_all_domain_patterns(q='fresh.com'))['items'][0]
+        assert repeated['verified_samples'] == 1, repeated
 
-        # A stated format carries no observed samples, so the learned curve alone
-        # would demote it on a success. Confirming it must never cost confidence.
-        assert asyncio.run(outcome('jdoe@asserted.com', 'Jane Doe', True))
+        asyncio.run(outcome(
+            'jane.doe@fresh.com', 'Jane Doe', 'fresh.com', 'first.last',
+            'permanent_failure_observed', 'bounce:1',
+        ))
+        bounced = asyncio.run(list_all_domain_patterns(q='fresh.com'))['items'][0]
+        assert bounced['verified_samples'] == 0
+        assert bounced['failed_samples'] == 1
+        assert bounced['confidence'] < replied['confidence']
+
+        # A reply confirms a member-asserted format without lowering its floor.
+        asyncio.run(outcome(
+            'jdoe@asserted.com', 'Jane Doe', 'asserted.com', 'flast',
+            'human_reply_observed', 'reply:asserted',
+        ))
         confirmed = asyncio.run(list_all_domain_patterns(q='asserted.com'))['items'][0]
-        assert confirmed['confidence'] >= MEMBER_ASSERTED_CONFIDENCE, confirmed
+        assert confirmed['verified_samples'] == 1
+        assert confirmed['confidence'] >= MEMBER_ASSERTED_CONFIDENCE
 
-        # An address that matches no stored format says nothing about one.
-        assert not asyncio.run(outcome('contact@learned.com', 'Jane Doe', False))
-        assert not asyncio.run(outcome('jane.doe@unknown-co.com', 'Jane Doe', False))
+        async def migration_correction() -> None:
+            from app.services.company_email_cache import unprove_scraped_patterns
 
-        # Enough failures must demote a format below an unproblematic rival.
-        for _ in range(6):
-            asyncio.run(outcome('jane.doe@learned.com', 'Jane Doe', False))
-        asyncio.run(set_member_asserted_pattern('learned.com', '{first_initial}{last}', member_id=1))
-        ranked = asyncio.run(list_all_domain_patterns(q='learned.com'))['items']
-        bounced = next(p for p in ranked if p['pattern_key'] == 'first.last')
-        assert bounced['confidence'] < MEMBER_ASSERTED_CONFIDENCE, \
-            'a repeatedly bouncing format must not outrank an untested stated one'
+            db = await get_db()
+            try:
+                await db.execute(
+                    """INSERT INTO company_email_patterns
+                       (company_domain,pattern_key,pattern_template,confidence,
+                        sample_count,verified_samples,sources_json)
+                       VALUES ('mx-only.example','first.last','{first}.{last}',0.98,3,3,
+                               '["domain_scrape"]')"""
+                )
+                await unprove_scraped_patterns(db)
+                await unprove_scraped_patterns(db)
+                await db.commit()
+                corrected = await (await db.execute(
+                    """SELECT confidence,verified_samples FROM company_email_patterns
+                       WHERE company_domain='mx-only.example'"""
+                )).fetchone()
+                assert corrected["verified_samples"] == 0
+                assert corrected["confidence"] <= 0.49
+            finally:
+                await db.close()
+
+        asyncio.run(migration_correction())
 
 
 def layout_vocabulary_tests() -> None:

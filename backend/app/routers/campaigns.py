@@ -3,6 +3,7 @@ Campaigns API - Campaign Manager & Mass Sender
 """
 import asyncio
 import json
+import logging
 import os
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -13,6 +14,8 @@ from app.services.usage_service import log_event
 from datetime import datetime
 from pydantic import BaseModel
 from app.models import CampaignCreate, CampaignContactAdd
+
+logger = logging.getLogger(__name__)
 
 
 class CampaignUpdate(BaseModel):
@@ -661,14 +664,159 @@ async def add_contacts_to_campaign(
         await db.close()
 
 
-async def _claim_pending_rows(db, campaign_id: int, limit: int, user_id=None) -> tuple[list, list[dict]]:
-    """Atomically recheck sender and campaign state, then claim immutable intent.
+async def _scan_pending_rows(db, campaign_id: int, target: int, sender: int,
+                             *, now=None) -> tuple[list, list[dict]]:
+    """Page the whole pending queue until ``target`` rows are claimable."""
+    from app.services.send_gating import HELD_OUTSIDE_WINDOW, select_sendable
+    from app.services.send_window import company_zone, next_open, open_now
 
-    Returns the claimed rows and the rows withheld because the company has no
-    proven mailbox yet, so the caller can report why a queue is not moving.
+    sendable: list = []
+    held: list[dict] = []
+    probing: set[str] = set()
+    zones = {}
+    after_id = 0
+    page_size = max(target * 10, 50)
+    while len(sendable) < target:
+        page = await (await db.execute(
+            """SELECT cc.*, c.email AS recipient_email, c.company, c.contact_source,
+                      c.email_pattern,
+                      (SELECT ec.origin FROM email_candidates ec
+                         WHERE ec.email=c.email COLLATE NOCASE LIMIT 1) AS address_origin
+               FROM campaign_contacts cc JOIN contacts c ON c.id=cc.contact_id
+               WHERE cc.campaign_id=? AND cc.status='pending' AND cc.id>?
+               ORDER BY cc.id LIMIT ?""",
+            (campaign_id, after_id, page_size),
+        )).fetchall()
+        if not page:
+            break
+        after_id = int(page[-1]["id"])
+        open_rows = []
+        for raw in page:
+            row = dict(raw)
+            row["email"] = row.get("recipient_email")
+            company = (row.get("company") or "").strip()
+            if company not in zones:
+                zones[company] = await company_zone(db, company)
+            zone = zones[company]
+            if open_now(zone, now):
+                open_rows.append(row)
+            else:
+                held.append({
+                    "row": row,
+                    "host": "",
+                    "reason": HELD_OUTSIDE_WINDOW,
+                    "opens_at": next_open(zone, now),
+                })
+        allowed, gated = await select_sendable(
+            db, campaign_id, open_rows, sender, probing=probing,
+        )
+        sendable.extend(allowed)
+        held.extend(gated)
+        if len(page) < page_size:
+            break
+    return sendable[:target], held
+
+
+def _needs_mailbox_precheck(row: dict) -> bool:
+    """Only addresses nobody vouched for spend a check: a format guess, one
+    seen on a third-party page, or an import without evidence. An address the
+    company itself publishes is real evidence and keeps the free credits."""
+    origin = str(row.get("address_origin") or "").strip().lower()
+    if origin == "published_by_company":
+        return False
+    if origin in {
+        "published_by_independent_source",
+        "inferred_from_published_pattern",
+        "imported_without_evidence",
+    }:
+        return True
+    source = str(row.get("contact_source") or "").strip().lower()
+    return source in {"domain_scrape", "web_discovery", "inferred"} or source.endswith("_pattern")
+
+
+def _verifalia_precheck_enabled() -> bool:
+    return (
+        (os.getenv("INBOX_VERIFY_PROVIDER") or "smtp").strip().lower() == "verifalia"
+        and (os.getenv("EXTERNAL_EMAIL_VERIFICATION_ENABLED") or "").strip().lower() == "true"
+        and bool((os.getenv("VERIFALIA_API_KEY") or "").strip())
+    )
+
+
+async def _precheck_first_mailboxes(campaign_id: int, sender: int, limit: int,
+                                    *, now=None) -> None:
+    """Spend a mailbox check before a guessed/web-only host's first send.
+
+    The read connection is closed before calling the provider: no writer
+    transaction may surround verifier reservations or network I/O.
     """
+    if not _verifalia_precheck_enabled():
+        return
+    from app.services.contact_intelligence import Mailbox, assess_address
+    from app.services.dispatch_service import begin_write
+
+    checked: set[int] = set()
+    while True:
+        db = await get_db()
+        try:
+            campaign = await (await db.execute(
+                "SELECT status FROM campaigns WHERE id=?", (campaign_id,)
+            )).fetchone()
+            if not campaign or campaign["status"] != "releasing":
+                return
+            rows, _ = await _scan_pending_rows(db, campaign_id, max(1, limit), sender, now=now)
+            probes = [
+                row for row in rows
+                if row.get("probe") and row["id"] not in checked and _needs_mailbox_precheck(row)
+            ]
+        finally:
+            await db.close()
+        if not probes:
+            return
+
+        rejected = False
+        for row in probes:
+            checked.add(int(row["id"]))
+            try:
+                assessment = await assess_address(
+                    row["email"], actor_id=sender, external=True,
+                )
+            except Exception:
+                logger.exception("pre-send mailbox check failed; continuing with existing send rules")
+                continue
+            if str((assessment or {}).get("mailbox") or "") not in {
+                Mailbox.RECIPIENT_REJECTED.value,
+                Mailbox.PERMANENT_FAILURE_OBSERVED.value,
+            }:
+                continue
+            failed_db = await get_db()
+            try:
+                await begin_write(failed_db)
+                changed = await failed_db.execute(
+                    """UPDATE campaign_contacts
+                       SET status='failed', last_error='Mailbox does not exist (Verifalia)'
+                       WHERE id=? AND campaign_id=? AND status='pending'""",
+                    (row["id"], campaign_id),
+                )
+                if changed.rowcount:
+                    await failed_db.execute(
+                        "UPDATE contacts SET email_verification_status='dead' WHERE id=?",
+                        (row["contact_id"],),
+                    )
+                await failed_db.commit()
+                rejected |= bool(changed.rowcount)
+            except Exception:
+                await failed_db.rollback()
+                raise
+            finally:
+                await failed_db.close()
+        if not rejected:
+            return
+
+
+async def _claim_pending_rows(db, campaign_id: int, limit: int, user_id=None,
+                              *, now=None) -> tuple[list, list[dict]]:
+    """Atomically recheck state, then claim immutable, currently sendable intent."""
     from app.services.dispatch_service import begin_write, claim
-    from app.services.send_gating import select_sendable
     await begin_write(db)
     try:
         campaign = await (await db.execute("SELECT * FROM campaigns WHERE id=?", (campaign_id,))).fetchone()
@@ -676,7 +824,7 @@ async def _claim_pending_rows(db, campaign_id: int, limit: int, user_id=None) ->
         await require_campaign_owner(db, campaign_id, sender)
         if campaign["status"] != "releasing":
             await db.commit()
-            return []
+            return [], []
         duplicate = await (await db.execute(
             """SELECT 1 FROM campaign_contacts WHERE campaign_id=?
                GROUP BY contact_id HAVING COUNT(*)>1 LIMIT 1""",
@@ -701,21 +849,9 @@ async def _claim_pending_rows(db, campaign_id: int, limit: int, user_id=None) ->
         if remaining == 0:
             await db.commit()
             return [], []
-        # Gate before claiming: a claim marks the row sending and snapshots an
-        # immutable intent, so a held row must never reach that point. Scan
-        # further than this tick can send, or one held company at the head of
-        # the queue would stall every other company behind it.
-        window = await (await db.execute(
-            """SELECT cc.*, c.email AS recipient_email
-               FROM campaign_contacts cc JOIN contacts c ON c.id = cc.contact_id
-               WHERE cc.campaign_id=? AND cc.status='pending' ORDER BY cc.id LIMIT ?""",
-            (campaign_id, max(min(limit, remaining) * 10, 50)),
-        )).fetchall()
-        window = [dict(row) for row in window]
-        for row in window:
-            row["email"] = row.get("recipient_email")
-        sendable, held = await select_sendable(db, campaign_id, window, sender)
-        rows = sendable[: min(limit, remaining)]
+        rows, held = await _scan_pending_rows(
+            db, campaign_id, min(limit, remaining), sender, now=now,
+        )
         claimed = []
         for row in rows:
             intent = await claim(db, f"initial:{row['id']}", sender)
@@ -735,10 +871,10 @@ async def _claim_pending_rows(db, campaign_id: int, limit: int, user_id=None) ->
         raise
 
 
-async def drain_campaign(campaign_id: int, user_id: int, limit: int = 5) -> dict:
-    """Send up to `limit` pending rows. EventBridge/local ticks call this; the HTTP request must not send the whole list."""
+async def drain_campaign(campaign_id: int, user_id: int, limit: int = 5, *,
+                         now=None) -> dict:
+    """Send up to ``limit`` pending rows; scheduled and immediate ticks share the durable claim."""
     from app.services.gmail_api import send_via_gmail_api_with_tracking
-    from app.services.settings_service import get_member_setting
 
     db = await get_db()
     try:
@@ -750,7 +886,10 @@ async def drain_campaign(campaign_id: int, user_id: int, limit: int = 5) -> dict
             raise HTTPException(404, "Campaign not found")
         if campaign["status"] != "releasing":
             raise HTTPException(409, "Campaign must be released before it can send")
-        pending, held = await _claim_pending_rows(db, campaign_id, limit, user_id)
+        await _precheck_first_mailboxes(campaign_id, user_id, limit, now=now)
+        pending, held = await _claim_pending_rows(
+            db, campaign_id, limit, user_id, now=now,
+        )
         # Loaded once for the whole release: the sign-off is a property of
         # the sending member, not of each recipient.
         from app.services.settings_service import load_sign_off
@@ -859,6 +998,15 @@ async def drain_campaign(campaign_id: int, user_id: int, limit: int = 5) -> dict
         await db.close()
 
 
+async def _kick_campaign_drain(campaign_id: int, sender: int) -> None:
+    """One immediate tick; the durable conditional claim arbitrates cron races."""
+    try:
+        limit = int(os.getenv("CAMPAIGN_DRAIN_LIMIT", "5") or 5)
+        await drain_campaign(campaign_id, sender, limit=limit)
+    except Exception:
+        logger.exception("immediate campaign drain failed; the scheduler tick still owns the queue")
+
+
 @router.post("/{campaign_id}/release")
 async def release_campaign(campaign_id: int, user: dict = Depends(get_current_user)):
     """Validate and release a draft or paused campaign for scheduled draining."""
@@ -913,6 +1061,11 @@ async def release_campaign(campaign_id: int, user: dict = Depends(get_current_us
             (user["id"], campaign_id),
         )
         await db.commit()
+        # Do not make the member wait for the five-minute scheduler tick. The
+        # same durable dispatch claim used by cron makes a concurrent tick (or
+        # blue/green overlap) find nothing already claimed.
+        if (os.getenv("APP_ENV") or "").strip().lower() != "beta":
+            asyncio.create_task(_kick_campaign_drain(campaign_id, user["id"]))
         # The drain claims at most the member's daily cap, so a release larger
         # than the cap is paced over days. Saying so here is the only chance the
         # member gets: the send loop runs unattended.
