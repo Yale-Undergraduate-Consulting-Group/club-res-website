@@ -261,6 +261,28 @@ except HTTPException as exc:
     charged=[r['details_json'] for r in await (await db.execute("SELECT details_json FROM usage_events WHERE event_type='bedrock_reserved'")).fetchall()]
     await db.close()
     assert len(charged)==2 and all(older in d for d in charged),'gated attempt was charged'
+    # The whole account barred (Error 002): every model is refused before inference,
+    # nothing stays reserved, and contact review stops instead of retrying and splitting.
+    await reset_paid()
+    barred=ClientError({'Error':{'Code':'ValidationException','Message':'Error 002: Access to Bedrock models is not allowed for this account'}},'Converse')
+    with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','AI_MONTHLY_BUDGET_USD':'10'}),patch('boto3.client') as factory,patch.dict(llm._gated_until,clear=True):
+        factory.return_value.converse.side_effect=barred
+        try:
+            llm.complete_text('brief',llm.rank_model_id())
+            raise AssertionError('A barred account returned text')
+        except HTTPException as exc:
+            assert exc.status_code==503
+        assert llm.refused_everywhere(llm.rank_model_id())
+        from app.services import contact_ai_review
+        factory.return_value.converse.reset_mock()
+        batch=[{'email':f'p{i}@co.com','first_name':'P','last_name':str(i),'title':'Analyst'} for i in range(8)]
+        assert await contact_ai_review._review_batch(batch,'Co')=={}
+        assert factory.return_value.converse.call_count<=len(llm.model_chain(llm.validate_model(llm.rank_model_id()))),\
+            f'review retried a barred account {factory.return_value.converse.call_count} times'
+    db=await get_db()
+    held=(await (await db.execute("SELECT COUNT(*) FROM usage_events WHERE event_type='bedrock_reserved'")).fetchone())[0]
+    await db.close()
+    assert held==0,'a refused call kept its budget reservation'
     await reset_paid()
     with patch.dict(os.environ,{'LLM_PROVIDER':'bedrock','AI_MONTHLY_BUDGET_USD':'10'}),patch('boto3.client') as factory,patch.dict(llm._gated_until,clear=True):
         factory.return_value.converse.side_effect=ClientError({'Error':{'Code':'ThrottlingException','Message':'Too many tokens'}},'Converse')

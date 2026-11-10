@@ -121,7 +121,7 @@ def tests() -> None:
     assert (ready["value"], ready["met"]) == (90.0, True), ready
 
     # Adding a contact to a campaign records when (migration outreach:1).
-    assert asyncio.run(run("SELECT app, version FROM schema_migrations WHERE app = 'outreach'")) == [("outreach", 1)]
+    assert asyncio.run(run("SELECT app, version FROM schema_migrations WHERE app = 'outreach' AND version = 1")) == [("outreach", 1)]
     with patch("app.services.contact_access.require_contact_access", AsyncMock(return_value=None)):
         added = client(BEN, "standard").post("/api/campaigns/3/contacts", json={"contact_ids": [6], "email_subjects": {"6": "Hi"}, "email_bodies": {"6": "Hello"}})
     assert added.status_code == 200 and added.json()["added"] == 1, added.text

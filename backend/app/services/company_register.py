@@ -27,6 +27,7 @@ import asyncio
 import csv
 import html
 import io
+import itertools
 import json
 import logging
 import os
@@ -275,6 +276,134 @@ async def backfill_register_entities(batch_size: int = 2000) -> dict[str, Any]:
         finally:
             await db.close()
         await asyncio.sleep(0)
+
+
+# A trigram index of the three columns a typed name is looked up in. A trigram
+# index answers "contains these letters" the way LIKE '%q%' does, without
+# reading all 217k rows; it only narrows the candidates, and the LIKE tests
+# and relevance CASE in _search_clauses still decide what matches and how it
+# ranks. Contentless, so the names are not stored twice (the index is the
+# only added disk), and contentless_delete so a row that was never indexed
+# can be deleted or replaced safely.
+_FTS_READY_KEY = "register_fts_ready"
+_FTS_CURSOR_KEY = "register_fts_cursor"
+
+
+async def add_register_search_index(db) -> None:
+    """Migration outreach:2. Creates the empty index and the triggers that
+    keep it in step with every insert, update and delete, whichever release
+    writes. It indexes no existing row (that is index_register_names, a
+    batched job), so it holds the write lock only for the schema change."""
+    await db.execute(
+        "CREATE VIRTUAL TABLE company_register_fts USING fts5("
+        "company_name, display_name, sector_label, content='', contentless_delete=1, tokenize='trigram')"
+    )
+    await db.execute(
+        """CREATE TRIGGER company_register_fts_insert AFTER INSERT ON company_register
+           BEGIN
+               INSERT OR REPLACE INTO company_register_fts(rowid, company_name, display_name, sector_label)
+               VALUES (new.id, new.company_name, new.display_name, new.sector_label);
+           END"""
+    )
+    # A re-ingest rewrites these columns with the values they already hold;
+    # the WHEN keeps that from re-indexing every row.
+    await db.execute(
+        """CREATE TRIGGER company_register_fts_update
+           AFTER UPDATE OF company_name, display_name, sector_label ON company_register
+           WHEN old.company_name IS NOT new.company_name OR old.display_name IS NOT new.display_name
+                OR old.sector_label IS NOT new.sector_label
+           BEGIN
+               INSERT OR REPLACE INTO company_register_fts(rowid, company_name, display_name, sector_label)
+               VALUES (new.id, new.company_name, new.display_name, new.sector_label);
+           END"""
+    )
+    await db.execute(
+        """CREATE TRIGGER company_register_fts_delete AFTER DELETE ON company_register
+           BEGIN
+               DELETE FROM company_register_fts WHERE rowid = old.id;
+           END"""
+    )
+
+
+async def index_register_names(batch_size: int = 2000) -> dict[str, Any]:
+    """Index the register rows that existed before the index did, then mark
+    the index ready; search reads it only once it is (until then it uses LIKE).
+
+    Batched by id with a stored cursor, one short write transaction per batch,
+    so ingest and members' reads interleave. A row the triggers already
+    indexed is replaced, not duplicated, so rows written meanwhile (by either
+    release) need no coordination. Registered leader-only; idempotent and a
+    single settings read once done."""
+    indexed = 0
+    while True:
+        db = await get_db()
+        try:
+            state = {r["key"]: r["value"] for r in await (await db.execute(
+                "SELECT key, value FROM settings WHERE key IN (?, ?)", (_FTS_READY_KEY, _FTS_CURSOR_KEY),
+            )).fetchall()}
+            if state.get(_FTS_READY_KEY) == "1":
+                return {"ok": True, "indexed": indexed}
+            cursor = int(state.get(_FTS_CURSOR_KEY) or 0)
+            batch = await (await db.execute(
+                "SELECT MAX(id) AS last, COUNT(*) AS n FROM (SELECT id FROM company_register WHERE id > ? ORDER BY id LIMIT ?)",
+                (cursor, batch_size),
+            )).fetchone()
+            if batch["last"] is None:
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (_FTS_READY_KEY,))
+                await db.commit()
+                return {"ok": True, "indexed": indexed}
+            await db.execute(
+                """INSERT OR REPLACE INTO company_register_fts(rowid, company_name, display_name, sector_label)
+                   SELECT id, company_name, display_name, sector_label FROM company_register
+                   WHERE id > ? AND id <= ?""",
+                (cursor, batch["last"]),
+            )
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (_FTS_CURSOR_KEY, str(batch["last"])))
+            await db.commit()
+            indexed += batch["n"]
+        finally:
+            await db.close()
+        await asyncio.sleep(0)
+
+
+async def _index_ready(db) -> bool:
+    row = await (await db.execute("SELECT value FROM settings WHERE key = ?", (_FTS_READY_KEY,))).fetchone()
+    return bool(row and row["value"] == "1")
+
+
+def _index_match(raw: str, aliases: tuple[str, ...], columns: tuple[str, ...], short: bool) -> str | None:
+    """The FTS5 MATCH expression that finds every row _search_clauses' name and
+    alias LIKE tests can match (extra rows are fine, they fail the LIKE), or
+    None when the query is too short for a trigram or has too many break
+    characters to enumerate; the caller then keeps the plain LIKE path.
+
+    A long query is a substring test, so its text is the phrase. A short one
+    starts a word of the name with punctuation read as spaces, so each space
+    of it stands for a space or any word-break character of the real name:
+    "at&t" is looked up as "at&t", "at.t", "at t", ..."""
+    if len(raw) < 3 or any(len(a) < 3 for a in aliases):
+        return None
+    if short:
+        boundary = raw
+        for ch in _WORD_BREAK_CHARS:
+            boundary = boundary.replace(ch, " ")
+        gaps = boundary.count(" ")
+        if gaps > 2:
+            return None
+        parts = boundary.split(" ")
+        phrases = []
+        for fill in itertools.product(" " + _WORD_BREAK_CHARS, repeat=gaps):
+            phrase = parts[0]
+            for ch, part in zip(fill, parts[1:]):
+                phrase += ch + part
+            phrases.append(phrase)
+        searched = columns
+    else:
+        phrases = [raw]
+        searched = (*columns, "sector_label")
+    phrases.extend(aliases)
+    quoted = " OR ".join('"' + p.replace('"', '""') + '"' for p in phrases)
+    return "{" + " ".join(searched) + "} : (" + quoted + ")"
 
 
 # Who actually reads a cold email is not who a filing names. A statutory
@@ -1409,7 +1538,8 @@ def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _search_clauses(q: str | None, columns: tuple[str, ...] = ("company_name",)) -> tuple[str | None, list[Any], str, list[Any]]:
+def _search_clauses(q: str | None, columns: tuple[str, ...] = ("company_name",),
+                    indexed: bool = False) -> tuple[str | None, list[Any], str, list[Any]]:
     """(where, where args, relevance CASE, relevance args) for a typed query.
 
     A query ranked only by recency/amount treats "contains these letters
@@ -1424,7 +1554,10 @@ def _search_clauses(q: str | None, columns: tuple[str, ...] = ("company_name",))
 
     ``columns`` are the name columns searched: the row search reads the
     legal name only; the grouped browse also reads the public name, so
-    "pwc" finds the row filed as PricewaterhouseCoopers."""
+    "pwc" finds the row filed as PricewaterhouseCoopers.
+
+    ``indexed`` narrows the rows tested with the trigram index (see
+    _index_match); it is only set once index_register_names has finished."""
     if not (q and q.strip()):
         return None, [], "0.0", []
     raw = q.strip().lower()
@@ -1460,6 +1593,14 @@ def _search_clauses(q: str | None, columns: tuple[str, ...] = ("company_name",))
         name_args = [f"%{escaped}%"] * (n + 1)
     where = f"({name_sql} OR {ticker_sql}{' OR ' + alias_sql if aliases else ''})"
     where_args = [*name_args, raw, *(alias_args * n)]
+    # With the trigram index ready, only rows it (or the ticker) names are
+    # tested: the same tests then run on far fewer rows, so the matches and
+    # their ranking are unchanged. The ticker lookup reads only SEC rows.
+    match = _index_match(raw, aliases, columns, len(raw) < 5) if indexed else None
+    if match:
+        where = (f"(id IN (SELECT rowid FROM company_register_fts WHERE company_register_fts MATCH ? "
+                 f"UNION SELECT id FROM company_register WHERE {ticker_sql}) AND {where})")
+        where_args = [match, raw, *where_args]
     exact = any_column("{col} = ?")
     one_like = any_column(like)
     two_likes = any_column(like + " OR {col} LIKE ? ESCAPE '\\'")
@@ -1519,38 +1660,39 @@ async def search_register(
     offset: int = 0,
     sort: str = "value",
 ) -> dict[str, Any]:
-    where: list[str] = []
-    args: list[Any] = []
-    searching = bool(q and q.strip())
-    name_where, name_args, relevance_case, relevance_args = _search_clauses(q)
-    if name_where:
-        where.append(name_where)
-        args.extend(name_args)
-    filter_where, filter_args = _row_filters(tier, country, sector, min_amount, with_officers)
-    where.extend(filter_where)
-    args.extend(filter_args)
-    clause = f"WHERE {' AND '.join(where)}" if where else ""
-    limit = max(1, min(int(limit), 200))
-    size_order = REGISTER_VALUE_ORDER
-    if searching:
-        # A member who types a name wants the company they mean, and within
-        # one match level that is almost always the biggest one: "hbo" found
-        # three dated UK rows before any listed company because a listed
-        # company carries no filing date, so recency-first put every UK
-        # accounts filing ahead of it.
-        order_by = f"match_level ASC, {size_order}"
-    elif sort == "recent":
-        # The "what is new" feed: the newest filing first is the point of it.
-        order_by = """COALESCE(last_event_at, '') DESC, COALESCE(last_event_amount, 0) DESC,
-                         officer_count DESC,
-                         CASE WHEN prominence_rank IS NOT NULL THEN prominence_rank ELSE 999999999 END ASC,
-                         company_name"""
-    else:
-        # A member browsing for a company to reach out to wants the ones
-        # worth reaching first, not whichever Form D shell filed yesterday.
-        order_by = size_order
     db = await get_db()
     try:
+        where: list[str] = []
+        args: list[Any] = []
+        searching = bool(q and q.strip())
+        name_where, name_args, relevance_case, relevance_args = _search_clauses(
+            q, indexed=searching and await _index_ready(db))
+        if name_where:
+            where.append(name_where)
+            args.extend(name_args)
+        filter_where, filter_args = _row_filters(tier, country, sector, min_amount, with_officers)
+        where.extend(filter_where)
+        args.extend(filter_args)
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        limit = max(1, min(int(limit), 200))
+        size_order = REGISTER_VALUE_ORDER
+        if searching:
+            # A member who types a name wants the company they mean, and within
+            # one match level that is almost always the biggest one: "hbo" found
+            # three dated UK rows before any listed company because a listed
+            # company carries no filing date, so recency-first put every UK
+            # accounts filing ahead of it.
+            order_by = f"match_level ASC, {size_order}"
+        elif sort == "recent":
+            # The "what is new" feed: the newest filing first is the point of it.
+            order_by = """COALESCE(last_event_at, '') DESC, COALESCE(last_event_amount, 0) DESC,
+                             officer_count DESC,
+                             CASE WHEN prominence_rank IS NOT NULL THEN prominence_rank ELSE 999999999 END ASC,
+                             company_name"""
+        else:
+            # A member browsing for a company to reach out to wants the ones
+            # worth reaching first, not whichever Form D shell filed yesterday.
+            order_by = size_order
         total = await (await db.execute(f"SELECT COUNT(*) AS n FROM company_register {clause}", tuple(args))).fetchone()
         # match_level is returned with each row so a caller (the company
         # resolver) can tell "this is the company" (0-1) from "these letters
@@ -1670,32 +1812,33 @@ async def browse_register(
     backfilled) are left out until the backfill job reaches them. Hidden
     entries (funds, vehicles, group returns) are left out unless
     ``include_hidden``."""
-    where = ["entity_key IS NOT NULL"]
-    args: list[Any] = []
-    if not include_hidden:
-        where.append("hidden_reason IS NULL")
-    searching = bool(q and q.strip())
-    name_where, name_args, relevance_case, relevance_args = _search_clauses(q, ("company_name", "display_name"))
-    if name_where:
-        where.append(name_where)
-        args.extend(name_args)
-    filter_where, filter_args = _row_filters(tier, country, sector, min_amount, with_officers)
-    where.extend(filter_where)
-    args.extend(filter_args)
-    clause = f"WHERE {' AND '.join(where)}"
-    limit = max(1, min(int(limit), 200))
-    offset = max(0, int(offset))
-    if searching:
-        # A typed name ranks by how well it matches, then by size - see
-        # _search_clauses; a company's match is its best-matching row.
-        order_by = f"match_level ASC, {_COMPANY_VALUE_ORDER}"
-        match_sql = f", MIN({relevance_case}) AS match_level"
-    else:
-        order_by = _COMPANY_RECENT_ORDER if sort == "recent" else _COMPANY_VALUE_ORDER
-        match_sql = ""
-        relevance_args = []
     db = await get_db()
     try:
+        where = ["entity_key IS NOT NULL"]
+        args: list[Any] = []
+        if not include_hidden:
+            where.append("hidden_reason IS NULL")
+        searching = bool(q and q.strip())
+        name_where, name_args, relevance_case, relevance_args = _search_clauses(
+            q, ("company_name", "display_name"), indexed=searching and await _index_ready(db))
+        if name_where:
+            where.append(name_where)
+            args.extend(name_args)
+        filter_where, filter_args = _row_filters(tier, country, sector, min_amount, with_officers)
+        where.extend(filter_where)
+        args.extend(filter_args)
+        clause = f"WHERE {' AND '.join(where)}"
+        limit = max(1, min(int(limit), 200))
+        offset = max(0, int(offset))
+        if searching:
+            # A typed name ranks by how well it matches, then by size - see
+            # _search_clauses; a company's match is its best-matching row.
+            order_by = f"match_level ASC, {_COMPANY_VALUE_ORDER}"
+            match_sql = f", MIN({relevance_case}) AS match_level"
+        else:
+            order_by = _COMPANY_RECENT_ORDER if sort == "recent" else _COMPANY_VALUE_ORDER
+            match_sql = ""
+            relevance_args = []
         # One pass: the window counts the groups before LIMIT cuts them.
         page = await (await db.execute(
             f"""SELECT entity_key, COUNT(*) OVER () AS total{match_sql} FROM company_register {clause}

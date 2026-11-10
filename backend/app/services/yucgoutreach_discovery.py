@@ -18,6 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from app.database import get_db, row_to_dict
+from app.services.discovery_gate import gate_wait
 from app.services.contact_ai_review import _log_row
 from app.services.contact_merge import merge_contacts
 from app.services.company_email_cache import build_email_for_person_sync
@@ -587,6 +588,15 @@ async def _run_update(
         await db.close()
 
 
+async def _timed(timings: dict[str, float], stage: str, work: Any) -> Any:
+    """Await ``work`` and add its wall-clock seconds to ``timings[stage]``."""
+    t0 = time.monotonic()
+    try:
+        return await work
+    finally:
+        timings[stage] = timings.get(stage, 0.0) + time.monotonic() - t0
+
+
 async def execute_yucgoutreach_run(run_id: int) -> None:
     db = await get_db()
     try:
@@ -614,6 +624,24 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             return
     finally:
         await db.close()
+
+    # Seconds per stage, kept in research_json["timings"]. Sources run side by
+    # side, so the stages overlap and add up to more than "total".
+    t_run = time.monotonic()
+    timings: dict[str, float] = {}
+    first_prospect: list[float] = []
+    waits = gate_wait.get()
+
+    def _add(stage: str, seconds: float) -> None:
+        timings[stage] = timings.get(stage, 0.0) + seconds
+
+    def _timing_fields(*, final: bool = False) -> dict[str, Any]:
+        out = {stage: round(seconds, 1) for stage, seconds in timings.items()}
+        if waits is not None:
+            out["gate_wait"] = round(waits[0], 1)
+        if final:
+            out["total"] = round(time.monotonic() - t_run, 1)
+        return {"timings": out, **({"first_prospect_s": round(first_prospect[0], 1)} if first_prospect else {})}
 
     company = (spec.get("company_name") or "").strip()
     domain_in = (spec.get("company_domain") or "").strip()
@@ -655,7 +683,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         from app.services.company_email_cache import discover_company_domain
 
         try:
-            domain = await discover_company_domain(company)
+            domain = await _timed(timings, "domain_lookup", discover_company_domain(company))
         except Exception:
             logger.exception("company domain lookup failed; running without a domain")
             domain = ""
@@ -744,13 +772,15 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     # failure count covers the whole run.
     search_run, search_token = begin_search_run()
     try:
+        t_sources = time.monotonic()
         domain_contacts, web_contacts, meta, (roster_contacts, roster_note), seeded = await asyncio.gather(
-            _domain(),
-            _web(),
-            _company_meta(company, domain),
-            _roster(),
-            _seeds(),
+            _timed(timings, "website_crawl", _domain()),
+            _timed(timings, "web_search", _web()),
+            _timed(timings, "company_meta", _company_meta(company, domain)),
+            _timed(timings, "roster", _roster()),
+            _timed(timings, "name_seeds", _seeds()),
         )
+        timings["sources"] = time.monotonic() - t_sources
         search_errors = search_errors_summary(search_run)
         # The crawl and the roster are read through the same gate the web stage
         # applies to each search result, before anything is merged.
@@ -777,10 +807,12 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     "web_contacts": n_web,
                     "roster_note": roster_note or None,
                     "search_errors": search_errors,
+                    **_timing_fields(),
                 }
             ),
         )
 
+        t_merge = time.monotonic()
         merged = merge_contacts(
             domain_contacts,
             company,
@@ -798,6 +830,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 if em and em not in known and is_valid_person_contact(row, company_name=company, domain=domain):
                     known.add(em)
                     merged.append(row)
+        timings["merge"] = time.monotonic() - t_merge
 
         # Every address the run has already put through verification, saved
         # or rejected: a later round only brings new people.
@@ -822,7 +855,10 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         def _found() -> str:
             return f"Found {_matched()} of {max_prospects} {level_word} · round {round_no}"
 
+        marks: dict[str, float] = {}
+
         async def _pipe_progress(phase: str, done: int, total: int, detail: str = "") -> None:
+            marks[phase] = time.monotonic()
             label = {
                 "identity": "Identity gate",
                 "verify": "Inbox agents",
@@ -941,6 +977,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                             await db.rollback()
                             raise DiscoveryLeaseLost("Discovery lease was replaced while results were saved")
                 await db.commit()
+                if written and not first_prospect:
+                    first_prospect.append(time.monotonic() - t_run)
             finally:
                 await db.close()
             return written
@@ -967,12 +1005,25 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     progress_pct=32.0,
                     progress_message=f"Reviewing {len(to_verify)} contact address(es) — mail-domain and source evidence…",
                 )
+            marks.clear()
+            t_verify = time.monotonic()
             verified, discovery_log = await run_contact_verify_pipeline(
                 to_verify,
                 company_name=company,
                 domain=domain,
                 on_progress=_pipe_progress if to_verify else None,
             )
+            # "verify" is the whole pass. Inside it the identity gate runs first,
+            # then the inbox checks and the AI review side by side; each is
+            # measured to its last progress report.
+            t_end = time.monotonic()
+            t_identity = marks.get("identity", t_end)
+            _add("verify", t_end - t_verify)
+            _add("identity", t_identity - t_verify)
+            if "verify" in marks:
+                _add("email_verify", marks["verify"] - t_identity)
+            if "ai" in marks:
+                _add("ai_review", marks["ai"] - t_identity)
             for c in junk_log:
                 discovery_log.append(
                     _log_row(c, verdict="junk", reason=c.get("ai_reason") or "", model=None, source_note="heuristic")
@@ -987,7 +1038,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 [c for c in verified if c.get("ai_verdict") != "junk"], entity, skips, company,
             )
             candidates.sort(key=lambda row: _quality_score(row, title_hints, level), reverse=True)
-            written = await _save(candidates)
+            written = await _timed(timings, "save", _save(candidates))
             saved_rows.extend(written)
             return len(written)
 
@@ -1020,10 +1071,10 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             size = min(DISCOVERY_ROUND_QUERIES, max(3, -(-missing // 4)))
             batch, pool = pool[:size], pool[size:]
             state["rounds"] += 1
-            return asyncio.ensure_future(discover_contacts_from_web(
+            return asyncio.ensure_future(_timed(timings, "web_search_rounds", discover_contacts_from_web(
                 cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
                 queries=batch, seen=seen, level=level,
-            ))
+            )))
 
         first = _fresh(merged)
         base_queries, base_failed, base_limit = search_run["queries"], search_run["failed"], search_run["limit"]
@@ -1091,7 +1142,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             ),
             prospects_count=0,
             research_json=json.dumps({"skipped": skipped, "search_errors": search_errors,
-                                      "rounds": round_no, "shortfall": shortfall}),
+                                      "rounds": round_no, "shortfall": shortfall,
+                                      **_timing_fields(final=True)}),
             completed=True,
         )
         return
@@ -1121,6 +1173,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 "search_errors": search_errors,
                 "rounds": round_no,
                 "shortfall": shortfall,
+                **_timing_fields(final=True),
             }
         ),
         completed=True,
@@ -1140,6 +1193,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
 
 async def _yucgoutreach_run_guard(run_id: int, lease_token: str) -> None:
     context = _active_lease.set(lease_token)
+    waited = gate_wait.set([0.0])
     try:
         await execute_yucgoutreach_run(run_id)
     except DiscoveryLeaseLost:
@@ -1153,6 +1207,7 @@ async def _yucgoutreach_run_guard(run_id: int, lease_token: str) -> None:
             completed=True,
         )
     finally:
+        gate_wait.reset(waited)
         _active_lease.reset(context)
 
 

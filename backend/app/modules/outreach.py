@@ -9,7 +9,12 @@ from app.modules import Job, Module, Route, Setting
 from app.routers import analytics, campaigns, contacts, emails, outreach, releases, track, yucg_prospects, yucgoutreach
 from app.routers.campaigns import drain_releasing_campaigns
 from app.services.catalog_builder import builder_tick
-from app.services.company_register import backfill_register_entities, drain_company_register
+from app.services.company_register import (
+    add_register_search_index,
+    backfill_register_entities,
+    drain_company_register,
+    index_register_names,
+)
 from app.services.follow_up_job import run_follow_up_sequences
 from app.services.gmail_reply_sync import sync_replies_all_senders
 from app.services.notification_digest_job import run_notification_digests
@@ -35,6 +40,7 @@ MODULE = Module(
     startup=(recover_interrupted_yucgoutreach_runs, enroll_prospect_companies),
     migrations=(
         Migration(1, "campaign contact add and release times", campaigns.add_contact_times),
+        Migration(2, "company register name search index", add_register_search_index),
     ),
     settings=(
         Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),
@@ -62,6 +68,11 @@ MODULE = Module(
         # the first tick runs shortly after start rather than a full interval later.
         Job("company_register_derive", backfill_register_entities, "interval", {"minutes": 5},
             first_run_after=timedelta(seconds=30)),
+        # Indexes the register's names for search (batched; the migration only
+        # creates the empty index). Search keeps using LIKE until this has
+        # finished, and a tick after that is one settings read.
+        Job("company_register_index", index_register_names, "interval", {"minutes": 5},
+            first_run_after=timedelta(seconds=45)),
         Job("company_roster_watch", drain_roster_queue, "interval", {"seconds": 60}),
         Job("company_roster_emails", drain_roster_emails, "interval", {"seconds": 300}),
         Job("company_roster_adjudicate", drain_roster_adjudication, "interval", {"minutes": 20}),

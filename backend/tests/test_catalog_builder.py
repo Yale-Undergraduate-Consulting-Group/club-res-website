@@ -61,8 +61,10 @@ async def fetchall(sql: str, args: tuple = ()) -> list[dict]:
         await db.close()
 
 
-async def tick(hour: int = 0, day: int = 0) -> dict:
+async def tick(hour: int = 0, day: int = 0, utc_hour: int = 3) -> dict:
+    """utc_hour defaults inside the builder's hours, so these tests do not depend on the clock."""
     with patch("app.services.web_fetch.search_usage_last_hour", usage(hour, day)), \
+            patch("app.services.catalog_builder._utc_hour", lambda: utc_hour), \
             patch("app.services.company_resolve.resolve_company", AsyncMock(side_effect=resolved)):
         return await builder_tick()
 
@@ -112,6 +114,15 @@ async def run() -> None:
         # Off by default: nothing is queued.
         assert (await tick())["action"] == "disabled"
         await set_builder_enabled(True)
+
+        # During the day (15:00 UTC, 10 am Eastern) the builder leaves the
+        # search slot to members; a window that wraps midnight works too.
+        daytime = await tick(utc_hour=15)
+        assert daytime["action"] == "paused" and "builder's hours" in daytime["reason"], daytime
+        with patch.dict(os.environ, {"BUILDER_HOURS_UTC": "22-6"}):
+            assert (await tick(utc_hour=23, hour=250))["reason"] != daytime["reason"]
+            assert "builder's hours" in (await tick(utc_hour=12))["reason"]
+        assert not await fetchall("SELECT id FROM yucgoutreach_discovery_runs WHERE origin = 'builder'")
 
         # Over the builder's share of searches (hour, then day) or of the
         # club's monthly AI budget: paused, nothing queued.

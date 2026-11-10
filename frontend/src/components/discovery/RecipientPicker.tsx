@@ -340,6 +340,21 @@ export default function RecipientPicker({
               </p>
             )}
 
+            {/* A teammate's recent search stands in for a new one: say whose it
+                is, and let the member run their own. */}
+            {mode !== 'review' && run?.state === 'done' && run.sharedFrom && (
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-pale-sky px-3 py-1.5 text-xs text-slate-600"
+                 data-testid="shared-run">
+                <span>
+                  Found by {run.sharedFrom.name}
+                  {shortDate(run.sharedFrom.at) ? ` · ${shortDate(run.sharedFrom.at)}` : ''}
+                </span>
+                <button type="button" onClick={() => onFind(company)} className="underline text-deep-navy">
+                  Search again
+                </button>
+              </p>
+            )}
+
             {mode !== 'review' && run && run.state !== 'idle'
               && (showRunMessage || (run.state === 'done' && run.shortfall)) && (
               <div className="border-t border-pale-sky px-3 py-2" role="status">
