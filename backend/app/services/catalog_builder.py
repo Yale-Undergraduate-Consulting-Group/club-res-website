@@ -1,6 +1,6 @@
-"""The catalog builder: the box working down the company register day and
-night, running the same Find people search a member would on each company,
-so the people at most companies a member opens are already waiting.
+"""The catalog builder: the box working down the company register overnight,
+running the same Find people search a member would on each company, so the
+people at most companies a member opens are already waiting.
 
 Order: SEC-listed companies in market-cap order (the first 500 stand in for
 the S&P 500), then Companies House GROUP and then FULL accounts filers, then
@@ -18,6 +18,9 @@ It spends shared allowances, so it only takes a new company while the club
 is under BUILDER_MAX_SEARCHES_PER_HOUR / _PER_DAY real upstream searches and
 under BUILDER_MAX_AI_SHARE of this month's AI budget, which every model
 call (the builder's runs included) is charged to through generation_policy.
+It also only starts a company inside BUILDER_HOURS_UTC ("1-11": 01:00-11:00
+UTC, 8 pm-6 am Eastern), because a started run keeps the search slot until
+it finishes and members search during the day. "0-24" means any time.
 """
 from __future__ import annotations
 
@@ -67,6 +70,30 @@ def _limits() -> dict[str, float]:
         "recrawl_days": _env_number("BUILDER_RECRAWL_DAYS", 30),
         "target": _env_number("BUILDER_TARGET_PEOPLE", 60),
     }
+
+
+def _hours() -> tuple[int, int]:
+    """BUILDER_HOURS_UTC as (start, end): start inclusive, end exclusive, may
+    wrap midnight ("22-6"). Malformed values fall back to the default."""
+    try:
+        start, end = (int(part) for part in (os.getenv("BUILDER_HOURS_UTC") or "1-11").split("-"))
+    except ValueError:
+        return 1, 11
+    if not (0 <= start <= 23 and 0 <= end <= 24):
+        return 1, 11
+    return start, end
+
+
+def _outside_hours(hour: int) -> str | None:
+    start, end = _hours()
+    inside = (start <= hour < end) if start < end else (hour >= start or hour < end)
+    return None if inside or end - start >= 24 else f"Outside the builder's hours ({start:02d}:00-{end % 24:02d}:00 UTC)"
+
+
+def _utc_hour() -> int:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).hour
 
 
 async def builder_enabled() -> bool:
@@ -282,6 +309,9 @@ async def builder_tick() -> dict[str, Any]:
             return {"action": "busy"}
     finally:
         await db.close()
+    outside = _outside_hours(_utc_hour())
+    if outside:
+        return {"action": "paused", "reason": outside}
     limits = _limits()
     try:
         reason = _pause_reason(await _usage(), limits)
@@ -323,7 +353,7 @@ async def builder_status() -> dict[str, Any]:
     elif active:
         paused = None
     else:
-        paused = _pause_reason(usage, limits)
+        paused = _outside_hours(_utc_hour()) or _pause_reason(usage, limits)
     return {
         "enabled": enabled,
         "paused_reason": paused,

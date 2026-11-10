@@ -144,6 +144,10 @@ export type DiscoveryRun = {
   /** 'builder' when the club's catalog builder ran it: readable by every
    *  member, deletable by none. */
   origin?: 'member' | 'builder' | string;
+  /** Present on a teammate's recent finished search handed back with the
+   *  member's own: who found it and when. Readable by every member, deletable
+   *  by none but its owner. */
+  shared_from?: { name: string; completed_at?: string | null } | null;
 };
 /** A person a run found, before anyone chose to put them on file. */
 export type DiscoveryProspect = {
