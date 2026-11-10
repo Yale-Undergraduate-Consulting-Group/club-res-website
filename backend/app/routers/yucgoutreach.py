@@ -77,14 +77,25 @@ def _run_to_dict(row: dict) -> dict:
     }
 
 
+# A teammate's finished search that found people, for this long after it
+# finished, by a member who is still active: readable by every member, like a
+# catalog builder run. Failed, empty, older or deactivated members' runs stay
+# private to their owner.
+SHARED_RUN_DAYS = 30
+_SHARED_MEMBER_RUN = f"""(r.origin = 'member' AND r.status = 'completed' AND r.prospects_count > 0
+    AND r.completed_at >= datetime('now', '-{SHARED_RUN_DAYS} days')
+    AND r.user_id IN (SELECT id FROM users WHERE is_active = 1))"""
+
+
 async def _get_run_for_user(run_id: int, user_id: int, *, shared: bool = False) -> dict | None:
-    """The member's own run. ``shared`` also admits catalog builder runs,
-    which every member may read and keep people from, but never delete."""
+    """The member's own run. ``shared`` also admits catalog builder runs and
+    a teammate's recent finished runs (see SHARED_RUN_DAYS), which every
+    member may read and keep people from, but never delete."""
     db = await get_db()
     try:
         cur = await db.execute(
-            "SELECT * FROM yucgoutreach_discovery_runs WHERE id = ? AND "
-            + ("(user_id = ? OR origin = 'builder')" if shared else "user_id = ?"),
+            "SELECT r.* FROM yucgoutreach_discovery_runs r WHERE r.id = ? AND "
+            + (f"(r.user_id = ? OR r.origin = 'builder' OR {_SHARED_MEMBER_RUN})" if shared else "r.user_id = ?"),
             (run_id, user_id),
         )
         row = await cur.fetchone()
@@ -137,8 +148,10 @@ async def list_runs(
     companies: list[str] = Query(default=[]),
 ):
     """The member's own runs, newest first, plus - for each of ``companies``
-    the page has open - the newest finished catalog builder run that found
-    anyone, so what the builder found shows for every member."""
+    the page has open - the newest run someone else's work makes shared: a
+    finished catalog builder run that found anyone, or a teammate's finished
+    run within SHARED_RUN_DAYS. A teammate's run says who found it and when
+    (``shared_from``), so what the club already found shows at once."""
     limit = max(1, min(limit, 200))
     keys = sorted({c.strip().lower() for c in companies if c and c.strip()})[:50]
     db = await get_db()
@@ -152,18 +165,28 @@ async def list_runs(
         if keys:
             marks = ",".join("?" * len(keys))
             cur = await db.execute(
-                f"""SELECT * FROM yucgoutreach_discovery_runs
-                    WHERE origin = 'builder' AND status = 'completed' AND prospects_count > 0
-                      AND lower(trim(company_name)) IN ({marks})
-                    ORDER BY id DESC""",
-                tuple(keys),
+                f"""SELECT r.*, u.name AS shared_by FROM yucgoutreach_discovery_runs r
+                    LEFT JOIN users u ON u.id = r.user_id
+                    WHERE r.user_id IS NOT ?
+                      AND lower(trim(r.company_name)) IN ({marks})
+                      AND ((r.origin = 'builder' AND r.status = 'completed' AND r.prospects_count > 0)
+                           OR {_SHARED_MEMBER_RUN})
+                    ORDER BY r.id DESC""",
+                (user["id"], *keys),
             )
             seen: set[str] = set()
             for r in await cur.fetchall():
                 key = (r["company_name"] or "").strip().lower()
                 if key not in seen:
                     seen.add(key)
-                    runs.append(_run_to_dict(row_to_dict(r)))
+                    row = row_to_dict(r)
+                    run = _run_to_dict(row)
+                    if run["origin"] == "member":
+                        run["shared_from"] = {
+                            "name": (row.get("shared_by") or "").strip() or "A teammate",
+                            "completed_at": row.get("completed_at"),
+                        }
+                    runs.append(run)
         return runs
     finally:
         await db.close()

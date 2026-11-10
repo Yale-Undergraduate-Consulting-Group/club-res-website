@@ -9,8 +9,13 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import AsyncIterator
+
+#: Set by a discovery run to a one-item list; every gate wait made on its behalf
+#: adds its seconds, so the run can report how long it queued for a slot.
+gate_wait: ContextVar[list[float] | None] = ContextVar("discovery_gate_wait", default=None)
 
 
 def _cgroup_or_host_ram_bytes() -> int | None:
@@ -72,7 +77,11 @@ async def discovery_job() -> AsyncIterator[bool]:
     sem = _semaphore()
     t0 = asyncio.get_running_loop().time()
     await sem.acquire()
-    queued = (asyncio.get_running_loop().time() - t0) > 0.05
+    waited = asyncio.get_running_loop().time() - t0
+    acc = gate_wait.get()
+    if acc is not None:
+        acc[0] += waited
+    queued = waited > 0.05
     try:
         yield queued
     finally:
