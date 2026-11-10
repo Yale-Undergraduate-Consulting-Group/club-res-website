@@ -1267,8 +1267,9 @@ export const api = {
     /** Promote cold → contacted from sent campaign rows (no Gmail). */
     autoSortPipeline: () =>
       fetchApi<{ ok: boolean; promoted: number }>('/api/outreach/auto-sort-pipeline', { method: 'POST' }),
+    /** Syntax and the domain's mail route only (no mailbox contact). */
     verifyEmail: (email: string) =>
-      fetchApi<{ valid: boolean }>(`/api/outreach/verify-email?email=${encodeURIComponent(email)}`),
+      fetchApi<{ valid: boolean; mx_valid?: boolean | null }>(`/api/outreach/verify-email?email=${encodeURIComponent(email)}`),
     pipelineMetrics: () => fetchApi<PipelineMetrics>('/api/outreach/metrics/pipeline'),
     campaigns: {
       list: () => fetchApi<Worklist[]>('/api/outreach/campaigns'),
