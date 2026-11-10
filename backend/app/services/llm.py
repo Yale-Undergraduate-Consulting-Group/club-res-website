@@ -189,9 +189,24 @@ def _gated(exc: Exception) -> bool:
     message = (error.get("Error") or {}).get("Message", "").lower()
     if code == "ResourceNotFoundException":
         return True  # retired version, or a use-case form not yet on file
+    # The whole account barred from Bedrock (seen since 2026-11-06 as
+    # "ValidationException: Error 002: Access to Bedrock models is not allowed
+    # for this account"): refused before any inference, so nothing is spent.
+    if "not allowed for this account" in message:
+        return True
     if code == "AccessDeniedException":
         return "not available for this account" in message
     return code == "ValidationException" and "model identifier is invalid" in message
+
+
+def refused_everywhere(model_id: str | None) -> bool:
+    """Every model that could stand in for ``model_id`` was refused for this
+    account within GATED_RETRY_SEC. Callers with their own retries (contact
+    review) stop at once instead of repeating calls that cannot succeed."""
+    chain = model_chain(validate_model(model_id))
+    now = time.monotonic()
+    with _gated_lock:
+        return all(_gated_until.get(m, 0) > now for m in chain)
 
 
 def _usable(chain: tuple[str, ...]) -> list[str]:

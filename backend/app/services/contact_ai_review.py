@@ -68,12 +68,14 @@ def _normalize_reviews(data: dict[str, Any] | None) -> dict[str, dict[str, Any]]
 async def _review_batch(batch: list[dict], company_name: str | None) -> dict[str, dict[str, Any]]:
     if not batch:
         return {}
-    from app.services.llm import complete_json, rank_model_id
+    from app.services.llm import complete_json, rank_model_id, refused_everywhere
 
     prompt = _build_review_prompt(batch, company_name)
     # Bedrock process inference slots are fewer than the review agents; back off
     # and retry rather than failing the whole discovery run. Exhausted retries
-    # degrade to "unreviewed", never a lost contact.
+    # degrade to "unreviewed", never a lost contact. When AWS refuses every
+    # review model for the account, retrying or splitting the batch cannot
+    # help: it cost 28-58 s per search while Bedrock was barred (2026-11-09).
     data: dict[str, Any] | None = None
     delay = 0.5
     for attempt in range(4):
@@ -82,6 +84,8 @@ async def _review_batch(batch: list[dict], company_name: str | None) -> dict[str
             break
         except Exception:
             data = None
+            if refused_everywhere(rank_model_id()):
+                return {}
             if attempt < 3:
                 await asyncio.sleep(delay)
                 delay *= 2

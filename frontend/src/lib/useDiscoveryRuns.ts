@@ -20,8 +20,10 @@ import { dedupePeople, foundAsPerson } from './peopleSheet';
  * - the people the default tick would choose - so the member ticks rather
  * than adds; anyone else, and anything an earlier visit's search found, stays
  * "found" until the member adds them on purpose. The same goes for what the
- * club's catalog builder found at a chosen company: the server hands its
- * newest finished run back with the member's own, and the newest run wins.
+ * club's catalog builder found at a chosen company, and a teammate's search
+ * of the last 30 days: the server hands the newest back with the member's own,
+ * and the newest run wins. While a search works, the people it has saved so
+ * far are shown, read again whenever it saves more.
  *
  * The server allows one search per member at a time. Asking for a second
  * one is not a mistake, so it is queued here and started when the first
@@ -67,9 +69,11 @@ export type CompanyRun = {
    *  provider was out of credit, refused us, or is down. Set on a finished
    *  run whose searches failed - never because nobody was found. */
   paused?: string;
-  /** The club's catalog builder found these people: anyone may keep them,
-   *  nobody deletes the run. */
+  /** Someone else's finished search: the club's catalog builder, or a
+   *  teammate's. Anyone may keep its people; nobody but its owner deletes it. */
   shared?: boolean;
+  /** A teammate found these people: who, and when the search finished. */
+  sharedFrom?: { name: string; at?: string | null };
 };
 
 /** A person a run found, with the reason the last Add left them behind and
@@ -159,13 +163,16 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
   const chosenKeyList = [...chosenKeys].sort().join('\n');
 
   // Latest run per company: an older completed run says nothing once a newer
-  // one has been asked for. A builder run can only be newer than a member's
-  // own when theirs is past BUILDER_RECRAWL_DAYS, so fresher club data wins.
+  // one has been asked for. A shared run (the catalog builder's or a
+  // teammate's) is newer than the member's own when theirs is older, so the
+  // fresher club data wins - but never over the member's own search that is
+  // still working, which the lane must keep showing.
   const latestByKey = useMemo(() => {
     const map: Record<string, DiscoveryRun> = {};
-    for (const run of Object.values(runsById)) {
+    for (const run of Object.values(runsById).sort((a, b) => a.id - b.id)) {
       const key = companyKey(run.company_name);
-      if (!map[key] || map[key].id < run.id) map[key] = run;
+      if (map[key] && ACTIVE[map[key].status] && (run.origin === 'builder' || run.shared_from)) continue;
+      map[key] = run;
     }
     return map;
   }, [runsById]);
@@ -181,6 +188,26 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
         .filter((p) => !landed.has(p.id))
         .map((p) => (reasons.has(p.id) ? { ...p, skippedReason: reasons.get(p.id) } : p)),
     }));
+  }, []);
+
+  // People shown while a run is still working, so a member reads the first
+  // ones as they are saved instead of waiting for the whole search. Keyed by
+  // run, the people count last shown: the list is read again only when the
+  // run has saved more.
+  const shownProgress = useRef<Map<number, number>>(new Map());
+  const loadProgress = useCallback(async (run: DiscoveryRun) => {
+    const count = Number(run.prospects_count) || 0;
+    if (!count || shownProgress.current.get(run.id) === count) return;
+    shownProgress.current.set(run.id, count);
+    try {
+      const rows = usable(await api.yucgoutreach.listProspects(run.id, 800));
+      // The run finished while this was loading: loadFound owns the list now.
+      if (loadedProspects.current.has(run.id)) return;
+      setFound((prev) => ({ ...prev, [companyKey(run.company_name)]: rows }));
+    } catch {
+      // The next poll reads again; the finished run's own read reports a failure.
+      shownProgress.current.delete(run.id);
+    }
   }, []);
 
   const loadFound = useCallback(async (run: DiscoveryRun) => {
@@ -327,6 +354,8 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
           if (run.status === 'completed' || run.status === 'failed') {
             finished = true;
             if (chosenKeys.has(companyKey(run.company_name))) void loadFound(run);
+          } else if (run.status === 'running' && chosenKeys.has(companyKey(run.company_name))) {
+            void loadProgress(run);
           }
         } catch (e) {
           if (cancelled) return;
@@ -343,7 +372,7 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
     };
     timer = window.setTimeout(() => { void tick(); }, POLL_MS);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [activeIds, chosenKeys, loadFound, startNext]);
+  }, [activeIds, chosenKeys, loadFound, loadProgress, startNext]);
 
   const startRun = useCallback(async (company: ChosenCompany, options: () => SearchOptions) => {
     setError('');
@@ -433,7 +462,8 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
       } else {
         map[key] = {
           state: 'done', runId: run.id, pct: 100, message: run.progress_message || 'Search finished',
-          shortfall: shortfallOf(run), paused: pausedOf(run), shared: run.origin === 'builder',
+          shortfall: shortfallOf(run), paused: pausedOf(run), shared: run.origin === 'builder' || Boolean(run.shared_from),
+          sharedFrom: run.shared_from ? { name: run.shared_from.name, at: run.shared_from.completed_at } : undefined,
         };
       }
     }
