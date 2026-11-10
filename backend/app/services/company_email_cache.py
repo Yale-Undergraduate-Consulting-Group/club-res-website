@@ -253,6 +253,26 @@ def _mail_host(email: str) -> str:
     return normalize_domain(email.rsplit("@", 1)[-1])
 
 
+MEMBER_ASSERTED_CONFIDENCE = 0.80
+# Below the smallest proven format (0.35 + one verified sample + one sample).
+UNPROVEN_CONFIDENCE_CAP = 0.49
+
+
+def pattern_confidence(verified: int, samples: int, failed: int, member_asserted: bool) -> float:
+    """Confidence in a format, derived from its stored counts so it never drifts.
+
+    Only a delivery, a reply or a member's word proves a format. Addresses seen
+    on the web or built from the format are unproven observations: they can
+    rank formats against each other but stay below the smallest proven one.
+    """
+    base = 0.35 + verified * 0.12 + samples * 0.03
+    if not verified:
+        base = min(base, UNPROVEN_CONFIDENCE_CAP)
+    if member_asserted:
+        base = max(base, MEMBER_ASSERTED_CONFIDENCE)
+    return max(0.05, min(0.98, base) - failed * 0.15)
+
+
 async def _upsert_pattern(
     db,
     *,
@@ -261,51 +281,60 @@ async def _upsert_pattern(
     template: str,
     source: str,
     company_name: str | None,
-    inferred: bool,
 ) -> None:
+    """Count one observed address toward its format, without proving it.
+
+    An address found on a page or built from the format only shows that the
+    domain has a mail route, so verified_samples is never raised here.
+    """
     cur = await db.execute(
-        "SELECT id, sample_count, verified_samples, sources_json FROM company_email_patterns WHERE company_domain = ? AND pattern_key = ?",
+        """SELECT id, sample_count, verified_samples, failed_samples, sources_json
+           FROM company_email_patterns WHERE company_domain = ? AND pattern_key = ?""",
         (mail_host, pattern_key),
     )
     row = await cur.fetchone()
     sources: list[str] = []
+    verified = failed = 0
+    samples = 1
     if row:
         try:
             sources = json.loads(row["sources_json"] or "[]")
         except Exception:
             sources = []
-        if source not in sources:
-            sources.append(source)
-        sample_count = int(row["sample_count"] or 0) + 1
-        verified_samples = int(row["verified_samples"] or 0) + (0 if inferred else 1)
-        confidence = min(0.98, 0.35 + verified_samples * 0.12 + sample_count * 0.03)
+        verified = int(row["verified_samples"] or 0)
+        failed = int(row["failed_samples"] or 0)
+        samples = int(row["sample_count"] or 0) + 1
+    if source not in sources:
+        sources.append(source)
+    confidence = pattern_confidence(verified, samples, failed, _member_asserted(sources))
+    if row:
         await db.execute(
             """UPDATE company_email_patterns SET
-               pattern_template = ?, sample_count = ?, verified_samples = ?,
-               confidence = ?, sources_json = ?, company_name = COALESCE(?, company_name),
-               updated_at = CURRENT_TIMESTAMP
+               pattern_template = ?, sample_count = ?, confidence = ?, sources_json = ?,
+               company_name = COALESCE(?, company_name), updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
-            (template, sample_count, verified_samples, confidence, json.dumps(sources[-20:]), company_name, row["id"]),
+            (template, samples, confidence, json.dumps(sources[-20:]), company_name, row["id"]),
         )
     else:
-        sources = [source]
-        confidence = 0.45 if inferred else 0.62
         await db.execute(
             """INSERT INTO company_email_patterns
                (company_domain, company_name, pattern_key, pattern_template, confidence, sample_count, verified_samples, sources_json)
-               VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
-            (mail_host, company_name, pattern_key, template, confidence, 0 if inferred else 1, json.dumps(sources)),
+               VALUES (?, ?, ?, ?, ?, 1, 0, ?)""",
+            (mail_host, company_name, pattern_key, template, confidence, json.dumps(sources)),
         )
 
 
-async def record_verified_sample(
+def _member_asserted(sources: list[str]) -> bool:
+    return any(str(s).startswith("member:") for s in sources)
+
+
+async def record_observed_sample(
     domain: str,
     email: str,
     full_name: str,
     *,
     source: str = "scrape",
     company_name: str | None = None,
-    inferred: bool = False,
 ) -> None:
     website = normalize_domain(domain)
     mail = _mail_host(email)
@@ -327,7 +356,6 @@ async def record_verified_sample(
             template=template,
             source=source,
             company_name=company_name,
-            inferred=inferred,
         )
         if website and website != mail:
             from app.services.mail_domain_map import record_observed_alias
@@ -338,8 +366,8 @@ async def record_verified_sample(
         await db.close()
 
 
-async def batch_record_verified_samples(samples: list[dict[str, Any]]) -> None:
-    """Persist learned patterns from a reconcile batch in one DB connection."""
+async def batch_record_observed_samples(samples: list[dict[str, Any]]) -> None:
+    """Persist observed formats from a reconcile batch in one DB connection."""
     if not samples:
         return
     from app.services.mail_domain_map import record_observed_alias
@@ -352,7 +380,6 @@ async def batch_record_verified_samples(samples: list[dict[str, Any]]) -> None:
             full_name = sample.get("full_name") or ""
             source = sample.get("source") or "scrape"
             company_name = sample.get("company_name")
-            inferred = bool(sample.get("inferred"))
             mail = _mail_host(email)
             if not mail or not full_name:
                 continue
@@ -370,7 +397,6 @@ async def batch_record_verified_samples(samples: list[dict[str, Any]]) -> None:
                 template=template,
                 source=source,
                 company_name=company_name,
-                inferred=inferred,
             )
             if website and website != mail:
                 await record_observed_alias(website, mail, source=source, company_name=company_name, db=db)
@@ -562,7 +588,6 @@ async def discover_company_domain(name: str) -> str:
     return chosen or ""
 
 
-MEMBER_ASSERTED_CONFIDENCE = 0.80
 
 
 async def list_all_domain_patterns(
@@ -616,9 +641,10 @@ async def set_member_asserted_pattern(
 ) -> dict[str, Any]:
     """Record a format a member knows first-hand.
 
-    A stated format is not an observed sample, so verified_samples is left
-    alone and confidence sits below a corroborated pattern. Learned evidence
-    therefore still outranks a human guess that turns out to be wrong.
+    A stated format is proof but not an observed address, so verified_samples
+    stays unchanged and the member source supplies the proven-format signal.
+    Its confidence floor keeps an explicit assertion above unproven web or
+    inferred observations; later bounces can still demote it.
     """
     dom = await resolve_company_domain(domain or "")
     if not dom:
@@ -669,66 +695,47 @@ async def set_member_asserted_pattern(
     return {"company_domain": dom, "pattern_key": pattern_key, "pattern_template": tpl}
 
 
-async def record_send_outcome(
-    db,
-    *,
-    email: str,
-    full_name: str,
-    delivered: bool,
-    source: str,
-) -> bool:
-    """Feed a real send outcome back into the format it was derived from.
+async def unprove_scraped_patterns(db) -> None:
+    """Outreach migration 3: scraped addresses used to count as verified samples.
 
-    A reply proves the mailbox exists, which is stronger than any crawl, so it
-    counts as a verified sample. A permanent failure is evidence against the
-    format, but only weak evidence: the person may simply have left. It is
-    therefore recorded as a failure that discounts confidence rather than
-    deleting a pattern that many other addresses still match.
-
-    Returns False when the address does not match a known format for the
-    domain, since an outcome then says nothing about any stored pattern.
+    An MX record was enough, so every format with a scraped address looked
+    proven and send_gating let a whole company go at once. Recount each
+    format's proof from the mailbox checks that really establish it (a
+    delivery or a reply, minus an address that later bounced) and rederive its
+    confidence. One row per learned format, so it is quick enough to run in the
+    migration transaction. Member-asserted formats keep their floor.
     """
-    mail = _mail_host(email)
-    if not mail or not full_name:
-        return False
-    key = pattern_for_email(email, full_name)
-    if not key:
-        return False
-    row = await (await db.execute(
-        """SELECT id, sample_count, verified_samples, failed_samples, sources_json
-           FROM company_email_patterns WHERE company_domain=? AND pattern_key=?""",
-        (mail, key),
-    )).fetchone()
-    if not row:
-        return False
-    try:
-        sources = json.loads(row["sources_json"] or "[]")
-    except Exception:
-        sources = []
-    if source not in sources:
-        sources.append(source)
-    verified = int(row["verified_samples"] or 0) + (1 if delivered else 0)
-    failed = int(row["failed_samples"] or 0) + (0 if delivered else 1)
-    samples = int(row["sample_count"] or 0)
-    # The learned curve alone would demote a member-asserted format on a
-    # successful reply, since a stated format carries no observed samples. Take
-    # the stronger of the two bases, then discount per observed failure. Derived
-    # from stored counts, so the result is idempotent rather than drifting.
-    asserted_floor = (
-        MEMBER_ASSERTED_CONFIDENCE
-        if any(str(s).startswith("member:") for s in sources)
-        else 0.0
-    )
-    base = max(0.35 + verified * 0.12 + samples * 0.03, asserted_floor)
-    confidence = min(0.98, base) - failed * 0.15
-    await db.execute(
-        """UPDATE company_email_patterns
-           SET verified_samples=?, failed_samples=?, confidence=?, sources_json=?,
-               updated_at=CURRENT_TIMESTAMP
-           WHERE id=?""",
-        (verified, failed, max(0.05, confidence), json.dumps(sources[-20:]), row["id"]),
-    )
-    return True
+    rows = await (await db.execute(
+        """SELECT id, company_domain, pattern_key, sample_count, verified_samples, failed_samples, sources_json
+           FROM company_email_patterns WHERE verified_samples > 0"""
+    )).fetchall()
+    for row in rows:
+        host = str(row["company_domain"] or "").lower()
+        evidence = await (await db.execute(
+            """SELECT COUNT(DISTINCT CASE WHEN c.result IN ('previously_delivered','human_reply_observed')
+                                           AND s.email IS NULL THEN e.id END) AS proven,
+                      COUNT(DISTINCT CASE WHEN c.result = 'permanent_failure_observed' THEN e.id END) AS bounced
+               FROM email_candidates e
+               JOIN email_checks c ON c.candidate_id = e.id
+               LEFT JOIN candidate_suppressions s ON s.email = e.email COLLATE NOCASE
+               WHERE e.pattern_key = ?
+                 AND (lower(e.company_domain) = ? OR lower(substr(e.email, instr(e.email, '@') + 1)) = ?)""",
+            (row["pattern_key"], host, host),
+        )).fetchone()
+        try:
+            sources = json.loads(row["sources_json"] or "[]")
+        except (TypeError, ValueError):
+            sources = []
+        verified = int(evidence["proven"] or 0)
+        failed = max(int(row["failed_samples"] or 0), int(evidence["bounced"] or 0))
+        await db.execute(
+            """UPDATE company_email_patterns
+               SET verified_samples = ?, failed_samples = ?, confidence = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (verified, failed,
+             pattern_confidence(verified, int(row["sample_count"] or 0), failed, _member_asserted(sources)),
+             row["id"]),
+        )
 
 
 def pattern_for_email(email: str, full_name: str) -> str | None:

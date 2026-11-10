@@ -9,12 +9,21 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["JWT_SECRET"] = "dispatch-safety-test-secret-xxxxxxxx"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
+os.environ["SEND_WINDOW_HOURS"] = "off"
 from fastapi import HTTPException
 from app.database import init_db, get_db
 from app.routers.campaigns import (
     release_campaign, drain_campaign, retry_failed_campaign_contacts,
     update_campaign_contact_email, reconcile_owner, OwnershipConfirmation,
 )
+import app.routers.campaigns as campaigns_router
+
+
+async def _no_immediate_drain(*_args):
+    return None
+
+
+campaigns_router._kick_campaign_drain = _no_immediate_drain
 
 
 async def denied(coro, status):
@@ -158,7 +167,8 @@ asyncio.run(run())
         await db.commit()
         from app.services.follow_up_job import run_follow_up_sequences
         followup = AsyncMock(return_value={"message_id": "followup-id"})
-        with patch("app.services.gmail_api.send_via_gmail_api_with_tracking", followup):
+        with patch("app.services.gmail_api.send_via_gmail_api_with_tracking", followup), \
+             patch("app.services.send_window.open_now", return_value=True):
             await asyncio.gather(run_follow_up_sequences(), run_follow_up_sequences())
             assert followup.await_count == 1
             assert followup.call_args.kwargs["body"] == "Frozen body"

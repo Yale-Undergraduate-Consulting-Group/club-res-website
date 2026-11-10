@@ -9,12 +9,21 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ['JWT_SECRET'] = 'sender-isolation-regression-secret-xxxx'
 os.environ['CAMPAIGN_SEND_DELAY_SEC'] = '0'
+os.environ["SEND_WINDOW_HOURS"] = "off"
 from fastapi import HTTPException
 from app.database import init_db, get_db
 from app.models import CampaignCreate
 from app.routers.campaigns import (create_campaign, drain_campaign, release_campaign,
     pause_campaign, retry_failed_campaign_contacts, delete_campaign,
     update_campaign_contact_email)
+import app.routers.campaigns as campaigns_router
+
+
+async def _no_immediate_drain(*_args):
+    return None
+
+
+campaigns_router._kick_campaign_drain = _no_immediate_drain
 from app.services.gmail_api import get_valid_access_token
 
 async def run():
@@ -116,7 +125,8 @@ async def run():
         finally:
             await db.close()
         send.reset_mock()
-        with patch('app.services.gmail_api.send_via_gmail_api_with_tracking',send):
+        with patch('app.services.gmail_api.send_via_gmail_api_with_tracking',send), \
+             patch('app.services.send_window.open_now', return_value=True):
             result = await run_follow_up_sequences()
             assert result['sent'] == 1, result
             assert send.await_args.kwargs['user_id'] == 1

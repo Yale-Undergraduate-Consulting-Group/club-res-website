@@ -29,7 +29,7 @@ from app.services import roster_watch as R  # noqa: E402
 from app.services.company_email_cache import (  # noqa: E402
     get_domain_patterns,
     load_reconcile_context,
-    record_verified_sample,
+    record_observed_sample,
 )
 from app.services.contact_intelligence import ingest_contact  # noqa: E402
 from app.services.contact_scraper import strict_email_name_alignment  # noqa: E402
@@ -159,7 +159,7 @@ async def _core() -> None:
     # Identity gate contract: a bare cache row is not a prospect (no email, no
     # minting in the pipeline); an aligned row passes untouched; a role inbox
     # hijacking a real person's row is rebuilt to the learned-pattern address.
-    await record_verified_sample("garmin.com", "ada.lovelace@garmin.com", "Ada Lovelace", source="domain_scrape")
+    await record_observed_sample("garmin.com", "ada.lovelace@garmin.com", "Ada Lovelace", source="domain_scrape")
     ctx = await load_reconcile_context({"garmin.com"})
     bare = dict(pemble, email="")
     assert _resolve_identity(bare, company_name="Garmin", domain="garmin.com", ctx=ctx) is None
@@ -265,9 +265,10 @@ async def _core() -> None:
     finally:
         await db.close()
     patterns = await get_domain_patterns("garmin.com")
-    after = float(next(p for p in patterns if p["pattern_key"] == "first.last")["confidence"])
+    bounced_pattern = next(p for p in patterns if p["pattern_key"] == "first.last")
+    after = float(bounced_pattern["confidence"])
     assert after < before
-    assert abs((before - 0.12) - after) < 1e-9, (before, after)  # exactly one -0.12 tick
+    assert int(bounced_pattern["failed_samples"]) == 1
     full = await R.roster_detail(int(roster["id"]))
     assert next(p for p in full["people"] if p["full_name"] == "Clifton A. Pemble")["email_status"] == "bounced"
     warm3 = await RE.cached_roster_contacts("Garmin", "garmin.com")

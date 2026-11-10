@@ -7,6 +7,7 @@ role inbox never enters this path. Bounced addresses are tombstoned (email_statu
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -473,12 +474,13 @@ async def apply_provider_verdict(db, email: str, verdict: str) -> None:
 
 
 async def apply_mailbox_proof(db, candidate_id: int, state: str) -> None:
-    """Send-time truth loop: replies up-weight the learned pattern, permanent
-    failures down-weight it and tombstone the roster person's email.
+    """Apply one real mailbox outcome to the learned format.
 
-    Called INSIDE record_mailbox_event before its check row is inserted, so a
-    prior identical check means the event already moved the pattern. Permanent
-    failures dedupe on the suppression row that records right after this call.
+    Delivery and reply are two observations of the same live address, so they
+    contribute at most one verified sample between them. A later permanent
+    failure removes that sample, records a failure and tombstones the address.
+    ``record_mailbox_event`` stores the dedupe check after this call; existing
+    checks and suppressions make later syncs idempotent.
     """
     if state not in ("permanent_failure_observed", "human_reply_observed", "previously_delivered"):
         return
@@ -490,35 +492,60 @@ async def apply_mailbox_proof(db, candidate_id: int, state: str) -> None:
     ).fetchone()
     if not cand or not cand["pattern_key"] or not cand["company_domain"]:
         return
-    if state == "permanent_failure_observed":
-        if await (
-            await db.execute(
-                "SELECT 1 FROM candidate_suppressions WHERE email=? COLLATE NOCASE", (cand["email"],)
-            )
-        ).fetchone():
-            return
-    elif await (
+    suppressed = bool(await (
+        await db.execute(
+            "SELECT 1 FROM candidate_suppressions WHERE email=? COLLATE NOCASE", (cand["email"],)
+        )
+    ).fetchone())
+    if suppressed and state != "human_reply_observed":
+        return
+    if await (
         await db.execute(
             "SELECT 1 FROM email_checks WHERE candidate_id=? AND result=? LIMIT 1", (candidate_id, state)
         )
     ).fetchone():
         return
+    prior_proof = bool(await (
+        await db.execute(
+            """SELECT 1 FROM email_checks
+               WHERE candidate_id=? AND result IN ('previously_delivered','human_reply_observed')
+               LIMIT 1""",
+            (candidate_id,),
+        )
+    ).fetchone())
     if state == "permanent_failure_observed":
-        delta, sample_delta, floor = -0.12, -1, 0.05
-    elif state == "human_reply_observed":
-        delta, sample_delta, floor = 0.12, 1, 0.05
+        verified_delta, failed_delta = (-1 if prior_proof else 0), 1
     else:
-        delta, sample_delta, floor = 0.04, 0, 0.05
+        verified_delta, failed_delta = (0, 0) if prior_proof else (1, 0)
     mail_host = (cand["email"] or "").rsplit("@", 1)[-1].lower() if cand["email"] else ""
     hosts = [h for h in {mail_host, str(cand["company_domain"] or "").lower()} if h]
+    from app.services.company_email_cache import pattern_confidence
+
     for host in hosts:
+        row = await (await db.execute(
+            """SELECT id, sample_count, verified_samples, failed_samples, sources_json
+               FROM company_email_patterns WHERE company_domain=? AND pattern_key=?""",
+            (host, cand["pattern_key"]),
+        )).fetchone()
+        if not row:
+            continue
+        try:
+            sources = json.loads(row["sources_json"] or "[]")
+        except (TypeError, ValueError):
+            sources = []
+        verified = max(0, int(row["verified_samples"] or 0) + verified_delta)
+        failed = int(row["failed_samples"] or 0) + failed_delta
+        confidence = pattern_confidence(
+            verified,
+            int(row["sample_count"] or 0),
+            failed,
+            any(str(source).startswith("member:") for source in sources),
+        )
         await db.execute(
             """UPDATE company_email_patterns
-               SET confidence = MIN(0.98, MAX(?, confidence + ?)),
-                   verified_samples = MAX(0, verified_samples + ?),
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE company_domain = ? AND pattern_key = ?""",
-            (floor, delta, sample_delta, host, cand["pattern_key"]),
+               SET confidence=?, verified_samples=?, failed_samples=?, updated_at=CURRENT_TIMESTAMP
+               WHERE id=?""",
+            (confidence, verified, failed, row["id"]),
         )
     from app.services.mail_domain_map import record_mailbox_outcome
 

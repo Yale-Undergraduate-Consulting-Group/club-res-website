@@ -16,6 +16,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["JWT_SECRET"] = "send-gating-test-secret-xxxxxxxxxxxx"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
+os.environ["SEND_WINDOW_HOURS"] = "off"
 
 from app.database import get_db, init_db
 from app.routers.campaigns import drain_campaign
@@ -142,6 +143,24 @@ async def a_bounced_probe_stops_the_company() -> None:
         await db.close()
 
 
+async def an_mx_only_scrape_does_not_prove_the_host() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["DATABASE_URL"] = "sqlite:///" + tmp + "/scraped.db"
+        await init_db()
+        from app.services.company_email_cache import record_observed_sample
+
+        await record_observed_sample(
+            "acme.com", "jane.doe@acme.com", "Jane Doe", source="domain_scrape"
+        )
+        db = await get_db()
+        row = await (await db.execute(
+            "SELECT sample_count,verified_samples FROM company_email_patterns WHERE company_domain='acme.com'"
+        )).fetchone()
+        assert row["sample_count"] == 1 and row["verified_samples"] == 0, dict(row)
+        assert await send_gating.proven_hosts(db, {"acme.com"}) == set()
+        await db.close()
+
+
 async def a_proven_company_is_never_throttled() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATABASE_URL"] = "sqlite:///" + tmp + "/proven.db"
@@ -264,6 +283,7 @@ async def a_teammate_who_already_wrote_blocks_a_second_email() -> None:
 def tests() -> None:
     asyncio.run(one_probe_then_the_rest())
     asyncio.run(a_bounced_probe_stops_the_company())
+    asyncio.run(an_mx_only_scrape_does_not_prove_the_host())
     asyncio.run(a_proven_company_is_never_throttled())
     asyncio.run(a_member_stated_format_counts_as_proof())
     asyncio.run(one_held_company_does_not_stall_another())

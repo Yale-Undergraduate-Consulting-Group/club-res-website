@@ -18,7 +18,7 @@ export default function EvidenceDetails({ evidence }: { evidence: ContactEvidenc
     <dl className="research-dimensions">
       {([['Person identity', evidence.identity], ['Employment', evidence.employment], ['Address origin', evidence.address_origin], ['Mailbox assessment', evidence.mailbox], ['Project fit', evidence.project_fit]] as const).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{evidenceLabel(value)}</dd></div>)}
     </dl>
-    <p>A mail-domain route does not confirm this individual mailbox. An inferred address does not prove identity. Provider confidence is an assessment at one point in time, not a delivery guarantee.</p>
+    <p>“Domain accepts mail” confirms only the domain route. “Mailbox confirmed” is a provider assessment. “Delivered before” and “Replied” are send-time evidence for this address; a later bounce supersedes them.</p>
     <p>Checked {evidenceTime(evidence.checked_at)} · Expires {evidenceTime(evidence.expires_at)}</p>
     <p><strong>Assessment method:</strong> {evidence.method ? evidence.method.replaceAll('_', ' ') : 'Not recorded'}</p>
     <p><strong>Assessment reason:</strong> {evidence.reason || 'No reason recorded.'}</p>

@@ -276,9 +276,10 @@ async def follow_up_schedule(user: dict = Depends(get_current_user)):
                 item["reason"] = "No further steps in the sequence"
                 stopped.append(item)
                 continue
-            # The job only looks at campaigns still marked sent, so anything
-            # else is paused whether or not the member realises it.
-            if item.get("campaign_status") != "sent":
+            # The job follows up for campaigns that are sent, still releasing
+            # or need attention (send gating holds only unsent rows); a paused
+            # or otherwise stopped campaign holds its follow-ups.
+            if item.get("campaign_status") not in ("sent", "releasing", "needs_attention"):
                 item["reason"] = f"The campaign is {item['campaign_status']}, so follow-ups are paused"
                 stopped.append(item)
                 continue

@@ -8,6 +8,7 @@ from app.migrations import Migration
 from app.modules import Job, Module, Route, Setting
 from app.routers import analytics, campaigns, contacts, emails, outreach, releases, track, yucg_prospects, yucgoutreach
 from app.routers.campaigns import drain_releasing_campaigns
+from app.services.company_email_cache import unprove_scraped_patterns
 from app.services.catalog_builder import builder_tick
 from app.services.company_register import (
     add_register_search_index,
@@ -41,6 +42,7 @@ MODULE = Module(
     migrations=(
         Migration(1, "campaign contact add and release times", campaigns.add_contact_times),
         Migration(2, "company register name search index", add_register_search_index),
+        Migration(3, "remove scrape-only format proof", unprove_scraped_patterns),
     ),
     settings=(
         Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),
@@ -77,7 +79,7 @@ MODULE = Module(
         Job("company_roster_emails", drain_roster_emails, "interval", {"seconds": 300}),
         Job("company_roster_adjudicate", drain_roster_adjudication, "interval", {"minutes": 20}),
         Job("company_roster_verification", drain_roster_verification, "cron", {"hour": 7, "minute": 30}),
-        Job("follow_up_sequences", run_follow_up_sequences, "cron", {"hour": 8, "minute": 0}, sends_mail=True),
+        Job("follow_up_sequences", run_follow_up_sequences, "cron", {"minute": 10}, sends_mail=True),
         Job("notification_digests", run_notification_digests, "cron", {"hour": 8, "minute": 5}, sends_mail=True),
         Job("gmail_reply_sync", sync_replies_all_senders, "cron", {"minute": "*/2"}, sends_mail=True),
         Job("campaign_drain", drain_releasing_campaigns, "cron", {"minute": "*/5"}, sends_mail=True),
