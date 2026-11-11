@@ -31,7 +31,10 @@ runs:
       run: |
         set -euo pipefail
         docker buildx create --name club-builder --driver docker-container --use > /dev/null
+        # A new date re-runs the Dockerfile's apk upgrade once a day, so
+        # Alpine security fixes reach the image despite the layer cache.
         docker buildx build --platform linux/amd64 --file docker/app.Dockerfile \
+          --build-arg "APK_REFRESH=$(date -u +%Y-%m-%d)" \
           --tag "club-app:${GITHUB_SHA}" --load \
           --cache-from type=local,src=/tmp/club-buildx-cache \
           --cache-to type=local,dest=/tmp/club-buildx-cache-next,mode=max \
