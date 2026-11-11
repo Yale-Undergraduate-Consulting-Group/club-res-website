@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from app.migrations import Migration
 from app.modules import Job, Module, Route, Setting
-from app.routers import analytics, campaigns, contacts, emails, outreach, releases, track, yucg_prospects, yucgoutreach
+from app.routers import analytics, campaigns, contacts, directory, emails, outreach, releases, track, yucg_prospects, yucgoutreach
 from app.routers.campaigns import drain_releasing_campaigns
 from app.services.company_email_cache import unprove_scraped_patterns
 from app.services.catalog_builder import builder_tick
@@ -18,6 +18,7 @@ from app.services.company_register import (
 )
 from app.services.follow_up_job import run_follow_up_sequences
 from app.services.gmail_reply_sync import sync_replies_all_senders
+from app.services.mailbox_verdicts import add_mailbox_verdicts, run_mailbox_backlog
 from app.services.notification_digest_job import run_notification_digests
 from app.services.roster_adjudicate import drain_roster_adjudication
 from app.services.roster_email import drain_roster_emails, drain_roster_verification
@@ -33,6 +34,7 @@ MODULE = Module(
         Route(campaigns.router, "/api/campaigns", "campaigns", signed_in=True),
         Route(analytics.router, "/api/analytics", "analytics", signed_in=True),
         Route(outreach.router, "/api/outreach", "outreach", signed_in=True),
+        Route(directory.router, "/api/directory", "directory", signed_in=True),
         Route(track.router, "/api/track", "track"),
         Route(yucgoutreach.router, "/api/yucgoutreach", "yucgoutreach"),
         Route(yucg_prospects.router, "/api/yucg", "yucg-coordinator"),
@@ -43,6 +45,7 @@ MODULE = Module(
         Migration(1, "campaign contact add and release times", campaigns.add_contact_times),
         Migration(2, "company register name search index", add_register_search_index),
         Migration(3, "remove scrape-only format proof", unprove_scraped_patterns),
+        Migration(4, "club mailbox verdicts, 250-credit ceiling", add_mailbox_verdicts),
     ),
     settings=(
         Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),
@@ -83,5 +86,8 @@ MODULE = Module(
         Job("notification_digests", run_notification_digests, "cron", {"hour": 8, "minute": 5}, sends_mail=True),
         Job("gmail_reply_sync", sync_replies_all_senders, "cron", {"minute": "*/2"}, sends_mail=True),
         Job("campaign_drain", drain_releasing_campaigns, "cron", {"minute": "*/5"}, sends_mail=True),
+        # Spends the day's leftover Verifalia credits (less VERIFALIA_PRESEND_RESERVE)
+        # on addresses nobody has checked; does nothing unless Verifalia is switched on.
+        Job("mailbox_backlog", run_mailbox_backlog, "interval", {"minutes": 15}),
     ),
 )
