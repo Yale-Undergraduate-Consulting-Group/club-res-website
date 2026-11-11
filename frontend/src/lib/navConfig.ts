@@ -26,7 +26,7 @@ export const ADMIN_NAV_ITEMS: NavItem[] = navOf(MODULES).filter((item) => item.a
 export const TOP_LEVEL_IDS: NavItemId[] = ['dashboard', 'scraper'];
 
 export const NAV_GROUPS: { label: string; ids: NavItemId[] }[] = [
-  { label: 'Outreach', ids: ['studio', 'outreach'] },
+  { label: 'Outreach', ids: ['studio', 'outreach', 'directory'] },
 ];
 
 export const MOBILE_PRIMARY_IDS: NavItemId[] = ['dashboard', 'scraper', 'studio'];

@@ -196,6 +196,48 @@ export type CompanySummaryRow = {
   queued_count?: number;
 };
 
+export type DirectoryProof = 'replied' | 'delivered' | 'bounced' | 'mailbox_confirmed' | 'catch_all' | 'mailbox_rejected' | 'unverified';
+export type DirectoryReachState = 'replied' | 'bounced' | 'contacted' | 'queued' | 'not_contacted';
+/** Whether the club has reached a person: by whom, when it last wrote, and whether another member holds their company. */
+export type DirectoryReach = {
+  state: DirectoryReachState;
+  by: string | null;
+  by_me: boolean;
+  at: string | null;
+  sends: number;
+  claimed_by: string | null;
+};
+export type DirectoryPerson = {
+  email: string;
+  name: string;
+  title: string;
+  company: string;
+  source: string;
+  on_file: boolean;
+  proof: DirectoryProof;
+  reach: DirectoryReach;
+  ready: boolean;
+};
+export type DirectoryPage = { items: DirectoryPerson[]; total: number; limit: number; offset: number; capped: boolean };
+export type DirectoryFilter = { q?: string; proof?: DirectoryProof; reach?: DirectoryReachState; ready?: boolean };
+export type DirectorySummary = {
+  total: number;
+  capped: boolean;
+  ready: number;
+  proof: Record<DirectoryProof, number>;
+  reach: Record<DirectoryReachState, number>;
+  backlog: { enabled: boolean; credits_used_today: number; credits_cap_today: number; verified_total: number; queue_remaining: number };
+};
+
+function directoryQuery(filter: DirectoryFilter, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams(extra);
+  if (filter.q?.trim()) params.set('q', filter.q.trim());
+  if (filter.proof) params.set('proof', filter.proof);
+  if (filter.reach) params.set('reach', filter.reach);
+  if (filter.ready) params.set('ready', '1');
+  return params.toString();
+}
+
 export type FollowUpScheduleRow = {
   campaign_contact_id: number;
   contact_name?: string | null;
@@ -946,6 +988,13 @@ export const api = {
       a.click();
       URL.revokeObjectURL(url);
     },
+  },
+  directory: {
+    list: (filter: DirectoryFilter, limit: number, offset: number, signal?: AbortSignal) =>
+      fetchApi<DirectoryPage>(`/api/directory?${directoryQuery(filter, { limit: String(limit), offset: String(offset) })}`, { signal }),
+    summary: () => fetchApi<DirectorySummary>('/api/directory/summary'),
+    /** A plain link: the browser downloads it with the session cookie. */
+    exportUrl: (filter: DirectoryFilter) => `${API_BASE}/api/directory/export?${directoryQuery(filter)}`,
   },
   auth: {
     profile: {
