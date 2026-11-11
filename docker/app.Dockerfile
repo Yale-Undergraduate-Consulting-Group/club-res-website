@@ -19,7 +19,11 @@ RUN npm run build
 
 FROM python:3.12.14-alpine3.24
 WORKDIR /app
-RUN apk upgrade --no-cache
+# The build cache keys this layer on the Dockerfile text, so without a
+# changing value it would keep a months-old upgrade and fail the image scan as
+# Alpine publishes fixes. The image action passes today's date.
+ARG APK_REFRESH=unset
+RUN echo "packages refreshed ${APK_REFRESH}" && apk upgrade --no-cache
 COPY backend/requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY backend .

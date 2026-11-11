@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Admin, Analytics, CampaignDetail, Dashboard, EmailStudio, Outreach, Profile, Scraper } from './pages';
+import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Outreach, Profile, Scraper } from './pages';
 
 /**
  * Apps on the platform, as the browser sees them: the pages each one serves
@@ -57,10 +57,12 @@ const outreach: AppModule = {
     { path: 'campaigns/:id', element: <CampaignDetail /> },
     { path: 'analytics', element: <Analytics /> },
     { path: 'outreach', element: <Outreach /> },
+    { path: 'directory', element: <Directory /> },
   ],
   nav: [
     { id: 'studio', to: '/studio', label: 'Drafts', shortLabel: 'Drafts' },
     { id: 'outreach', to: '/outreach', label: 'Pipeline', shortLabel: 'Pipeline' },
+    { id: 'directory', to: '/directory', label: 'Directory', shortLabel: 'Directory' },
     { id: 'scraper', to: '/scraper', label: 'Find contacts', shortLabel: 'Contacts' },
   ],
 };
