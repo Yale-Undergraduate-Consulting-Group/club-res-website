@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -22,11 +21,17 @@ from app.services.contact_intelligence import (
 from app.services.contact_intelligence_schema import init_contact_intelligence_schema
 from app.services.contact_scraper import is_role_based_local_part
 from app.services.email_verifier import verify_email_deliverability, verify_email_format
+from app.services.mailbox_verdicts import fresh_verdict, store_verdict
 
 logger = logging.getLogger(__name__)
 
-DAILY_CAP = 25
-CACHE_DAYS = max(1, min(int(os.getenv("VERIFALIA_RESPONSE_CACHE_DAYS", "14") or 14), 90))
+#: Hard ceiling on Verifalia credits per day (the paid plan's 250). What is
+#: actually spent is VERIFALIA_DAILY_CREDIT_CAP, which defaults to the free plan's 25.
+DAILY_CAP = 250
+FREE_PLAN_CAP = 25
+CACHE_DAYS = max(1, min(int(os.getenv("VERIFALIA_RESPONSE_CACHE_DAYS", "90") or 90), 90))
+#: An inconclusive Verifalia answer says nothing about the mailbox, so it is not kept for CACHE_DAYS.
+INCONCLUSIVE_DAYS = 7
 
 VERIFALIA_ENDPOINT = "https://api.verifalia.com/v2.7/email-validations"
 VERIFALIA_WAIT_MS = 15000
@@ -88,23 +93,55 @@ def _enabled() -> bool:
     )
 
 
+def verifalia_selected() -> bool:
+    return (os.getenv("INBOX_VERIFY_PROVIDER") or "smtp").strip().lower() == "verifalia"
+
+
+def _daily_cap() -> int:
+    return min(DAILY_CAP, max(0, int(os.getenv("VERIFALIA_DAILY_CREDIT_CAP", str(FREE_PLAN_CAP)) or FREE_PLAN_CAP)))
+
+
+def local_rejection(raw: str) -> str | None:
+    """Why this address never reaches a mailbox check (no provider credit), or None."""
+    if not verify_email_format(raw).get("valid"):
+        return "Address syntax is not usable"
+    local, _, domain = raw.partition("@")
+    if is_role_based_local_part(local):
+        return "Role or generic mailbox, not an individual address"
+    if domain in CONSUMER_DOMAINS | DISPOSABLE_DOMAINS:
+        return "Consumer or disposable domain is not used for outreach"
+    return None
+
+
+def _from_verdict(row) -> dict:
+    result = _result(row["mailbox"], row["method"] or "verifalia", row["reason"] or "Earlier mailbox verdict",
+                     expires_at=row["expires_at"], provider_state="cached")
+    result["checked_at"] = row["checked_at"]
+    return result
+
+
+async def credit_state(db) -> dict:
+    """Today's Verifalia credits. Unlike provider_capacity this has no admin check:
+    it is for services (the backlog job, directory status), never a route."""
+    control = await (await db.execute("SELECT disabled FROM verification_provider_control WHERE provider='verifalia'")).fetchone()
+    day = await (await db.execute("SELECT used, allowance FROM verification_provider_days WHERE day=?", (_day(),))).fetchone()
+    allowance = int(day["allowance"] if day else _daily_cap())
+    used = int(day["used"] if day else 0)
+    return {
+        "enabled": _enabled() and not (control and control["disabled"]),
+        "day": _day(),
+        "used": used,
+        "remaining": max(0, allowance - used),
+        "allowance": allowance,
+    }
+
+
 async def provider_capacity(*, actor_id: int) -> dict:
     await _admin(actor_id)
     db = await get_db()
     try:
         await _ensure(db)
-        control = await (await db.execute("SELECT disabled FROM verification_provider_control WHERE provider='verifalia'")).fetchone()
-        day = await (await db.execute("SELECT used, allowance FROM verification_provider_days WHERE day=?", (_day(),))).fetchone()
-        allowance = int((day["allowance"] if day else min(DAILY_CAP, int(os.getenv("VERIFALIA_DAILY_CREDIT_CAP", str(DAILY_CAP)) or DAILY_CAP))))
-        used = int(day["used"] if day else 0)
-        return {
-            "provider": "verifalia",
-            "enabled": _enabled() and not (control and control["disabled"]),
-            "day": _day(),
-            "used": used,
-            "remaining": max(0, allowance - used),
-            "allowance": allowance,
-        }
+        return {"provider": "verifalia", **await credit_state(db)}
     finally:
         await db.close()
 
@@ -128,14 +165,9 @@ async def set_provider_enabled(*, actor_id: int, enabled: bool) -> dict:
 
 async def assess_address(email: str, *, actor_id: int, external: bool = False, manual: bool = False, reason: str | None = None) -> dict:
     raw = (email or "").strip().lower()
-    fmt = verify_email_format(raw)
-    if not fmt.get("valid"):
-        return _result(Mailbox.BAD_SYNTAX.value, "local", "Address syntax is not usable")
-    local, _, domain = raw.partition("@")
-    if is_role_based_local_part(local):
-        return _result(Mailbox.BAD_SYNTAX.value, "local", "Role or generic mailbox, not an individual address")
-    if domain in CONSUMER_DOMAINS | DISPOSABLE_DOMAINS:
-        return _result(Mailbox.BAD_SYNTAX.value, "local", "Consumer or disposable domain is not used for outreach")
+    bad = local_rejection(raw)
+    if bad:
+        return _result(Mailbox.BAD_SYNTAX.value, "local", bad)
 
     db = await get_db()
     try:
@@ -154,14 +186,9 @@ async def assess_address(email: str, *, actor_id: int, external: bool = False, m
         )).fetchone()
         if historic:
             return _result(historic["result"], historic["verifier"], historic["reason"], expires_at=historic["expires_at"])
-        cached = await (await db.execute(
-            "SELECT result_json FROM verification_cache WHERE address_hash=? AND actor_id=? AND expires_at>?",
-            (_hash(raw), actor_id, now_iso()),
-        )).fetchone()
-        if cached:
-            payload = json.loads(cached["result_json"])
-            payload["provider_state"] = "cached"
-            return payload
+        verdict = await fresh_verdict(db, raw)
+        if verdict:
+            return _from_verdict(verdict)
     finally:
         await db.close()
 
@@ -175,8 +202,7 @@ async def assess_address(email: str, *, actor_id: int, external: bool = False, m
 
     if not reason and manual:
         raise HTTPException(422, "A reason is required to spend a validation credit")
-    provider = (os.getenv("INBOX_VERIFY_PROVIDER") or "smtp").strip().lower()
-    if provider == "verifalia":
+    if verifalia_selected():
         if not _enabled():
             result["provider_state"] = "disabled"
             result["reason"] = "External mailbox validation is not configured. Mail-domain availability is recorded."
@@ -234,7 +260,11 @@ async def _external(email: str, *, actor_id: int, manual: bool, fallback: dict) 
         if control and control["disabled"]:
             await db.rollback()
             return {**fallback, "provider_state": "disabled", "reason": "External validation is turned off by an administrator"}
-        cap = min(DAILY_CAP, max(0, int(os.getenv("VERIFALIA_DAILY_CREDIT_CAP", str(DAILY_CAP)) or DAILY_CAP)))
+        verdict = await fresh_verdict(db, email)
+        if verdict:  # another caller's check landed between assess_address's lookup and this lock
+            await db.rollback()
+            return _from_verdict(verdict)
+        cap = _daily_cap()
         await db.execute(
             "INSERT INTO verification_provider_days(day,used,allowance) VALUES(?,0,?) ON CONFLICT(day) DO NOTHING",
             (_day(), cap),
@@ -252,15 +282,8 @@ async def _external(email: str, *, actor_id: int, manual: bool, fallback: dict) 
             )
         except Exception:
             await db.rollback()
-            cached = await (await db.execute(
-                "SELECT result_json FROM verification_cache WHERE address_hash=? AND actor_id=? AND expires_at>?",
-                (_hash(email), actor_id, now_iso()),
-            )).fetchone()
-            if cached:
-                payload = json.loads(cached["result_json"])
-                payload["provider_state"] = "cached"
-                return payload
-            return {**fallback, "provider_state": "cached"}
+            verdict = await fresh_verdict(db, email)
+            return _from_verdict(verdict) if verdict else {**fallback, "provider_state": "cached"}
         await db.execute("UPDATE verification_provider_days SET used=used+1 WHERE day=?", (_day(),))
         await db.commit()
     except Exception:
@@ -284,13 +307,9 @@ async def _external(email: str, *, actor_id: int, manual: bool, fallback: dict) 
             ("complete" if state not in ("unavailable", "exhausted") else "inconclusive", reservation_id),
         )
         if state not in ("unavailable", "exhausted"):
-            expires = (datetime.now(timezone.utc) + timedelta(days=CACHE_DAYS)).isoformat()
-            provider["expires_at"] = expires
-            await db.execute(
-                """INSERT INTO verification_cache(address_hash,actor_id,result_json,expires_at) VALUES(?,?,?,?)
-                   ON CONFLICT(address_hash,actor_id) DO UPDATE SET result_json=excluded.result_json,expires_at=excluded.expires_at""",
-                (_hash(email), actor_id, json.dumps(provider), expires),
-            )
+            days = INCONCLUSIVE_DAYS if provider.get("mailbox") == Mailbox.INCONCLUSIVE.value else CACHE_DAYS
+            provider["expires_at"] = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+            await store_verdict(db, email, provider)
         if provider.get("mailbox") == Mailbox.RECIPIENT_REJECTED.value:
             from app.services.roster_email import apply_provider_verdict
 

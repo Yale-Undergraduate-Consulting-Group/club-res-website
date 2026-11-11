@@ -61,7 +61,7 @@ async def init_contact_intelligence_schema(db):
         );
         CREATE TABLE IF NOT EXISTS verification_provider_days (
             day TEXT PRIMARY KEY, used INTEGER NOT NULL DEFAULT 0,
-            allowance INTEGER NOT NULL CHECK(allowance BETWEEN 0 AND 25)
+            allowance INTEGER NOT NULL CHECK(allowance BETWEEN 0 AND 250)
         );
         CREATE TABLE IF NOT EXISTS verification_reservations (
             id TEXT PRIMARY KEY, day TEXT NOT NULL, actor_id INTEGER NOT NULL,
@@ -69,10 +69,8 @@ async def init_contact_intelligence_schema(db):
             reason TEXT, status TEXT NOT NULL DEFAULT 'reserved', created_at TEXT NOT NULL,
             UNIQUE(day,person_id,manual)
         );
-        CREATE TABLE IF NOT EXISTS verification_cache (
-            address_hash TEXT NOT NULL, actor_id INTEGER NOT NULL, result_json TEXT NOT NULL,
-            expires_at TEXT NOT NULL, PRIMARY KEY(address_hash,actor_id)
-        );
+        -- Club-wide mailbox verdicts live in mailbox_verdicts (outreach migration 4);
+        -- the per-actor verification_cache this replaced is no longer created.
         CREATE TABLE IF NOT EXISTS candidate_suppressions (
             email TEXT PRIMARY KEY COLLATE NOCASE,
             state TEXT NOT NULL,

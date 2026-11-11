@@ -7,5 +7,6 @@ export const EmailStudio = lazy(() => import('../pages/EmailStudio'));
 export const CampaignDetail = lazy(() => import('../pages/CampaignDetail'));
 export const Analytics = lazy(() => import('../pages/Analytics'));
 export const Outreach = lazy(() => import('../pages/Outreach'));
+export const Directory = lazy(() => import('../pages/Directory'));
 export const Admin = lazy(() => import('../pages/Admin'));
 export const Profile = lazy(() => import('../pages/Profile'));
