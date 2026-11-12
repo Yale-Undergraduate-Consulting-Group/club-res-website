@@ -6,6 +6,8 @@ import AppTabMenu from '../components/AppTabMenu';
 import PageHeader from '../components/PageHeader';
 import TrackingSync from '../components/TrackingSync';
 import FollowUpSchedule from '../components/outreach/FollowUpSchedule';
+import QueueOutreach, { type OutreachSource } from '../components/campaigns/QueueOutreach';
+import TemplatePreview from '../components/campaigns/TemplatePreview';
 import { useUrlTab } from '../lib/useUrlTab';
 
 const PIPELINE_STATUSES = ['cold', 'contacted', 'replied', 'meeting', 'closed'];
@@ -136,6 +138,7 @@ export default function Outreach() {
   const [outreachCampaigns, setOutreachCampaigns] = useState<Worklist[]>([]);
   const [campaignForm, setCampaignForm] = useState({ name: '', type: 'individual' as 'community' | 'individual', description: '' });
   const [selectedCampaign, setSelectedCampaign] = useState<Worklist | null>(null);
+  const [queueSource, setQueueSource] = useState<OutreachSource | null>(null);
   const [campaignContacts, setCampaignContacts] = useState<Contact[]>([]);
   const [contactSearch, setContactSearch] = useState('');
   // Read from the URL so a chart slice on Home can open exactly its rows
@@ -736,6 +739,13 @@ export default function Outreach() {
                 </div>
                 <div className="flex gap-2">
                   <button
+                    onClick={() => setQueueSource({ label: selectedCampaign.name, targetListId: selectedCampaign.id })}
+                    disabled={(selectedCampaign.contact_count ?? campaignContacts.length) === 0}
+                    className="ui-button ui-button--primary ui-button--sm"
+                  >
+                    Queue outreach
+                  </button>
+                  <button
                     onClick={async () => {
                       if (!confirm('Delete this campaign?')) return;
                       try {
@@ -1085,26 +1095,33 @@ export default function Outreach() {
             {templates.length > 0 && (
               <div className="max-h-64 overflow-y-auto border border-pale-sky rounded-lg divide-y divide-pale-sky">
                 {templates.map((t) => (
-                  <div key={t.id} className="p-3 flex justify-between items-center">
+                  <div key={t.id} className="p-3 flex justify-between items-center gap-3">
                     <div>
-                      <div className="font-medium text-slate-800">{t.name}</div>
-                      <div className="text-xs text-slate-500">{t.industry || 'General'}</div>
+                      <div className="font-medium text-slate-800">
+                        {t.name}
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${t.scope === 'club' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                          {t.scope === 'club' ? 'Club' : 'Private'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500">{[t.use_case, t.industry].filter(Boolean).join(' · ') || 'General'}</div>
                     </div>
-                    <button
-                      onClick={async () => {
-                        if (confirm('Delete this template?')) {
-                          try {
-                            await api.outreach.templates.delete(t.id);
-                            setTemplates((prev) => prev.filter((x) => x.id !== t.id));
-                          } catch (e) {
-                            alert((e as Error)?.message);
+                    {t.editable && (
+                      <button
+                        onClick={async () => {
+                          if (confirm('Delete this template?')) {
+                            try {
+                              await api.outreach.templates.delete(t.id);
+                              setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+                            } catch (e) {
+                              alert((e as Error)?.message);
+                            }
                           }
-                        }
-                      }}
-                      className="ui-button ui-button--danger ui-button--sm"
-                    >
-                      Delete
-                    </button>
+                        }}
+                        className="ui-button ui-button--danger ui-button--sm"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1112,7 +1129,7 @@ export default function Outreach() {
             <div className="pt-2 border-t border-pale-sky space-y-3">
               <p className="text-sm font-medium text-deep-navy">New template</p>
               <p className="text-xs text-slate-500">
-                Use {'{first}'}, {'{last}'}, {'{company}'}, {'{title}'} for merge fields.
+                Yours stay private. Templates an administrator saves, and the starters, are shared with the whole club.
               </p>
               <input
                 value={templateForm.name}
@@ -1124,6 +1141,13 @@ export default function Outreach() {
                 value={templateForm.industry}
                 onChange={(e) => setTemplateForm((p) => ({ ...p, industry: e.target.value }))}
                 placeholder="Industry (optional)"
+                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+              />
+              <input
+                value={templateForm.use_case}
+                onChange={(e) => setTemplateForm((p) => ({ ...p, use_case: e.target.value }))}
+                placeholder="Approach, e.g. intro or project pitch (Admin → Metrics compares these)"
+                maxLength={40}
                 className="w-full px-3 py-2 rounded-lg border border-pale-sky"
               />
               <input
@@ -1139,6 +1163,7 @@ export default function Outreach() {
                 className="w-full px-3 py-2 rounded-lg border border-pale-sky"
                 rows={5}
               />
+              <TemplatePreview subject={templateForm.subject} body={templateForm.body} />
               <button
                 onClick={saveTemplate}
                 disabled={loading || !templateForm.name || !templateForm.subject || !templateForm.body}
@@ -1151,6 +1176,7 @@ export default function Outreach() {
 
         </div>
       )}
+      {queueSource && <QueueOutreach source={queueSource} onClose={() => setQueueSource(null)} />}
     </div>
   );
 }

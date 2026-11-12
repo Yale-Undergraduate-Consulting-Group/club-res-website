@@ -1178,10 +1178,11 @@ async def list_contacts(
         # Who a title actually is - a job or a board seat - decided in one
         # place, so choosing recipients by seniority means the same thing here
         # as it does in the register.
-        from app.services.company_register import classify_person_level
+        from app.services.company_register import classify_function, classify_person_level
 
         for r in result:
             r["person_level"] = classify_person_level(r.get("title"))
+            r["person_function"] = classify_function(r.get("title"))
         for r in result:
             if r.get("email"):
                 r["email"] = sanitize_email(r["email"])

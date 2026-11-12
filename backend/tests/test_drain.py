@@ -16,6 +16,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_tmp.name}"
 os.environ["JWT_SECRET"] = "p-drain-test-secret-not-a-known-default-xx"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
 os.environ["SEND_WINDOW_HOURS"] = "off"
+os.environ["COMPANY_SEND_CAP"] = "0"  # the per-company cap has its own tests; these send whole companies
 
 from app.database import get_db, init_db  # noqa: E402
 from app.routers.campaigns import drain_campaign, release_campaign  # noqa: E402

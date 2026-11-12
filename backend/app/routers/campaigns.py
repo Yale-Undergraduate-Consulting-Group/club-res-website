@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.database import get_db
 from app.auth_deps import get_current_user, get_current_user_optional
 from app.services.audit_service import log_audit
+from app.services.email_templates import require_template
 from app.services.usage_service import log_event
 from datetime import datetime
 from pydantic import BaseModel
@@ -349,6 +350,13 @@ class BuildFromTemplate(BaseModel):
     # subject/body stays the fallback for companies without one.
     messages: dict[str, dict[str, str]] = {}
     preview_only: bool = False
+    # Build from a saved template (own or club-shared) instead of typed text;
+    # sending both is refused. Its use case, or `angle`, files the sends under
+    # an approach in Admin → Metrics.
+    template_id: int | None = None
+    angle: str = ""
+    # A target list (outreach_campaigns) to write to: its contacts, resolved here.
+    target_list_id: int | None = None
 
 
 # One campaign stays something a member can review before release. Beyond
@@ -356,17 +364,32 @@ class BuildFromTemplate(BaseModel):
 MAX_RECIPIENTS = 5_000
 MAX_COMPANIES = 500
 
-async def _pipeline_recipients(db, payload: BuildFromTemplate, user_id: int) -> list[dict]:
-    """The people this message would go to.
+async def _pipeline_recipients(db, payload: BuildFromTemplate, user: dict) -> tuple[list[dict], int | None]:
+    """The people this message would go to, and how many the member chose.
 
     Chosen by company, because that is how the work is chosen: a member picks
-    companies and everyone found there is a candidate. Explicit contact_ids
-    narrow it when they have pruned the list by hand.
+    companies and everyone found there is a candidate. A target list (checked
+    for the member's access here, not by the caller) or explicit contact_ids
+    choose people instead; for those the second value is how many were chosen,
+    so the preview can say how many it left out. Only contacts the member may
+    write to are kept: unowned, or their own.
     """
+    from app.services.target_lists import require_worklist
+
+    if payload.target_list_id and payload.contact_ids:
+        raise HTTPException(422, "Choose a target list or individual contacts, not both")
     clauses = ["(owner_id IS NULL OR owner_id = ?)", "email IS NOT NULL", "TRIM(email) <> ''"]
-    args: list[object] = [user_id]
-    if payload.contact_ids:
-        ids = [int(i) for i in payload.contact_ids]
+    args: list[object] = [user["id"]]
+    chosen: int | None = None
+    if payload.target_list_id:
+        await require_worklist(db, payload.target_list_id, user)
+        clauses.append("id IN (SELECT contact_id FROM outreach_campaign_contacts WHERE campaign_id = ?)")
+        args.append(payload.target_list_id)
+        chosen = int((await (await db.execute(
+            "SELECT COUNT(*) FROM outreach_campaign_contacts WHERE campaign_id = ?", (payload.target_list_id,),
+        )).fetchone())[0])
+    elif payload.contact_ids:
+        ids = sorted({int(i) for i in payload.contact_ids})
         if len(ids) > MAX_RECIPIENTS:
             # Silently keeping the first 500 shipped a campaign that was not
             # the one the member selected. A batch this size is a company
@@ -378,10 +401,11 @@ async def _pipeline_recipients(db, payload: BuildFromTemplate, user_id: int) -> 
             )
         clauses.append(f"id IN ({','.join('?' * len(ids))})")
         args.extend(ids)
+        chosen = len(ids)
     elif payload.companies:
         names = [c.strip().lower() for c in payload.companies if c.strip()]
         if not names:
-            return []
+            return [], None
         if len(names) > MAX_COMPANIES:
             raise HTTPException(
                 422,
@@ -390,7 +414,7 @@ async def _pipeline_recipients(db, payload: BuildFromTemplate, user_id: int) -> 
         clauses.append(f"LOWER(TRIM(company)) IN ({','.join('?' * len(names))})")
         args.extend(names)
     else:
-        return []
+        return [], None
     rows = await (await db.execute(
         f"""SELECT id, name, email, title, company FROM contacts WHERE {' AND '.join(clauses)}
             ORDER BY company, name LIMIT ?""",
@@ -402,7 +426,7 @@ async def _pipeline_recipients(db, payload: BuildFromTemplate, user_id: int) -> 
             f"Those companies hold more than {MAX_RECIPIENTS} contacts. "
             "Narrow the selection so one campaign stays reviewable.",
         )
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows], chosen
 
 
 class DraftGroupTemplate(BaseModel):
@@ -421,6 +445,15 @@ class DraftGroupTemplate(BaseModel):
 #: Drafting is a model call and a quota unit per company, so a run stays
 #: something a member waits through rather than abandons.
 MAX_DRAFTED_COMPANIES = 12
+
+AI_DRAFTING_UNAVAILABLE = "AI drafting is unavailable right now — use a template."
+
+
+def _angle(explicit: str | None, template: dict | None) -> str | None:
+    """The approach a send is filed under: what the member named, else the
+    template's use case. Lower-cased so "Intro" and "intro" count together."""
+    value = (explicit or (template or {}).get("use_case") or "").strip().lower()
+    return value[:40] or None
 
 
 async def _company_notes(db, companies: list[str]) -> dict[str, str]:
@@ -478,6 +511,12 @@ async def draft_group_template(payload: DraftGroupTemplate, user: dict = Depends
                 length=payload.length,
                 company_notes=notes,
             )
+        except HTTPException as exc:
+            # The model is switched off or unreachable. Say what to do instead
+            # of surfacing the provider's error.
+            if exc.status_code == 503:
+                raise HTTPException(503, {"message": AI_DRAFTING_UNAVAILABLE, "fallback": "template"}) from exc
+            raise
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
@@ -524,16 +563,23 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
         for company, message in (payload.messages or {}).items()
         if company.strip() and (message.get("subject") or "").strip() and (message.get("body") or "").strip()
     }
-    if not per_company and (not subject or not body):
-        raise HTTPException(422, "A subject and a message are required")
-    for text_subject, text_body in [(subject, body), *per_company.values()]:
-        bad = sorted(set(unknown_fields(text_subject) + unknown_fields(text_body)))
-        if bad:
-            raise HTTPException(422, f"Unknown field(s): {', '.join('{' + b + '}' for b in bad)}")
+    if payload.template_id and (subject or body or payload.messages):
+        raise HTTPException(422, "Use a saved template or write your own message, not both")
 
     db = await get_db()
     try:
-        recipients = await _pipeline_recipients(db, payload, user["id"])
+        # The template's own text is rendered per recipient exactly as typed
+        # text is; the member sees the same holds either way.
+        template = await require_template(db, payload.template_id, user) if payload.template_id else None
+        if template:
+            subject, body = template["subject"].strip(), template["body"].strip()
+        if not per_company and (not subject or not body):
+            raise HTTPException(422, "A subject and a message are required")
+        for text_subject, text_body in [(subject, body), *per_company.values()]:
+            bad = sorted(set(unknown_fields(text_subject) + unknown_fields(text_body)))
+            if bad:
+                raise HTTPException(422, f"Unknown field(s): {', '.join('{' + b + '}' for b in bad)}")
+        recipients, chosen = await _pipeline_recipients(db, payload, user)
         # Each company's people get that company's message. A company with no
         # message of its own falls back to the one written for the group; with
         # neither, nothing is invented for them - they are held and named.
@@ -558,6 +604,10 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
                 "recipients": len(recipients),
                 "ready": len(ready),
                 "held": held,
+                # Chosen people (a target list or ticked rows) the build left
+                # out before rendering: no email on file, or another member's
+                # private contact. Companies carry no such count.
+                "skipped": max(0, chosen - len(recipients)) if chosen is not None else 0,
                 # A real rendered message, not the template, so the member
                 # reads what the first recipient will read.
                 "sample": ready[0] if ready else None,
@@ -574,13 +624,17 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
             (label, user["id"], user["id"]),
         )
         campaign_id = int(cur.lastrowid)
+        angle = _angle(payload.angle, template)
         await db.executemany(
-            """INSERT INTO campaign_contacts (campaign_id, contact_id, email_subject, email_body, status, added_at)
-               VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)""",
-            [(campaign_id, item["contact_id"], item["subject"], item["body"]) for item in ready],
+            """INSERT INTO campaign_contacts
+               (campaign_id, contact_id, email_subject, email_body, status, added_at, template_id, angle)
+               VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, ?, ?)""",
+            [(campaign_id, item["contact_id"], item["subject"], item["body"],
+              template["id"] if template else None, angle) for item in ready],
         )
         await db.commit()
-        return {"campaign_id": campaign_id, "created": len(ready), "held": held, "name": label}
+        return {"campaign_id": campaign_id, "created": len(ready), "held": held, "name": label,
+                "template": template["name"] if template else None}
     finally:
         await db.close()
 
@@ -591,7 +645,7 @@ async def add_contacts_to_campaign(
     payload: CampaignContactAdd,
     user: dict = Depends(get_current_user),
 ):
-    """Add contacts to a mail campaign. Latest unattached Studio draft fills empty subject/body."""
+    """Add contacts to a mail campaign. A saved template, else the latest unattached Studio draft, fills empty subject/body."""
     db = await get_db()
     try:
         from app.services.dispatch_service import begin_write
@@ -615,15 +669,22 @@ async def add_contacts_to_campaign(
         subjects = payload.email_subjects or {}
         bodies = payload.email_bodies or {}
         attached = 0
+        held: list[dict] = []
+        # A template fills the subject and message of any contact given none,
+        # personalised for that contact; the template and its approach are
+        # recorded on every row so Admin → Metrics can compare approaches.
+        template = await require_template(db, payload.template_id, user) if payload.template_id else None
+        angle = _angle(payload.angle, template)
 
         from app.services.contact_access import require_contact_access
+        from app.services.merge_fields import MergeError, render
         added = 0
         seen_contact_ids = set()
         for cid in payload.contact_ids:
             if cid in seen_contact_ids:
                 continue
             seen_contact_ids.add(cid)
-            await require_contact_access(db, cid, user)
+            contact = await require_contact_access(db, cid, user)
             exists = await (await db.execute(
                 "SELECT 1 FROM campaign_contacts WHERE campaign_id = ? AND contact_id = ? LIMIT 1",
                 (campaign_id, cid),
@@ -633,7 +694,16 @@ async def add_contacts_to_campaign(
             subj = subjects.get(str(cid), "")
             body = bodies.get(str(cid), "")
             draft_id = None
-            if user and (not subj or not body):
+            if template and (not subj or not body):
+                person = dict(contact)
+                try:
+                    subj = subj or render(template["subject"], person)
+                    body = body or render(template["body"], person)
+                except MergeError as exc:
+                    held.append({"contact_id": cid, "email": person.get("email"),
+                                 "name": person.get("name"), "reason": str(exc)})
+                    continue
+            elif user and (not subj or not body):
                 cur = await db.execute(
                     """SELECT id, subject, body FROM generated_emails
                        WHERE contact_id = ? AND user_id = ? AND campaign_id IS NULL
@@ -647,9 +717,9 @@ async def add_contacts_to_campaign(
                     body = body or (draft["body"] or "")
             await db.execute(
                 """INSERT INTO campaign_contacts
-                   (campaign_id, contact_id, email_subject, email_body, status, added_at)
-                   VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)""",
-                (campaign_id, cid, subj, body),
+                   (campaign_id, contact_id, email_subject, email_body, status, added_at, template_id, angle)
+                   VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, ?, ?)""",
+                (campaign_id, cid, subj, body, template["id"] if template else None, angle),
             )
             added += 1
             if draft_id:
@@ -659,7 +729,7 @@ async def add_contacts_to_campaign(
                 )
                 attached += 1
         await db.commit()
-        return {"ok": True, "added": added, "drafts_attached": attached}
+        return {"ok": True, "added": added, "drafts_attached": attached, "held": held}
     finally:
         await db.close()
 
@@ -667,19 +737,22 @@ async def add_contacts_to_campaign(
 async def _scan_pending_rows(db, campaign_id: int, target: int, sender: int,
                              *, now=None) -> tuple[list, list[dict]]:
     """Page the whole pending queue until ``target`` rows are claimable."""
-    from app.services.send_gating import HELD_OUTSIDE_WINDOW, select_sendable
+    from app.services.send_gating import CompanyCap, HELD_OUTSIDE_WINDOW, mail_host, select_sendable
     from app.services.send_window import company_zone, next_open, open_now
 
     sendable: list = []
     held: list[dict] = []
     probing: set[str] = set()
+    # Read inside the claiming transaction, so concurrent drains cannot both
+    # take the last slot at a company.
+    company_cap = await CompanyCap.load(db)
     zones = {}
     after_id = 0
     page_size = max(target * 10, 50)
     while len(sendable) < target:
         page = await (await db.execute(
             """SELECT cc.*, c.email AS recipient_email, c.company, c.contact_source,
-                      c.email_pattern,
+                      c.email_pattern, c.company_domain,
                       (SELECT ec.origin FROM email_candidates ec
                          WHERE ec.email=c.email COLLATE NOCASE LIMIT 1) AS address_origin
                FROM campaign_contacts cc JOIN contacts c ON c.id=cc.contact_id
@@ -710,7 +783,16 @@ async def _scan_pending_rows(db, campaign_id: int, target: int, sender: int,
         allowed, gated = await select_sendable(
             db, campaign_id, open_rows, sender, probing=probing,
         )
-        sendable.extend(allowed)
+        for row in allowed:
+            if len(sendable) >= target:
+                break
+            over = company_cap.admit(row)
+            if over:
+                if row.get("probe"):
+                    probing.discard(mail_host(row["email"] or ""))
+                held.append(over)
+            else:
+                sendable.append(row)
         held.extend(gated)
         if len(page) < page_size:
             break

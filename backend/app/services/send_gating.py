@@ -32,6 +32,8 @@ HELD_PROBE_IN_FLIGHT = "probe_in_flight"
 HELD_PROBE_BOUNCED = "probe_bounced"
 HELD_TEAMMATE_SENT = "teammate_already_wrote"
 HELD_OUTSIDE_WINDOW = "outside_send_window"
+HELD_COMPANY_REPLIED = "company_replied"
+HELD_COMPANY_CAP = "company_cap_reached"
 
 
 def teammate_quiet_days() -> int:
@@ -77,6 +79,142 @@ async def _mailed_by_teammates(db, rows: list, sender_id: int | None) -> dict[st
         for row in found
         if sender_id is None or int(row["sent_by_user_id"]) != int(sender_id)
     }
+
+
+def company_send_cap() -> int:
+    """First-touch emails to distinct people at one company, club-wide, per window.
+
+    Three people at a firm is a campaign; ten is a pattern its mail filter and
+    its people both notice. 0 turns the cap off.
+    """
+    try:
+        return max(0, min(int((os.getenv("COMPANY_SEND_CAP") or "").strip() or 3), 1000))
+    except ValueError:
+        return 3
+
+
+def company_send_cap_days() -> int:
+    try:
+        return max(1, min(int((os.getenv("COMPANY_SEND_CAP_DAYS") or "").strip() or 30), 365))
+    except ValueError:
+        return 30
+
+
+def company_keys(company: str | None, domain: str | None, email: str | None) -> frozenset[str]:
+    """Every identity one contact has at its company.
+
+    Contacts for one company arrive with a domain, with only a name, or with
+    only an address, so a single key would miss the match the member cares
+    about. Two contacts share a company when any of these keys is shared. A
+    consumer mailbox says nothing about an employer and contributes none.
+    """
+    from app.services.company_claims import company_key
+    from app.services.contact_intelligence import CONSUMER_DOMAINS
+
+    keys = {company_key(company, domain)}
+    if (company or "").strip():
+        keys.add(company_key(company, None))
+    host = mail_host(email or "")
+    if host and host not in CONSUMER_DOMAINS:
+        keys.add(company_key(None, host))
+    return frozenset(k for k in keys if k and k != "n:")
+
+
+def _company_label(company: str | None, domain: str | None, email: str | None) -> str:
+    return (company or "").strip() or (domain or "").strip() or mail_host(email or "") or "that company"
+
+
+async def replied_companies(db) -> dict[str, str]:
+    """Company key -> display name, for every company where anyone replied.
+
+    Club-wide and permanent: a reply means a person there has already answered
+    one of us, and the next email from any member lands in the same inbox.
+    An automatic reply is not a reply. The mark on the row (replied_at or the
+    replied status) and the mailbox event both count, because a manual mark
+    and a Gmail sync reach only one of them.
+    """
+    rows = await (await db.execute(
+        """SELECT DISTINCT c.company, c.company_domain, c.email
+           FROM campaign_contacts cc JOIN contacts c ON c.id = cc.contact_id
+           WHERE cc.replied_at IS NOT NULL OR cc.status = 'replied'
+              OR EXISTS (SELECT 1 FROM outreach_messages m
+                         JOIN outreach_events e ON e.message_id = m.id
+                         WHERE m.campaign_contact_id = cc.id AND e.kind = 'replied')"""
+    )).fetchall()
+    index: dict[str, str] = {}
+    for row in rows:
+        label = _company_label(row["company"], row["company_domain"], row["email"])
+        for key in company_keys(row["company"], row["company_domain"], row["email"]):
+            index.setdefault(key, label)
+    return index
+
+
+def company_reply(index: dict[str, str], company: str | None, domain: str | None, email: str | None) -> str | None:
+    """The name of the company if someone there has replied, else None."""
+    for key in sorted(company_keys(company, domain, email)):
+        if key in index:
+            return index[key]
+    return None
+
+
+class CompanyCap:
+    """Who the club has already first-touched at each company, in the window.
+
+    Load and use it inside the write transaction that claims the rows: the
+    claim then sees every earlier claim, and a concurrent drain waits for the
+    transaction, so the cap cannot be exceeded by racing claims. Follow-ups
+    go to people already contacted and never count.
+    """
+
+    def __init__(self, entries: list[tuple[frozenset[str], str, datetime]], cap: int, days: int):
+        self.entries = entries
+        self.cap = cap
+        self.days = days
+
+    @classmethod
+    async def load(cls, db) -> "CompanyCap":
+        cap, days = company_send_cap(), company_send_cap_days()
+        if cap == 0:
+            return cls([], 0, days)
+        rows = await (await db.execute(
+            """SELECT d.claimed_at, d.recipient, c.company, c.company_domain
+               FROM outreach_dispatches d
+               JOIN campaign_contacts cc ON cc.id = d.campaign_contact_id
+               JOIN contacts c ON c.id = cc.contact_id
+               WHERE d.dispatch_key LIKE 'initial:%' AND d.claimed_at IS NOT NULL
+                 AND d.claimed_at > datetime('now', ?)""",
+            (f"-{days} days",),
+        )).fetchall()
+        entries = []
+        for row in rows:
+            at = _parse_ts(row["claimed_at"])
+            if at:
+                entries.append((company_keys(row["company"], row["company_domain"], row["recipient"]),
+                                (row["recipient"] or "").strip().lower(), at))
+        return cls(entries, cap, days)
+
+    def admit(self, row: dict) -> dict[str, Any] | None:
+        """None when the row may go (and is counted); otherwise the hold."""
+        if not self.cap:
+            return None
+        email = (row.get("email") or "").strip().lower()
+        keys = company_keys(row.get("company"), row.get("company_domain"), email)
+        if not keys:
+            return None
+        first_touch: dict[str, datetime] = {}
+        for entry_keys, person, at in self.entries:
+            if entry_keys & keys and (person not in first_touch or at < first_touch[person]):
+                first_touch[person] = at
+        if email in first_touch or len(first_touch) < self.cap:
+            self.entries.append((keys, email, datetime.now(timezone.utc)))
+            return None
+        times = sorted(first_touch.values())
+        return {
+            "row": row, "host": "", "reason": HELD_COMPANY_CAP,
+            "company": _company_label(row.get("company"), row.get("company_domain"), email),
+            "people": len(first_touch),
+            "next_slot": times[len(times) - self.cap] + timedelta(days=self.days),
+        }
 
 
 def grace_minutes() -> int:
@@ -183,12 +321,20 @@ async def select_sendable(db, campaign_id: int, rows: list, sender_id: int | Non
     proven = await proven_hosts(db, by_id.values())
     history = await _host_history(db, campaign_id)
     recently_mailed = await _mailed_by_teammates(db, rows, sender_id)
+    replied = await replied_companies(db)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=grace_minutes())
 
     sendable: list = []
     held: list[dict[str, Any]] = []
     probing = set() if probing is None else probing
     for row in rows:
+        # One reply anywhere at the company outranks every per-person rule:
+        # the next email from any member reaches the same people.
+        replied_at = company_reply(replied, row.get("company"), row.get("company_domain"), row.get("email"))
+        if replied_at:
+            held.append({"row": row, "host": by_id.get(row["id"]) or "",
+                         "reason": HELD_COMPANY_REPLIED, "company": replied_at})
+            continue
         # The club sends as individual members, so nothing downstream would
         # notice two of them writing to the same person. The recipient would.
         teammate = recently_mailed.get((row["email"] or "").strip().lower())
@@ -230,6 +376,8 @@ def describe_hold(held: list[dict[str, Any]]) -> str:
     """One line a member can act on, or empty when nothing is held."""
     if not held:
         return ""
+    replied = sorted({h.get("company") or "that company" for h in held if h["reason"] == HELD_COMPANY_REPLIED})
+    capped = [h for h in held if h["reason"] == HELD_COMPANY_CAP]
     teammates = sorted({h.get("teammate") or "a teammate" for h in held if h["reason"] == HELD_TEAMMATE_SENT})
     bounced = sorted({h["host"] for h in held if h["reason"] == HELD_PROBE_BOUNCED})
     waiting = sorted({h["host"] for h in held if h["reason"] == HELD_PROBE_IN_FLIGHT})
@@ -240,6 +388,20 @@ def describe_hold(held: list[dict[str, Any]]) -> str:
         parts.append(
             f"{held_n} recipient(s) held: {', '.join(teammates)} already wrote to them in the last "
             f"{teammate_quiet_days()} days. Remove them, or ask who is further along."
+        )
+    if replied:
+        held_n = sum(1 for h in held if h["reason"] == HELD_COMPANY_REPLIED)
+        parts.append(
+            f"{held_n} recipient(s) held: a teammate already has a reply from {', '.join(replied)}. "
+            "Remove them, or ask who is further along."
+        )
+    for company in sorted({h["company"] for h in capped}):
+        mine = [h for h in capped if h["company"] == company]
+        span = "this month" if company_send_cap_days() == 30 else f"in the last {company_send_cap_days()} days"
+        slot = min(h["next_slot"] for h in mine)
+        parts.append(
+            f"{len(mine)} email(s) held: {mine[0]['people']} people at {company} already emailed {span}; "
+            f"next slot {slot.strftime('%Y-%m-%d')}. They send automatically when it opens."
         )
     if bounced:
         held_n = sum(1 for h in held if h["reason"] == HELD_PROBE_BOUNCED)

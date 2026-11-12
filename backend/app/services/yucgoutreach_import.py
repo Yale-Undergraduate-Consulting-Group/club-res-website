@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from app.database import row_to_dict
 from app.services.contact_intelligence import assess_address, ingest_contact
 from app.services.contact_scraper import is_valid_person_contact, normalize_domain, sanitize_email
+from app.services.company_register import FUNCTION_IDS
 from app.services.yucgoutreach_discovery import YUCG_MAX_PROSPECTS
 
 
@@ -27,6 +28,7 @@ async def enqueue_discovery_run(
     entity: dict[str, Any] | None = None,
     origin: str = "member",
     level: str = "working",
+    function: str | None = None,
 ) -> int:
     """Queue one durable company search for a member, enforcing the same
     per-member (one at a time) and club-wide queue limits as the UI. The
@@ -49,6 +51,8 @@ async def enqueue_discovery_run(
     from app.services.web_contact_discovery import wanted_level
 
     research_data: dict[str, Any] = {"level": wanted_level(level)}
+    if function in FUNCTION_IDS:
+        research_data["function"] = function
     if hints:
         research_data["title_hints"] = hints
     # The entity the member picked in resolve-company, cut to the contract;
@@ -186,7 +190,8 @@ async def import_run_prospects(
                    contact_source = COALESCE(NULLIF(contact_source, ''), ?),
                    email_verification_status = COALESCE(NULLIF(email_verification_status, ''), ?),
                    ai_verdict = COALESCE(NULLIF(ai_verdict, ''), ?),
-                   ai_reason = COALESCE(NULLIF(ai_reason, ''), ?)
+                   ai_reason = COALESCE(NULLIF(ai_reason, ''), ?),
+                   yale_signal = COALESCE(NULLIF(yale_signal, ''), ?)
                    WHERE id = ?""",
                 (
                     name or None,
@@ -198,6 +203,7 @@ async def import_run_prospects(
                     pr.get("email_verification_status"),
                     pr.get("ai_verdict"),
                     pr.get("ai_reason"),
+                    pr.get("yale_signal"),
                     ex["id"],
                 ),
             )
@@ -207,8 +213,8 @@ async def import_run_prospects(
         else:
             cursor = await db.execute(
                 """INSERT INTO contacts (name, email, title, company, company_domain, linkedin_url,
-                   contact_source, email_verification_status, ai_verdict, ai_reason, confidence, owner_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   contact_source, email_verification_status, ai_verdict, ai_reason, confidence, owner_id, yale_signal)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     name,
                     email,
@@ -222,6 +228,7 @@ async def import_run_prospects(
                     pr.get("ai_reason"),
                     "medium",
                     user_id,
+                    pr.get("yale_signal"),
                 ),
             )
             created += 1
