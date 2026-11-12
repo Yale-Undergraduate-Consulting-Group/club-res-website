@@ -1,7 +1,28 @@
 export type MemberProfile = { projects?: string; experience?: string; role_title?: string; linkedin_url?: string; slack_handle?: string; other_handles?: string };
 export type Project = { id: number; name: string; semester?: string; description?: string; role_in_project?: string; client_name?: string; discussable?: boolean };
 export type Attachment = { id: number; filename: string; display_name?: string; file_size: number };
-export type Template = { id: number; name: string; subject: string; body: string; industry?: string; use_case?: string };
+/** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
+export type Template = {
+  id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
+  scope: 'club' | 'mine'; mine: boolean; editable: boolean; owner_name?: string | null;
+};
+export type TemplatePreview = {
+  fields: { name: string; help: string }[];
+  recipient: { name: string; title: string; company: string; email: string };
+  subject: string; body: string; error: string | null;
+};
+export type BuildRequest = {
+  name?: string; companies?: string[]; contact_ids?: number[]; subject?: string; body?: string;
+  messages?: Record<string, { subject: string; body: string }>; preview_only?: boolean;
+  template_id?: number; angle?: string; target_list_id?: number;
+};
+export type BuildHold = { contact_id?: number; email?: string; name?: string; reason: string };
+export type BuildResult = {
+  campaign_id: number; created: number; name: string; template?: string | null; recipients?: number; ready?: number;
+  /** Chosen people left out before rendering: no email on file, or another member's private contact. */
+  skipped?: number;
+  sample?: { subject: string; body: string; email?: string } | null; held: BuildHold[];
+};
 export type Sequence = { id: number; name: string; steps?: { days_after: number; subject: string; body: string }[] };
 export type ContactNote = { id: number; note: string; created_at: string; user_id?: number };
 export type ContactActivity = { id: number; activity_type: string; details?: string; created_at: string; user_id?: number };
@@ -20,12 +41,16 @@ export type Member = { id: number; email: string; name?: string; role: string; i
 export type Readiness = { signed_in: boolean; gmail: boolean; sign_off: boolean; slack: boolean; project: boolean; has_sent: boolean; ready_to_send: boolean };
 /** One semester target in Admin → Metrics; `met` is null until `of` reaches the minimum sample. */
 export type MetricTarget = { key: string; label: string; count: number; of: number; value: number | null; target: string; met: boolean | null };
+export type ApproachRow = { template_id: number | null; template: string | null; angle: string | null; sent: number; replied: number; value: number | null; met: boolean | null };
 export type MemberMetrics = { user_id: number; name: string; searches: number; drafts: number; sent: number; replies: number; bounces: number; ready_to_send: boolean };
 export type ClubMetrics = {
   days: number;
   min_sample: number;
   targets: MetricTarget[];
   waiting: { contacts: number; oldest_added_at: string | null };
+  /** Reply rate per template and approach, per person written to; `met` is null below min_sample. */
+  approaches: ApproachRow[];
+  reply_target: string;
   members: MemberMetrics[];
   not_measured: string[];
 };
@@ -163,6 +188,10 @@ export type DiscoveryProspect = {
   contact_profile_url?: string | null;
   /** What their title makes them, as the contacts list says it. */
   person_level?: string | null;
+  /** What their title makes them in work terms (finance, operations...), '' when it names none. */
+  person_function?: string | null;
+  /** The words in what the search read that tie them to Yale; null when none did. */
+  yale_signal?: string | null;
   contact_source?: string | null;
   ai_verdict?: string | null;
   ai_reason?: string | null;
@@ -217,6 +246,8 @@ export type DirectoryPerson = {
   proof: DirectoryProof;
   reach: DirectoryReach;
   ready: boolean;
+  /** The contacts row behind this person; null for a prospect not yet imported. */
+  contact_id: number | null;
 };
 export type DirectoryPage = { items: DirectoryPerson[]; total: number; limit: number; offset: number; capped: boolean };
 export type DirectoryFilter = { q?: string; proof?: DirectoryProof; reach?: DirectoryReachState; ready?: boolean };
@@ -381,6 +412,10 @@ export type Contact = {
   last_send_status?: string | null;
   last_campaign_id?: number | null;
   last_campaign_name?: string | null;
+  /** What their title makes them in work terms, '' when it names none. */
+  person_function?: string | null;
+  /** The words in what a search read that tie them to Yale; null when none did. */
+  yale_signal?: string | null;
   [key: string]: unknown;
 };
 
@@ -910,9 +945,8 @@ export const api = {
         method: 'POST', body: JSON.stringify(data),
       }),
     /** Render one written message per recipient; preview_only stops before creating. */
-    build: (data: { name?: string; companies?: string[]; contact_ids?: number[]; subject?: string; body?: string; messages?: Record<string, { subject: string; body: string }>; preview_only?: boolean }) =>
-      fetchApi<{ campaign_id: number; created: number; name: string; recipients?: number; ready?: number; sample?: { subject: string; body: string; email?: string } | null; held: { contact_id?: number; email?: string; name?: string; reason: string }[] }>(
-        '/api/campaigns/build', { method: 'POST', body: JSON.stringify(data) }),
+    build: (data: BuildRequest) =>
+      fetchApi<BuildResult>('/api/campaigns/build', { method: 'POST', body: JSON.stringify(data) }),
     list: () => fetchApi<Campaign[]>('/api/campaigns'),
     get: (id: number) => fetchApi<Campaign>(`/api/campaigns/${id}`),
     delete: (id: number) => fetchApi<{ ok: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
@@ -1283,6 +1317,9 @@ export const api = {
       create: (data: { name: string; subject: string; body: string; industry?: string; use_case?: string }) =>
         fetchApi<unknown>('/api/outreach/templates', { method: 'POST', body: JSON.stringify(data) }),
       delete: (id: number) => fetchApi<unknown>(`/api/outreach/templates/${id}`, { method: 'DELETE' }),
+      /** The draft as one made-up recipient would read it, and the merge fields on offer. */
+      preview: (data: { subject: string; body: string }) =>
+        fetchApi<TemplatePreview>('/api/outreach/templates/preview', { method: 'POST', body: JSON.stringify(data) }),
     },
     followUps: {
       schedule: () => fetchApi<{ scheduled: FollowUpScheduleRow[]; stopped: FollowUpScheduleRow[] }>(
@@ -1430,6 +1467,8 @@ export const api = {
       worker_concurrency?: number;
       entity?: EntityProfile;
       level?: 'working' | 'executive' | 'board';
+      /** What the people do (finance, operations...); the search asks for that function's titles. */
+      function?: string;
     }) =>
       fetchApi<{ id: number; status: string }>('/api/yucgoutreach/runs', {
         method: 'POST',

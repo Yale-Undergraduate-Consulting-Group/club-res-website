@@ -465,6 +465,87 @@ def fit_level(title: str | None) -> str:
     return level
 
 
+# What a person does, read from the title alone. The picker filters on it and a
+# search can ask for it. FUNCTIONS is the display order; _FUNCTION_TITLE is the
+# precedence: a title naming two functions ("Marketing Operations", "Product
+# Marketing") is the one listed first there, and the specific functions come
+# before general management. A title that names none ("Senior Manager",
+# "Director") has no function rather than a guess.
+FUNCTIONS: tuple[tuple[str, str], ...] = (
+    ("finance", "Finance"),
+    ("strategy", "Strategy / Corp Dev"),
+    ("operations", "Operations"),
+    ("marketing", "Marketing"),
+    ("sales", "Sales / BD"),
+    ("people", "HR / People"),
+    ("technology", "Technology / Product"),
+    ("legal", "Legal"),
+    ("general", "General management"),
+)
+FUNCTION_IDS = frozenset(fid for fid, _ in FUNCTIONS)
+_FUNCTION_TITLE: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (fid, re.compile(pattern, re.I)) for fid, pattern in (
+        ("legal", r"\b(legal|counsel|attorney|lawyer|compliance|regulatory|privacy|clo)\b"),
+        ("finance", r"\b(financ\w*|cfo|controller|treasur\w*|accounting|accountant|audit\w*|tax|fp&a|"
+                    r"investor relations|payroll)\b"),
+        ("people", r"\b(hr|human resources|people|talent|recruit\w*|chro|culture|learning and development)\b"),
+        ("marketing", r"\b(marketing|cmo|brand\w*|communications?|comms|public relations|pr|content|"
+                      r"social media|growth|demand generation|advertising|creative)\b"),
+        ("sales", r"\b(sales|business development|bd|partnerships?|account (?:manager|executive|director)|"
+                  r"customer success|revenue|cro|commercial)\b"),
+        ("technology", r"\b(technology|technical|engineering|engineer|software|cto|cio|ciso|it|data|"
+                       r"product|digital|information (?:security|officer)|analytics|architect)\b"),
+        ("strategy", r"\b(strateg\w*|corporate development|corp dev|m&a|mergers|innovation|transformation)\b"),
+        ("operations", r"\b(operations?|operating|coo|supply chain|logistics|manufacturing|procurement|"
+                       r"program management|facilities|production)\b"),
+        ("general", r"\b(ceo|chief executive|(?<!vice\s)(?<!vice-)president|general manager|managing director|"
+                    r"chief of staff|founder|owner|managing partner|gm)\b"),
+    )
+)
+
+
+def classify_function(title: str | None) -> str:
+    """finance | strategy | operations | marketing | sales | people |
+    technology | legal | general, or "" when the title names no function."""
+    text = (title or "").strip()
+    if not text:
+        return ""
+    for fid, pattern in _FUNCTION_TITLE:
+        if pattern.search(text):
+            return fid
+    return ""
+
+
+# Yale, but only where the words tie a person to the university. A bare "Yale"
+# is as likely a lock, a forklift or an appliance store ("Yale Appliance", "Yale
+# Security"), so it must come with a school, a class year, or a degree or
+# graduate's verb in front of it. ponytail: a hand list of the university's
+# schools; one missing from it gives no signal rather than a wrong one.
+_NOT_THE_SCHOOL = r"(?!\s+(?:Appliance|Security|Locks?|Home|Materials|Cordage|Hoists?|Forklifts?|Trucks?|Commercial|Brands?|Industrial))"
+_YALE_RE = re.compile(
+    r"Yale[\s-]+(?:University|College|Law(?:\s+School)?|SOM|School\s+of\s+(?:Management|Medicine|Public\s+Health|"
+    r"the\s+Environment|Forestry|Nursing|Architecture|Drama|Art|Music|Divinity|Engineering)|Graduate\s+School|"
+    r"Divinity|EMBA|MBA|MPH|alum\w*|grad(?:uate)?s?\b|class\s+of)"
+    r"|Yale\s*['\u2019]\s*\d\d\b"
+    r"|(?:graduated\s+from|graduate\s+of|degree\s+from|attended|studied\s+at|alum(?:nus|na|ni|)\s+of|"
+    r"B\.?[AS]\.?(?:,|\s+from)?|M\.?B\.?A\.?(?:,|\s+from)?|J\.?D\.?(?:,|\s+from)?|Ph\.?D\.?(?:,|\s+from)?|"
+    r"Education:|Education\s+-)\s+Yale\b" + _NOT_THE_SCHOOL,
+    re.I,
+)
+
+
+def yale_evidence(text: str | None) -> str:
+    """The words around the first tie to Yale University, or "" when the text
+    has none. Text is whatever was collected about the person: a search
+    snippet, a profile, a roster line."""
+    blob = re.sub(r"\s+", " ", text or "").strip()
+    match = _YALE_RE.search(blob)
+    if not match:
+        return ""
+    start, end = max(0, match.start() - 60), min(len(blob), match.end() + 60)
+    return ("…" if start else "") + blob[start:end].strip() + ("…" if end < len(blob) else "")
+
+
 async def _attach_people(people_by_key: dict[tuple[str, str], list[dict[str, Any]]]) -> int:
     if not people_by_key:
         return 0

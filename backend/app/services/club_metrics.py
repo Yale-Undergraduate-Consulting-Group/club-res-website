@@ -116,9 +116,31 @@ async def club_metrics(db: Any, days: int) -> dict[str, Any]:
             row["replies"] += r["replied"]
             row["bounces"] += r["bounced"]
 
+    # Replies per approach. A case is one person written to (not one email), so
+    # a reply to a follow-up still counts for the template that opened the
+    # conversation. Judged like every other rate: not before MIN_SAMPLE cases.
+    reply_goal = next(goal for key, _label, _op, goal in TARGETS if key == "reply_rate")
+    approach_rows = await (await db.execute(
+        """SELECT cc.template_id, t.name AS template, cc.angle, COUNT(*) AS sent,
+                  SUM(cc.replied_at IS NOT NULL) AS replied
+           FROM campaign_contacts cc LEFT JOIN email_templates t ON t.id = cc.template_id
+           WHERE cc.sent_at IS NOT NULL AND datetime(cc.sent_at) >= datetime('now', ?)
+           GROUP BY cc.template_id, cc.angle ORDER BY sent DESC, template, cc.angle""",
+        (since,))).fetchall()
+    approaches = []
+    for r in approach_rows:
+        value = _rate(int(r["replied"]), int(r["sent"]))
+        approaches.append({
+            "template_id": r["template_id"], "template": r["template"], "angle": r["angle"],
+            "sent": int(r["sent"]), "replied": int(r["replied"]), "value": value,
+            "met": None if r["sent"] < MIN_SAMPLE or value is None else value >= reply_goal,
+        })
+
     return {
         "days": int(days),
         "min_sample": MIN_SAMPLE,
+        "reply_target": f"≥ {reply_goal}%",
+        "approaches": approaches,
         "targets": targets,
         "waiting": {"contacts": int(waiting["n"] or 0), "oldest_added_at": waiting["oldest"]},
         "members": sorted(per.values(), key=lambda m: (-m["sent"], -m["searches"], str(m["name"]).lower())),

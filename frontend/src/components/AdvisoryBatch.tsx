@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type Contact } from '../api';
 import { looksLikePerson } from '../lib/recipients';
+import { aiDraftingUnavailable } from '../lib/aiDrafting';
+import AiUnavailableNotice from './campaigns/AiUnavailableNotice';
 
 /**
  * The people chosen in Find people, each written to on their own.
@@ -46,6 +48,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<number | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [aiDown, setAiDown] = useState(false);
   const stopRef = useRef(false);
 
   useEffect(() => {
@@ -76,6 +79,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
     stopRef.current = false;
     setRunning(true);
     setNote('');
+    setAiDown(false);
     // One citation lookup per company, not per person: it only ever returns
     // projects an admin marked discussable, so it is safe to reuse.
     const citations = new Map<string, Promise<string>>();
@@ -113,13 +117,21 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
               break;
             } catch (e) {
               const message = e instanceof Error ? e.message : '';
-              if (!TRANSIENT.test(message) || attempt >= BACKOFF_MS.length || stopRef.current) throw e;
+              if (aiDraftingUnavailable(e) || !TRANSIENT.test(message) || attempt >= BACKOFF_MS.length || stopRef.current) throw e;
               await new Promise((resolve) => window.setTimeout(resolve, BACKOFF_MS[attempt]));
             }
           }
           setStatus((s) => ({ ...s, [id]: 'done' }));
         } catch (e) {
           const message = e instanceof Error ? e.message : 'Draft failed';
+          if (aiDraftingUnavailable(e)) {
+            // The model is off for everyone and the rest would fail the same
+            // way: stop, and offer the way that needs no model.
+            stopRef.current = true;
+            setAiDown(true);
+            setStatus((s) => ({ ...s, [id]: 'waiting' }));
+            continue;
+          }
           const budgetSpent = /budget for this month is used up/i.test(message);
           setStatus((s) => ({ ...s, [id]: budgetSpent ? 'waiting' : 'failed' }));
           setReason((r) => ({ ...r, [id]: message }));
@@ -274,6 +286,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
       )}
 
       {note && <p className="text-xs text-amber-900" role="alert">{note}</p>}
+      {aiDown && <AiUnavailableNotice contactIds={writable.map((p) => p.id)} label="Advisory outreach" />}
     </section>
   );
 }

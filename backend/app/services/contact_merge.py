@@ -88,6 +88,7 @@ def merge_contacts(
             matched["title"] = matched.get("title") or c.get("title")
             matched["source_url"] = matched.get("source_url") or c.get("source_url")
             matched["discovery_context"] = matched.get("discovery_context") or c.get("discovery_context")
+            matched["yale_signal"] = matched.get("yale_signal") or c.get("yale_signal")
             matched["contact_source"] = matched.get("contact_source") or "web_discovery"
             matched["confidence"] = _best_confidence(
                 matched.get("confidence"),

@@ -27,6 +27,25 @@ from typing import Any
 # rendering cannot fail halfway through a send.
 FIELDS = ("first", "last", "full_name", "title", "company", "date")
 
+# Shown beside the template editor, so a member sees what each one becomes.
+FIELD_HELP = {
+    "first": "their first name",
+    "last": "their last name (blank for a one-word name)",
+    "full_name": "their full name",
+    "title": "their job title",
+    "company": "their employer",
+    "date": "the day the email is written",
+}
+
+# The preview in the template editor renders against this made-up person, so
+# no real contact's details appear while a member is still typing.
+SAMPLE_RECIPIENT = {
+    "name": "Alex Rivera",
+    "title": "Head of Partnerships",
+    "company": "Northwind Health",
+    "email": "alex.rivera@example.com",
+}
+
 _PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 
 

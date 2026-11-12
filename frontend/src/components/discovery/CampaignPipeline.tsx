@@ -6,12 +6,12 @@ import RecipientPicker, { type PickerMode } from './RecipientPicker';
 import CompanyLanes, { type Lane } from './CompanyLanes';
 import RoleSuggestionBubbles from './RoleSuggestionBubbles';
 import { Button, Chip } from '../ui/Primitives';
-import { LEVEL_TITLES, companyKey, defaultSelection } from '../../lib/recipients';
+import { FUNCTIONS, LEVEL_TITLES, companyKey, defaultSelection, type Fn } from '../../lib/recipients';
 import {
   WANTED_LABEL, companyStatus, dedupePeople, foundAsPerson, foundNotOnFile, matchesWanted,
   type CompanyStatus, type Wanted,
 } from '../../lib/peopleSheet';
-import { type ChosenCompany, type CompanyRun, useDiscoveryRuns } from '../../lib/useDiscoveryRuns';
+import { type ChosenCompany, type CompanyRun, type SearchOptions, useDiscoveryRuns } from '../../lib/useDiscoveryRuns';
 
 /**
  * Companies to a reviewable campaign, in the order the work is actually done.
@@ -308,6 +308,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   // Who to look for is one choice; titles in the member's own words are
   // optional and, when given, win. Nobody has to type a title to search.
   const [level, setLevel] = useState<Wanted>('working');
+  const [fn, setFn] = useState<Fn | ''>('');
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
   // The goal a search keeps going for: it stops at this many qualified
@@ -545,8 +546,10 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   // What a search is told, read when it starts rather than when it was
   // queued: changing who to look for while companies wait changes what all
   // of them look for.
-  const searchOptionsRef = useRef({ titleHints: searchTitles, maxProspects, level });
-  useEffect(() => { searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level }; }, [searchTitles, maxProspects, level]);
+  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, level, function: fn || undefined });
+  useEffect(() => {
+    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level, function: fn || undefined };
+  }, [searchTitles, maxProspects, level, fn]);
 
   // One search, from wherever it is asked for: the lane, the sheet header for
   // the focused company, or on its own when a company arrives with nobody on file.
@@ -698,6 +701,19 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
                 </Chip>
               ))}
             </div>
+            {/* Optional: asks the first searches for one function's titles. */}
+            <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600">
+              Function
+              <select
+                value={fn}
+                onChange={(e) => setFn(e.target.value as Fn | '')}
+                aria-label="Function to look for"
+                className="rounded-lg border border-pale-sky bg-white px-3 py-1.5 text-sm font-normal text-deep-navy"
+              >
+                <option value="">Any function</option>
+                {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              </select>
+            </label>
             <p className="mt-1 text-xs text-slate-500">
               Searching for: {searchTitles}{' · '}
               <button type="button" className="underline" onClick={() => setShowOtherTitles((v) => !v)}>

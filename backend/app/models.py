@@ -74,6 +74,10 @@ class CampaignContactAdd(BaseModel):
     contact_ids: list[int] = Field(min_length=1, max_length=500)
     email_subjects: Optional[dict[str, str]] = None  # contact_id -> subject
     email_bodies: Optional[dict[str, str]] = None    # contact_id -> body
+    # A saved template fills the subject and message of contacts given none,
+    # and with `angle` is recorded on each row (Admin → Metrics, "What earns replies").
+    template_id: Optional[int] = None
+    angle: Optional[str] = Field(default=None, max_length=40)
 
 
 class Campaign(BaseModel):

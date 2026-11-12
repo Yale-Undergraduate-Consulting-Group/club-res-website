@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.auth_deps import get_current_user
 from app.database import get_db, row_to_dict
+from app.services.company_register import FUNCTION_IDS
 from app.services.yucgoutreach_discovery import (
     YUCG_MAX_PROSPECTS,
     build_yucgoutreach_excel_bytes,
@@ -38,6 +39,11 @@ class YucgOutreachRunCreate(BaseModel):
     # Who to look for: team leads (default), senior leaders or board. The goal
     # counts people at this level; the searches and ranking follow it.
     level: Literal["working", "executive", "board"] = "working"
+    # What the people do: finance, operations... The first wave of searches asks
+    # for that function's titles. Absent means any.
+    function: Literal[
+        "finance", "strategy", "operations", "marketing", "sales", "people", "technology", "legal", "general",
+    ] | None = None
 
 
 def _member_research_json(text: str | None) -> str | None:
@@ -121,6 +127,7 @@ async def create_run(body: YucgOutreachRunCreate, user: dict = Depends(get_curre
             max_prospects=body.max_prospects,
             worker_concurrency=body.worker_concurrency,
             level=body.level,
+            function=body.function,
         )
         await db.commit()
     finally:
@@ -361,27 +368,40 @@ async def get_run(run_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/runs/{run_id}/prospects")
-async def list_prospects(run_id: int, user: dict = Depends(get_current_user), limit: int = 500):
+async def list_prospects(
+    run_id: int, user: dict = Depends(get_current_user), limit: int = 500, function: str | None = None,
+):
+    """A run's people, Yale-tied first and then by score. ``function`` keeps the
+    people whose title classifies into it (see company_register.FUNCTIONS)."""
     if not await _get_run_for_user(run_id, user["id"], shared=True):
         raise HTTPException(404, "Run not found")
+    if function is not None and function not in FUNCTION_IDS:
+        raise HTTPException(422, "Unknown function")
     limit = max(1, min(limit, 2000))
     db = await get_db()
     try:
+        # The function is read from the title in Python, so a filtered listing
+        # reads the whole run (bounded by YUCG_MAX_PROSPECTS) and then pages;
+        # paging first would drop matches that sit past the limit.
         cur = await db.execute(
-            "SELECT * FROM yucgoutreach_prospects WHERE run_id = ? ORDER BY score DESC, id LIMIT ?",
-            (run_id, limit),
+            """SELECT * FROM yucgoutreach_prospects WHERE run_id = ?
+               ORDER BY (yale_signal IS NOT NULL AND yale_signal != '') DESC, score DESC, id"""
+            + ("" if function else " LIMIT ?"),
+            (run_id,) if function else (run_id, limit),
         )
         rows = await cur.fetchall()
         # The same level the contacts list gives a title, so the sheet can put
         # the people who match the chosen level first.
-        from app.services.company_register import classify_person_level
+        from app.services.company_register import classify_function, classify_person_level
 
         out = []
         for r in rows:
             row = row_to_dict(r)
             row["person_level"] = classify_person_level(row.get("title"))
-            out.append(row)
-        return out
+            row["person_function"] = classify_function(row.get("title"))
+            if function is None or row["person_function"] == function:
+                out.append(row)
+        return out[:limit]
     finally:
         await db.close()
 
