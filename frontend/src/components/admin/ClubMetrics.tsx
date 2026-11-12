@@ -80,6 +80,50 @@ export default function ClubMetrics() {
       </section>
 
       {data && (
+        <section className="surface-card rounded-xl p-6 space-y-3" data-testid="approach-metrics">
+          <div>
+            <h2 className="font-semibold text-deep-navy">What earns replies</h2>
+            <p className="text-sm text-slate-600">
+              Per template and approach, people written to in the last {data.days} days and how many replied (target {data.reply_target}).
+              An approach is judged once it has at least {data.min_sample} cases.
+            </p>
+          </div>
+          {data.approaches.length === 0 ? <EmptyState title="Nothing sent in this period" /> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-pale-sky text-left">
+                    <th className="py-2">Template</th>
+                    <th className="py-2">Approach</th>
+                    <th className="py-2">Written to</th>
+                    <th className="py-2">Replied</th>
+                    <th className="py-2">Reply rate</th>
+                    <th className="py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.approaches.map((row) => (
+                    <tr key={`${row.template_id}:${row.angle}`} className="border-b border-pale-sky/50">
+                      <td className="py-2">{row.template ?? (row.template_id ? 'A deleted template' : 'Written by hand')}</td>
+                      <td className="py-2">{row.angle ?? '—'}</td>
+                      <td className="py-2">{row.sent}</td>
+                      <td className="py-2">{row.replied}</td>
+                      <td className="py-2 font-semibold">{row.value === null ? '—' : `${row.value}%`}</td>
+                      <td className="py-2">
+                        {row.met === null
+                          ? <StatusBadge tone="neutral">{`Not enough data (${row.sent} of ${data.min_sample})`}</StatusBadge>
+                          : <StatusBadge tone={row.met ? 'success' : 'warning'}>{row.met ? 'On target' : 'Below target'}</StatusBadge>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {data && (
         <section className="surface-card rounded-xl p-6">
           <h2 className="mb-3 font-semibold text-deep-navy">By member, last {data.days} days</h2>
           {data.members.length === 0 ? <EmptyState title="No active members" /> : (

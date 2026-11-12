@@ -12,6 +12,12 @@ const metrics = (days: number) => ({
     { key: 'reply_rate', label: 'Reply rate', count: 1, of: 2, value: 50, target: '≥ 5%', met: null },
   ],
   waiting: { contacts: days === 30 ? 16 : 0, oldest_added_at: '2026-11-01 10:00:00' },
+  reply_target: '≥ 5%',
+  approaches: [
+    { template_id: 3, template: 'Intro', angle: 'intro', sent: 12, replied: 3, value: 25, met: true },
+    { template_id: 4, template: 'Project pitch', angle: 'project pitch', sent: 8, replied: 0, value: 0, met: false },
+    { template_id: null, template: null, angle: 'social proof', sent: 2, replied: 1, value: 50, met: null },
+  ],
   members: [{ user_id: 2, name: 'Ana', searches: days, drafts: 4, sent: 3, replies: 1, bounces: 0, ready_to_send: true }],
   not_measured: ['Positive replies: replies are not classified yet.'],
 });
@@ -34,6 +40,13 @@ test('admins see targets judged against enough data, and switch the period', asy
   await expect(page.getByTestId('target-reply_rate')).toContainText('Not enough data (2 of 5)');
   await expect(page.getByText('16 contacts are waiting in draft or paused campaigns')).toBeVisible();
   await expect(page.getByTestId('member-metrics-2')).toContainText('Ana');
+
+  // What earns replies: judged per template and approach, never on a handful of cases.
+  const approaches = page.getByTestId('approach-metrics');
+  await expect(approaches.getByRole('row', { name: /Intro/ })).toContainText('On target');
+  await expect(approaches.getByRole('row', { name: /Project pitch/ })).toContainText('Below target');
+  await expect(approaches.getByRole('row', { name: /social proof/ })).toContainText('Written by hand');
+  await expect(approaches.getByRole('row', { name: /social proof/ })).toContainText('Not enough data (2 of 5)');
 
   await page.getByRole('button', { name: 'Last 7 days' }).click();
   await expect(page.getByRole('heading', { name: 'By member, last 7 days' })).toBeVisible();

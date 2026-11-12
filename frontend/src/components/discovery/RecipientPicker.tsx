@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { type Contact } from '../../api';
 import {
-  LEVEL_RANK, type Level,
-  companyKey, defaultSelection, isWritable, levelOf,
+  FUNCTIONS, LEVEL_RANK, type Fn, type Level,
+  companyKey, defaultSelection, functionOf, isWritable, levelOf,
 } from '../../lib/recipients';
 import {
-  fitRank, foundAsPerson, foundNotOnFile, matchesWanted, type CompanyStatus, type Wanted,
+  foundAsPerson, foundNotOnFile, matchesWanted, sheetOrder, type CompanyStatus, type Wanted,
 } from '../../lib/peopleSheet';
 import type { ChosenCompany, CompanyRun, FoundPerson } from '../../lib/useDiscoveryRuns';
 import { PersonHeadline, PersonWhy } from './PersonDetails';
@@ -72,6 +72,7 @@ export default function RecipientPicker({
 }) {
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState<'all' | Level>('all');
+  const [fn, setFn] = useState<'all' | Fn>('all');
   const [hideWritten, setHideWritten] = useState(true);
   const [adding, setAdding] = useState<Record<string, true>>({});
   // Companies whose people at other levels are unfolded, by key.
@@ -97,14 +98,15 @@ export default function RecipientPicker({
     const term = filtering ? query.trim().toLowerCase() : '';
     return people
       .filter((p) => (!filtering || level === 'all' ? true : levelOf(p) === level))
+      .filter((p) => (!filtering || fn === 'all' ? true : functionOf(p) === fn))
       // A person already written to is hidden, never silently unselectable:
       // the toggle says how many are behind it.
       .filter((p) => (filtering && hideWritten ? !p.last_sent_at : true))
       .filter((p) => !term
         || `${p.name || ''} ${p.title || ''} ${p.email || ''} ${p.company || ''}`.toLowerCase().includes(term))
-      .sort((a, b) => fitRank(a, wanted) - fitRank(b, wanted)
+      .sort((a, b) => sheetOrder(a, b, wanted)
         || (a.name || a.email || '').localeCompare(b.name || b.email || ''));
-  }, [mode, people, chosen, query, level, hideWritten, wanted]);
+  }, [mode, people, chosen, query, level, fn, hideWritten, wanted]);
 
   const groups = useMemo(() => {
     const map = new Map<string, { company: ChosenCompany; rows: Contact[]; found: FoundPerson[] }>();
@@ -115,10 +117,14 @@ export default function RecipientPicker({
       const key = companyKey(company.name);
       if (!map.has(key)) {
         const fresh = mode === 'review' || !(found[key] || []).length ? [] : foundNotOnFile(people, found[key]);
+        // The function filter narrows what a search found as it does the people
+        // on file; the level filter has never applied to found rows.
+        const shown = mode === 'select' && fn !== 'all'
+          ? fresh.filter((p) => functionOf(foundAsPerson(p)) === fn) : fresh;
         map.set(key, {
           company,
           rows: [],
-          found: [...fresh].sort((a, b) => fitRank(foundAsPerson(a), wanted) - fitRank(foundAsPerson(b), wanted)),
+          found: [...shown].sort((a, b) => sheetOrder(foundAsPerson(a), foundAsPerson(b), wanted)),
         });
       }
     }
@@ -130,7 +136,7 @@ export default function RecipientPicker({
     const entries = [...map.entries()];
     // In review, a company with nobody going to it is not a recipient group.
     return mode === 'review' ? entries.filter(([, g]) => g.rows.length > 0) : entries;
-  }, [visible, companies, found, people, mode, wanted]);
+  }, [visible, companies, found, people, mode, wanted, fn]);
 
   const writableVisible = visible.filter(isWritable);
   const hiddenWritten = people.filter((p) => p.last_sent_at).length;
@@ -248,6 +254,18 @@ export default function RecipientPicker({
               <option value="unknown">Role unclear</option>
             </select>
           </label>
+          <label className="text-xs text-slate-600">
+            Function
+            <select
+              value={fn}
+              onChange={(e) => setFn(e.target.value as 'all' | Fn)}
+              className="mt-1 block rounded-lg border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+              data-testid="function-filter"
+            >
+              <option value="all">Any function</option>
+              {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          </label>
           <label className="flex items-center gap-2 pb-2 text-xs text-slate-600">
             <input type="checkbox" checked={hideWritten} onChange={(e) => setHideWritten(e.target.checked)} />
             Hide the {hiddenWritten} already written to
@@ -271,7 +289,7 @@ export default function RecipientPicker({
         // folds behind one count. A search at a large company otherwise opens
         // on its CEO, CFO and COO. A narrowed list or a typed search is the
         // member asking to see more, so nothing folds then.
-        const collapsing = mode !== 'review' && level === 'all' && !query.trim();
+        const collapsing = mode !== 'review' && level === 'all' && fn === 'all' && !query.trim();
         const open = Boolean(showOthers[key]);
         const restRows = collapsing ? rows.filter((p) => !matchesWanted(p, wanted)) : [];
         const restFound = collapsing ? group.found.filter((p) => !matchesWanted(foundAsPerson(p), wanted)) : [];
@@ -393,7 +411,7 @@ export default function RecipientPicker({
             <div id={bodyId} hidden={isFolded}>
               {peopleHere === 0 && !searching && mode !== 'review' && (
                 <p className="px-3 py-2 text-sm text-slate-500">
-                  {selectable && (query.trim() || level !== 'all')
+                  {selectable && (query.trim() || level !== 'all' || fn !== 'all')
                     ? 'Nobody matches your filters. Widen them above.'
                     : 'Nobody on file here yet. Use Find people to search, or import a list.'}
                 </p>

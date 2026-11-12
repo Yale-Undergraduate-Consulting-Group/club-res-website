@@ -12,6 +12,7 @@ time is inside the send window, and it counts against the sender's own daily lim
 """
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
+from app.services.send_gating import company_reply, replied_companies
 
 AUTO_REPLY_DEFER_BUSINESS_DAYS = 2
 # A paused campaign stops its follow-ups; the gate's hold concerns unsent rows only.
@@ -89,7 +90,8 @@ async def run_follow_up_sequences() -> dict:
 
             # Campaign contacts: initial send done, sequence not finished, no reply or bounce yet
             cursor = await db.execute(
-                """SELECT cc.id, cc.contact_id, cc.sequence_step_sent, cc.last_sequence_sent_at, cc.sent_by_user_id
+                """SELECT cc.id, cc.contact_id, cc.sequence_step_sent, cc.last_sequence_sent_at, cc.sent_by_user_id,
+                          c.company, c.company_domain, c.email
                    FROM campaign_contacts cc
                    JOIN contacts c ON c.id = cc.contact_id
                    WHERE cc.campaign_id = ? AND cc.status = 'sent'
@@ -98,10 +100,14 @@ async def run_follow_up_sequences() -> dict:
                 (cid,),
             )
             contacts = await cursor.fetchall()
+            replied = await replied_companies(db)
 
             for cc in contacts:
                 if cc["sent_by_user_id"] != sender_user_id:
                     errors.append({"campaign_contact_id": cc["id"], "error": "Original sender does not match campaign"})
+                    continue
+                # Someone at this company answered a member: nobody follows up there any more.
+                if company_reply(replied, cc["company"], cc["company_domain"], cc["email"]):
                     continue
                 step_idx = cc["sequence_step_sent"]
                 step = await (await db.execute(
@@ -159,6 +165,10 @@ async def run_follow_up_sequences() -> dict:
                     AND camp.status IN ({marks}) AND camp.sequence_id=? AND u.is_active=1""",
                     (cc["id"], step_idx, sender_user_id, sender_user_id, sender_user_id, *FOLLOW_UP_CAMPAIGN_STATES, seq_id),
                 )).fetchone()
+                if current and company_reply(
+                    await replied_companies(db), cc["company"], cc["company_domain"], cc["email"]
+                ):
+                    current = None
                 if not current:
                     await db.commit()
                     continue

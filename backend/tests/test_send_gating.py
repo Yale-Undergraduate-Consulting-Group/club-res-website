@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["JWT_SECRET"] = "send-gating-test-secret-xxxxxxxxxxxx"
 os.environ["CAMPAIGN_SEND_DELAY_SEC"] = "0"
 os.environ["SEND_WINDOW_HOURS"] = "off"
+os.environ["COMPANY_SEND_CAP"] = "0"  # the per-company cap has its own tests; these send whole companies
 
 from app.database import get_db, init_db
 from app.routers.campaigns import drain_campaign

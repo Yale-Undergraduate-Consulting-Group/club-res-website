@@ -12,6 +12,8 @@ import AdvisoryBatch from '../components/AdvisoryBatch';
 import { useAiModel } from '../contexts/useAiModel';
 import { useUrlTab } from '../lib/useUrlTab';
 import { Button, Chip } from '../components/ui/Primitives';
+import { aiDraftingUnavailable } from '../lib/aiDrafting';
+import AiUnavailableNotice from '../components/campaigns/AiUnavailableNotice';
 
 
 /** One screen of companies. The catalogue can hold tens of thousands, so the
@@ -191,6 +193,7 @@ export default function EmailStudio() {
   });
   const [loading, setLoading] = useState(false);
   const [generationError, setGenerationError] = useState('');
+  const [aiDown, setAiDown] = useState(false);
   const [testSending, setTestSending] = useState(false);
   const [tone, setTone] = useState('professional');
   const [length, setLength] = useState('short');
@@ -367,6 +370,7 @@ export default function EmailStudio() {
   const generateEmail = async () => {
     setLoading(true);
     setGenerationError('');
+    setAiDown(false);
     try {
       if (selected?.id) {
         const instructions = [
@@ -420,7 +424,8 @@ export default function EmailStudio() {
       }
     } catch (e) {
       console.error(e);
-      setGenerationError(e instanceof Error ? e.message : 'Draft generation is unavailable. Your current draft was not changed.');
+      if (aiDraftingUnavailable(e)) setAiDown(true);
+      else setGenerationError(e instanceof Error ? e.message : 'Draft generation is unavailable. Your current draft was not changed.');
     } finally {
       setLoading(false);
     }
@@ -1102,6 +1107,7 @@ export default function EmailStudio() {
               <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">AI assistance</h2>
             </div>
             <div className="email-studio-generator-body">
+            {aiDown && <AiUnavailableNotice contactIds={selected?.id ? [selected.id] : []} label={selected?.company || 'Studio draft'} />}
             {generationError && <p className="ui-notice ui-notice--danger" role="alert">{generationError}</p>}
             <div className="email-studio-field email-studio-field--grow">
                 <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Email goal</label>

@@ -147,6 +147,48 @@ def title_from_snippet(snippet: str | None, company: str | None) -> str:
     return ""
 
 
+def title_from_evidence(
+    name: str, companies: list[str], *, headline: str = "", text: str = "", own_page: bool = False,
+) -> str:
+    """The job title that text already collected about this person states, or
+    "" when it states none. Nothing is guessed: a title comes back only as a
+    role the headline ("Jane Doe - Director of Finance - Acme | LinkedIn") or
+    the snippet ("Director of Finance at Acme") gives at one of ``companies``.
+
+    ``own_page`` says the text is the person's own profile, so any "Title at
+    Company" in it is theirs. Anywhere else (a team page, a press story) only
+    the first sentence right after their name counts, so the next person's role
+    is never read as theirs. A title that contains the person's own name was
+    read from the wrong place and is dropped."""
+    words = [w for w in re.findall(r"[a-z]+", (name or "").lower()) if len(w) > 1]
+    if len(words) < 2:
+        return ""
+    name_re = r"\s+".join(re.escape(part) for part in name.split())
+
+    def clean(title: str) -> str:
+        low = title.lower()
+        return "" if any(re.search(rf"\b{re.escape(w)}\b", low) for w in words) else title
+
+    if all(w in (headline or "").lower() for w in (words[0], words[-1])):
+        for company in companies:
+            title = clean(title_from_search_result(headline, company))
+            if title:
+                return title
+    snippet = text or ""
+    if own_page:
+        snippet = re.sub(name_re, ", ", snippet, flags=re.I)
+    else:
+        found = re.search(name_re, snippet, re.I)
+        if not found:
+            return ""
+        snippet = re.split(r"[.·|•\n]", snippet[found.end():found.end() + 160], maxsplit=1)[0]
+    for company in companies:
+        title = clean(title_from_snippet(snippet, company))
+        if title:
+            return title
+    return ""
+
+
 async def observed_titles(company: str, domain: str | None) -> list[dict[str, Any]]:
     """Titles the system has already seen at this company, with counts and
     the strongest source each came from."""

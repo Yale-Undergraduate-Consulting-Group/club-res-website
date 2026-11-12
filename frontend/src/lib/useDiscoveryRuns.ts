@@ -4,7 +4,7 @@ import {
   type Contact, type DiscoveryProspect, type DiscoveryRun, type EntityProfile, type ImportOutcome,
   type ResolvedAlternative,
 } from '../api';
-import { companyKey, isTooSenior, looksLikePerson } from './recipients';
+import { companyKey, isTooSenior, looksLikePerson, type Fn } from './recipients';
 import { dedupePeople, foundAsPerson } from './peopleSheet';
 
 /**
@@ -109,8 +109,11 @@ function pausedOf(run: DiscoveryRun): string | undefined {
 }
 
 /** `level` is who to look for: the server's goal counts people at that level,
- *  and its searches and ranking follow it. */
-export type SearchOptions = { titleHints: string; maxProspects: number; level: 'working' | 'executive' | 'board'; domain?: string };
+ *  and its searches and ranking follow it. `function` (finance, operations...)
+ *  is optional and biases the first searches toward that function's titles. */
+export type SearchOptions = {
+  titleHints: string; maxProspects: number; level: 'working' | 'executive' | 'board'; domain?: string; function?: Fn;
+};
 
 /** Options are read when the search starts, not when it joins the queue:
  *  a member who changes who to look for while three companies wait should
@@ -287,6 +290,7 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
         title_hints: options.titleHints.trim() || undefined,
         max_prospects: options.maxProspects,
         level: options.level,
+        function: options.function,
         // A country only when the member chose one: by default the search
         // skips the excluded entities and their countries, not everyone
         // outside the home country (Barclays' New York staff are Barclays).

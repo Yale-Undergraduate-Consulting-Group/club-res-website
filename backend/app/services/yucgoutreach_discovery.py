@@ -32,6 +32,8 @@ from app.services.contact_scraper import (
     scrape_contacts_from_domain,
 )
 from app.services.contact_verify_pipeline import run_contact_verify_pipeline
+from app.services.company_register import FUNCTION_IDS, yale_evidence
+from app.services.role_suggestions import title_from_evidence
 from app.services.web_contact_discovery import discover_contacts_from_web
 
 
@@ -71,6 +73,16 @@ _STOP_LABEL = {
 # (at most ~25 queries), at most DISCOVERY_MAX_ROUNDS x DISCOVERY_ROUND_QUERIES
 # = 32 of them. So <= ~43 searches for a run that never reaches its goal, and
 # ~18 for one the first wave satisfies.
+
+
+async def add_yale_signal(db) -> None:
+    """Migration outreach:6. The words that tie a found person to Yale, on the
+    person a search found and on the contact they become. NULL means no
+    evidence was collected; people found before this migration keep NULL."""
+    for table in ("yucgoutreach_prospects", "contacts"):
+        have = {r[1] for r in await (await db.execute(f"PRAGMA table_info({table})")).fetchall()}
+        if "yale_signal" not in have:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN yale_signal TEXT")
 
 
 async def _llm_json(prompt: str) -> dict[str, Any]:
@@ -203,6 +215,18 @@ def _level_from_spec(spec: dict[str, Any]) -> str:
     except json.JSONDecodeError:
         data = {}
     return wanted_level(data.get("level") if isinstance(data, dict) else None)
+
+
+def _function_from_spec(spec: dict[str, Any]) -> str | None:
+    """The function the member asked for (finance, operations...), or None for
+    any. Runs made before the choice existed carry none."""
+    raw = spec.get("research_json") or ""
+    try:
+        data = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        data = {}
+    value = data.get("function") if isinstance(data, dict) else None
+    return value if value in FUNCTION_IDS else None
 
 
 def _entity_from_spec(spec: dict[str, Any], company: str | None = None) -> dict[str, Any]:
@@ -385,6 +409,13 @@ Results:
         if len(out) >= max_n:
             break
     return out
+
+
+def _yale_signal(contact: dict) -> str:
+    """The words that tie this person to Yale, or "". The sources that read a
+    whole page set it; the rest is whatever title and context they collected."""
+    return contact.get("yale_signal") or yale_evidence(
+        f"{contact.get('title') or ''}\n{contact.get('discovery_context') or ''}")
 
 
 def _quality_score(contact: dict, title_hints: str = "", level: str | None = None) -> float:
@@ -647,6 +678,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     domain_in = (spec.get("company_domain") or "").strip()
     title_hints = _title_hints_from_spec(spec)
     level = _level_from_spec(spec)
+    function = _function_from_spec(spec)
     from app.services.company_register import fit_level
     level_word = _LEVEL_WORD[level]
     entity = _entity_from_spec(spec, company)
@@ -719,7 +751,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             return []
         return await discover_contacts_from_web(
             cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
-            seen=seen, level=level,
+            seen=seen, level=level, function=function,
         )
 
     async def _roster() -> tuple[list[dict], str]:
@@ -901,6 +933,9 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     # the ranking reads: the raw search title ("Name - Director
                     # of X - Acme | LinkedIn") could classify differently.
                     c = dict(c, title=_clean_title(c.get("title"), name, company))
+                    if not c["title"]:
+                        # Only what the collected text states, never a guess.
+                        c["title"] = title_from_evidence(name, [company], text=c.get("discovery_context") or "") or None
                     score = _quality_score(c, title_hints, level)
                     secondary = score - 3 if c.get("contact_source") == "linkedin_inferred" else score
                     linkedin = c.get("linkedin_url") or ""
@@ -922,8 +957,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                             qualification_notes, contact_profile_url, linkedin_url, fit_status,
                             score, country, employees, industry, keywords_1, keywords_2,
                             yucgoutreach_score, evidence_json,
-                            email_verification_status, ai_verdict, ai_reason, contact_source
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            email_verification_status, ai_verdict, ai_reason, contact_source, yale_signal
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             run_id,
                             first,
@@ -954,6 +989,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                             c.get("ai_verdict"),
                             c.get("ai_reason"),
                             c.get("contact_source"),
+                            _yale_signal(c) or None,
                         ),
                     )
                     written.append(c)
@@ -1037,7 +1073,10 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             candidates = _gate_rows(
                 [c for c in verified if c.get("ai_verdict") != "junk"], entity, skips, company,
             )
-            candidates.sort(key=lambda row: _quality_score(row, title_hints, level), reverse=True)
+            # People tied to Yale first, then by score: the order they are
+            # stored in, which the listing keeps within a score.
+            candidates.sort(key=lambda row: (bool(_yale_signal(row)), _quality_score(row, title_hints, level)),
+                            reverse=True)
             written = await _timed(timings, "save", _save(candidates))
             saved_rows.extend(written)
             return len(written)
@@ -1048,7 +1087,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         # previous round is being verified whenever even a clean sweep of that
         # round would leave the run short, so no search is spent on a run
         # that could already reach its target.
-        pool = round_query_pool(cn, domain, title_hints, entity, level) if web_on else []
+        pool = round_query_pool(cn, domain, title_hints, entity, level, function) if web_on else []
         # Why no further round was started. Only "exhausted" claims the company
         # has no more people; the others say the search itself stopped.
         state = {"rounds": 0, "why": None, "stop": "exhausted"}
@@ -1073,7 +1112,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             state["rounds"] += 1
             return asyncio.ensure_future(_timed(timings, "web_search_rounds", discover_contacts_from_web(
                 cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
-                queries=batch, seen=seen, level=level,
+                queries=batch, seen=seen, level=level, function=function,
             )))
 
         first = _fresh(merged)
@@ -1166,6 +1205,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 "verified": totals["verified"],
                 "saved": inserted,
                 "level": level,
+                "function": function,
                 "level_found": matched,
                 "junk_filtered": totals["junk"],
                 "discovery_log_count": totals["log"],

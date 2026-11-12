@@ -84,13 +84,44 @@ export function looksLikePerson(person: { name?: string | null }): boolean {
   return words.every((w) => /^[A-Z\u00C0-\u024F][\p{L}'’.-]*$/u.test(w) && !NOT_A_NAME.has(w.toLowerCase()));
 }
 
+/** What a person does, as the server reads it from their title (finance,
+ *  operations...). The server decides so the picker's filter, the listing's
+ *  and a search for one function all mean the same thing. */
+export type Fn = 'finance' | 'strategy' | 'operations' | 'marketing' | 'sales' | 'people' | 'technology' | 'legal' | 'general';
+
+export const FUNCTIONS: { id: Fn; label: string }[] = [
+  { id: 'finance', label: 'Finance' },
+  { id: 'strategy', label: 'Strategy / Corp Dev' },
+  { id: 'operations', label: 'Operations' },
+  { id: 'marketing', label: 'Marketing' },
+  { id: 'sales', label: 'Sales / BD' },
+  { id: 'people', label: 'HR / People' },
+  { id: 'technology', label: 'Technology / Product' },
+  { id: 'legal', label: 'Legal' },
+  { id: 'general', label: 'General management' },
+];
+
+const FN_IDS = new Set<string>(FUNCTIONS.map((f) => f.id));
+
+/** The person's function, or null when their title names none. */
+export function functionOf(person: { person_function?: unknown }): Fn | null {
+  const raw = typeof person.person_function === 'string' ? person.person_function : '';
+  return FN_IDS.has(raw) ? (raw as Fn) : null;
+}
+
+/** The words that tie someone to Yale, as the search collected them, or ''.
+ *  Shown as the badge's hover text, so a member can judge the evidence. */
+export function yaleOf(person: { yale_signal?: unknown }): string {
+  return typeof person.yale_signal === 'string' ? person.yale_signal.trim() : '';
+}
+
 /** The default tick: people who work there and can be reached, minus anyone
  *  already written to. A board seat, someone too senior to answer, or a row
  *  whose name is not a person's is never ticked by default - reaching one is
- *  a deliberate act here, not a side effect of pressing "select all". */
+ *  a deliberate act here, not a side effect of pressing "select all". People
+ *  tied to Yale come first; the order is otherwise the list's own. */
 export function defaultSelection(people: Contact[]): number[] {
-  return people
-    .filter((p) => isWritable(p) && !p.last_sent_at && levelOf(p) !== 'board'
-      && !isTooSenior(p) && looksLikePerson(p))
-    .map((p) => p.id);
+  const ticked = people.filter((p) => isWritable(p) && !p.last_sent_at && levelOf(p) !== 'board'
+    && !isTooSenior(p) && looksLikePerson(p));
+  return [...ticked.filter((p) => yaleOf(p)), ...ticked.filter((p) => !yaleOf(p))].map((p) => p.id);
 }
