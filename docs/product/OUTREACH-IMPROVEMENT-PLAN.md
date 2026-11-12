@@ -88,8 +88,10 @@ This is the weakest area, and it is not a rough edge; it is absent.
    *Resolved 2026-11-10 (bounce, opt-out reply, out of office; the rest stays open):*
    a bounce and any reply (an opt-out is a reply) stop the sequence, and an
    automatic reply defers the next step to two business days after it
-   (`follow_up_job.py`). A teammate's reply, a booked meeting and a per-company
-   touch cap are still open.
+   (`follow_up_job.py`). *Resolved 2026-11-12 (teammate reply, touch cap):* a reply
+   from anyone at the company, by any member, stops every follow-up there and holds
+   pending first sends, and `COMPANY_SEND_CAP` limits first touches per company
+   across the club (`send_gating.py`). A booked meeting is still open.
 9. **No send window.** The drain runs every five minutes and sends whenever it
    fires. No business hours, no recipient timezone, no "not 03:00 on Sunday".
    For a club whose account reputation is a member's personal Gmail, this is the
@@ -105,6 +107,12 @@ This is the weakest area, and it is not a rough edge; it is absent.
     pattern confidence; nothing records which *angle* earned a reply. The app
     cannot answer "which opening works", which is the one question worth
     asking after fifty sends.
+    *Resolved 2026-11-12 (recording and reporting; feeding outcomes into the
+    Studio brief stays open): every campaign row carries the saved template and
+    the approach (`template_id`, `angle`, outreach migration 5), and Admin →
+    Metrics "What earns replies" shows people written to, replies and reply rate
+    per template and approach, judged only from five cases. Reply rate per sector
+    is not reported.*
 11. **Rejections cost quota quietly.** `_generate_with_retry` spends one
     generation, and on validator rejection spends another. The member sees
     "did not pass the draft rules" and no reason.
@@ -114,6 +122,27 @@ This is the weakest area, and it is not a rough edge; it is absent.
 12. From a target list it is still Find people → Studio → Campaign → Release as
     four destinations. The one-click flow (`outreach_flow.py`) does all of it,
     but only for a single company, reachable only from Find people.
+    *Resolved 2026-11-12 (target list and Directory; the register's selection
+    bar stays open): a Worklist and ticked Directory people each open one
+    "Queue outreach" panel: choose a template, read who is ready and who is held
+    and why, create the campaign and release it. `POST /api/campaigns/build` now
+    resolves a `target_list_id` server-side under the list's access rule. No model
+    is involved; where AI drafting is offered and the model is unavailable, the
+    member is told so and offered a template instead.*
+13. **Find people knows level, not who the club should write to first.** A found
+    person carried a title that was sometimes blank, no alumni signal anywhere,
+    and no way to ask for, or narrow to, one function (finance, operations...).
+    *Resolved 2026-11-12: a person tied to Yale by the text a search read (a
+    school, a class year, a degree; never a lock or an appliance store) is stored
+    with that evidence, listed and ticked first, and badged "Yale" with the
+    evidence on hover (`yale_evidence`, `yale_signal`, migration `outreach:6`).
+    Titles classify into nine functions (`classify_function`); the picker filters
+    by function and a search may ask for one, swapping generic first-wave
+    searches for that function's titles without adding any. A missing title is
+    recovered from the headline or snippet already collected, and left blank when
+    none states one. Open: pasted LinkedIn text has no entry point to feed
+    `yale_evidence`, and no extra page fetch is made for a person still without a
+    title.*
 
 ## Plan
 

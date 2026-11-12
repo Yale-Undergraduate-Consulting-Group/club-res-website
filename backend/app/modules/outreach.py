@@ -10,6 +10,7 @@ from app.routers import analytics, campaigns, contacts, directory, emails, outre
 from app.routers.campaigns import drain_releasing_campaigns
 from app.services.company_email_cache import unprove_scraped_patterns
 from app.services.catalog_builder import builder_tick
+from app.services.email_templates import add_approach_tracking
 from app.services.company_register import (
     add_register_search_index,
     backfill_register_entities,
@@ -23,7 +24,11 @@ from app.services.notification_digest_job import run_notification_digests
 from app.services.roster_adjudicate import drain_roster_adjudication
 from app.services.roster_email import drain_roster_emails, drain_roster_verification
 from app.services.roster_watch import drain_roster_queue, enroll_prospect_companies
-from app.services.yucgoutreach_discovery import drain_queued_yucgoutreach_runs, recover_interrupted_yucgoutreach_runs
+from app.services.yucgoutreach_discovery import (
+    add_yale_signal,
+    drain_queued_yucgoutreach_runs,
+    recover_interrupted_yucgoutreach_runs,
+)
 
 MODULE = Module(
     id="outreach",
@@ -46,6 +51,8 @@ MODULE = Module(
         Migration(2, "company register name search index", add_register_search_index),
         Migration(3, "remove scrape-only format proof", unprove_scraped_patterns),
         Migration(4, "club mailbox verdicts, 250-credit ceiling", add_mailbox_verdicts),
+        Migration(5, "template and approach on campaign rows, club starter templates", add_approach_tracking),
+        Migration(6, "Yale signal on found people and contacts", add_yale_signal),
     ),
     settings=(
         Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Contact } from '../api';
-import { companyKey, defaultSelection, isTooSenior, levelOf, looksLikePerson } from './recipients';
+import {
+  FUNCTIONS, companyKey, defaultSelection, functionOf, isTooSenior, levelOf, looksLikePerson, yaleOf,
+} from './recipients';
 
 const person = (id: number, fields: Partial<Contact> = {}): Contact => ({
   id, name: 'Jane Smith', email: `p${id}@example.com`, title: 'Director of Strategy', person_level: 'working', ...fields,
@@ -58,5 +60,47 @@ describe('recipient grouping', () => {
     expect(levelOf(person(1, { person_level: 'Board' }))).toBe('unknown');
     expect(levelOf(person(1, { person_level: undefined }))).toBe('unknown');
     expect(levelOf(person(1, { person_level: 'executive' }))).toBe('executive');
+  });
+});
+
+describe('Yale first', () => {
+  it('ticks people tied to Yale ahead of the rest, in list order otherwise', () => {
+    const people = [
+      person(1),
+      person(2, { yale_signal: 'BA, Yale University' }),
+      person(3),
+      person(4, { yale_signal: 'Yale \u201905' }),
+      // Yale does not lift anyone the default tick holds back.
+      person(5, { yale_signal: 'Yale SOM', person_level: 'board' }),
+      person(6, { yale_signal: 'Yale College', email: '' }),
+      person(7, { yale_signal: 'Yale College', last_sent_at: '2026-09-01 10:00:00' }),
+      person(8, { yale_signal: 'Yale College', title: 'Chief Executive Officer' }),
+    ];
+    expect(defaultSelection(people)).toEqual([2, 4, 1, 3]);
+  });
+
+  it('reads blank evidence as no tie', () => {
+    expect(yaleOf({ yale_signal: '  ' })).toBe('');
+    expect(yaleOf({ yale_signal: null })).toBe('');
+    expect(yaleOf({ yale_signal: 'Education: Yale University ' })).toBe('Education: Yale University');
+  });
+});
+
+describe('function', () => {
+  it('reads only the functions the server names', () => {
+    expect(functionOf({ person_function: 'finance' })).toBe('finance');
+    expect(functionOf({ person_function: 'general' })).toBe('general');
+    expect(functionOf({ person_function: '' })).toBeNull();
+    expect(functionOf({ person_function: 'Finance' })).toBeNull();
+    expect(functionOf({ person_function: 'astrology' })).toBeNull();
+    expect(functionOf({})).toBeNull();
+  });
+
+  it('offers every function once, with a label', () => {
+    expect(new Set(FUNCTIONS.map((f) => f.id)).size).toBe(FUNCTIONS.length);
+    expect(FUNCTIONS.map((f) => f.id)).toEqual([
+      'finance', 'strategy', 'operations', 'marketing', 'sales', 'people', 'technology', 'legal', 'general',
+    ]);
+    expect(FUNCTIONS.every((f) => f.label.trim().length > 0)).toBe(true);
   });
 });

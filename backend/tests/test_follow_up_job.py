@@ -30,9 +30,9 @@ async def _campaign(db, campaign_id: int, status: str) -> None:
     await db.commit()
 
 
-async def _due_contact(db, n: int, campaign_id: int = 1) -> int:
+async def _due_contact(db, n: int, campaign_id: int = 1, company: str = "Acme", host: str = "acme.com") -> int:
     """A mailed contact whose step 0 follow-up was due a week ago. Returns the campaign_contact id."""
-    await db.execute("INSERT INTO contacts(id,name,email,company) VALUES (?,?,?,'Acme')", (n, f"P{n}", f"p{n}@acme.com"))
+    await db.execute("INSERT INTO contacts(id,name,email,company) VALUES (?,?,?,?)", (n, f"P{n}", f"p{n}@{host}", company))
     await db.execute(
         """INSERT INTO campaign_contacts(id,campaign_id,contact_id,email_subject,email_body,status,sent_at,
            last_sequence_sent_at,sequence_step_sent,sent_by_user_id)
@@ -109,7 +109,9 @@ async def scenario_stops_and_out_of_office() -> None:
     db = await get_db()
     await _seed_base(db)
     await _campaign(db, 1, "sent")
-    bounced, bounced_event_only, replied, fresh_auto, old_auto, clean = [await _due_contact(db, n) for n in range(1, 7)]
+    # A reply stops everyone at its company, so the replied contact sits at a company of its own.
+    bounced, bounced_event_only, fresh_auto, old_auto, clean = [await _due_contact(db, n) for n in (1, 2, 4, 5, 6)]
+    replied = await _due_contact(db, 3, company="Globex", host="globex.com")
     await _event(db, bounced, "bounced")  # also sets campaign_contacts.status
     await db.execute(
         "INSERT INTO outreach_events(message_id,kind,source_id,occurred_at) "

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, type DirectoryFilter, type DirectoryPage, type DirectoryPerson, type DirectoryProof, type DirectoryReach, type DirectorySummary } from '../api';
 import PageHeader from '../components/PageHeader';
 import { Button, Chip, EmptyState, Notice, StatusBadge } from '../components/ui/Primitives';
+import QueueOutreach from '../components/campaigns/QueueOutreach';
 
 const PAGE_SIZE = 50;
 
@@ -62,10 +63,23 @@ function backlogLine(summary: DirectorySummary): string {
   return parts.join(' · ');
 }
 
-function PersonRow({ person }: { person: DirectoryPerson }) {
+function PersonRow({ person, selected, onToggle }: { person: DirectoryPerson; selected: boolean; onToggle: (contactId: number) => void }) {
   const proof = PROOF[person.proof];
+  const queueable = person.ready && person.contact_id !== null;
   return (
     <tr className="border-b border-[var(--border)] align-top">
+      <td className="py-2 pr-2">
+        {queueable ? (
+          <input
+            type="checkbox"
+            aria-label={`Select ${person.name || person.email}`}
+            checked={selected}
+            onChange={() => onToggle(person.contact_id!)}
+          />
+        ) : !person.on_file ? (
+          <span className="text-xs text-slate-500">Import first</span>
+        ) : null}
+      </td>
       <td className="py-2 pr-4 font-medium">{person.name || '—'}</td>
       <td className="py-2 pr-4">{person.title || '—'}</td>
       <td className="py-2 pr-4">
@@ -89,12 +103,17 @@ export default function Directory() {
   const [retry, setRetry] = useState(0);
   const [summary, setSummary] = useState<DirectorySummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [queueing, setQueueing] = useState(false);
   const filter: DirectoryFilter = useMemo(() => ({ ...CHIPS.find((c) => c.key === chip)!.filter, q }), [chip, q]);
 
+  // Only a changed search resets the page and the ticks; otherwise the first
+  // debounce after load would wipe a selection made in its first 250 ms.
   useEffect(() => {
-    const timer = window.setTimeout(() => { setQ(search); setOffset(0); }, 250);
+    if (search === q) return;
+    const timer = window.setTimeout(() => { setQ(search); setOffset(0); setSelected(new Set()); }, 250);
     return () => window.clearTimeout(timer);
-  }, [search]);
+  }, [search, q]);
 
   useEffect(() => {
     api.directory.summary().then(setSummary).catch(() => setSummaryError(true));
@@ -111,11 +130,27 @@ export default function Directory() {
     return () => controller.abort();
   }, [filter, offset, requestKey]);
 
-  const choose = (key: ChipKey) => { setChip(key); setOffset(0); };
+  const choose = (key: ChipKey) => { setChip(key); setOffset(0); setSelected(new Set()); };
+  const toggle = (id: number) => setSelected((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
+  const togglePage = () => setSelected((current) => {
+    const next = new Set(current);
+    const all = queueable.every((person) => next.has(person.contact_id!));
+    for (const person of queueable) {
+      if (all) next.delete(person.contact_id!);
+      else next.add(person.contact_id!);
+    }
+    return next;
+  });
   const loading = settled?.key !== requestKey;
   const error = loading ? '' : settled?.error ?? '';
   const page = settled?.page ?? null;
   const items = page?.items ?? [];
+  // Someone can be queued when a contacts row stands behind them and nobody has written to them.
+  const queueable = items.filter((person) => person.ready && person.contact_id !== null);
   const total = page?.total ?? 0;
 
   return (
@@ -163,6 +198,19 @@ export default function Directory() {
         <Notice tone="info">This filter covers the newest people only. Narrow the search to see the rest.</Notice>
       )}
 
+      {selected.size > 0 && (
+        <Notice tone="info">
+          <span>{selected.size} selected. </span>
+          <Button size="sm" onClick={() => setQueueing(true)}>Queue outreach</Button>{' '}
+          <Button size="sm" variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+        </Notice>
+      )}
+      {items.some((person) => !person.on_file) && (
+        <p className="text-xs text-[var(--text-secondary)]">
+          People marked “Import first” were found by a search and are not in your contacts yet. Add them from the
+          search results in Find people, then they can be queued here. Only people ready to contact can be selected.
+        </p>
+      )}
       {loading && !error ? (
         <p className="text-sm text-slate-500" role="status">Loading people…</p>
       ) : !error && items.length === 0 ? (
@@ -176,6 +224,15 @@ export default function Directory() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-slate-500">
+                  <th className="py-2 pr-2 font-semibold">
+                    <input
+                      type="checkbox"
+                      aria-label="Select everyone on this page who can be queued"
+                      disabled={queueable.length === 0}
+                      checked={queueable.length > 0 && queueable.every((p) => selected.has(p.contact_id!))}
+                      onChange={togglePage}
+                    />
+                  </th>
                   <th className="py-2 pr-4 font-semibold">Name</th>
                   <th className="py-2 pr-4 font-semibold">Title</th>
                   <th className="py-2 pr-4 font-semibold">Company</th>
@@ -184,7 +241,16 @@ export default function Directory() {
                   <th className="py-2 font-semibold">Reached</th>
                 </tr>
               </thead>
-              <tbody>{items.map((person) => <PersonRow key={person.email} person={person} />)}</tbody>
+              <tbody>
+                {items.map((person) => (
+                  <PersonRow
+                    key={person.email}
+                    person={person}
+                    selected={person.contact_id !== null && selected.has(person.contact_id)}
+                    onToggle={toggle}
+                  />
+                ))}
+              </tbody>
             </table>
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 text-sm">
@@ -196,6 +262,7 @@ export default function Directory() {
           </div>
         </section>
       ) : null}
+      {queueing && <QueueOutreach source={{ label: 'Directory selection', contactIds: [...selected] }} onClose={() => setQueueing(false)} />}
     </div>
   );
 }

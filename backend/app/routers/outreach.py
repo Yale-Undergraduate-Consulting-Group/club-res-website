@@ -2,13 +2,14 @@
 Outreach API - Pipeline, notes, activities, templates, sequences, profile analysis, sentiment
 """
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from app.database import get_db, row_to_dict
 from app.auth_deps import get_current_user, get_current_user_optional
 from app.services.sentiment_analyzer import analyze_email_sentiment
 from app.services.profile_analyzer import analyze_contact_profile
+from app.services.target_lists import require_worklist
 
 router = APIRouter()
 
@@ -25,11 +26,18 @@ class ActivityCreate(BaseModel):
     details: Optional[str] = None
 
 class TemplateCreate(BaseModel):
-    name: str
-    subject: str
-    body: str
-    industry: Optional[str] = None
-    use_case: Optional[str] = None
+    name: str = Field(max_length=120)
+    subject: str = Field(max_length=200)
+    body: str = Field(max_length=20_000)
+    industry: Optional[str] = Field(default=None, max_length=120)
+    # The approach this template takes (intro, alumni connection...). It is
+    # recorded with every campaign built from it, for Admin → Metrics.
+    use_case: Optional[str] = Field(default=None, max_length=40)
+
+
+class TemplatePreview(BaseModel):
+    subject: str = Field(default="", max_length=200)
+    body: str = Field(default="", max_length=20_000)
 
 class SequenceCreate(BaseModel):
     name: str
@@ -162,31 +170,35 @@ async def create_activity(payload: ActivityCreate, user: dict = Depends(get_curr
 
 
 # --- Templates ---
+# Visibility rules live in services/email_templates.py: a member sees their own
+# and the club's (administrator-owned or starter) templates, never another
+# member's private ones.
 @router.get("/templates")
-async def list_templates(industry: Optional[str] = None, user: dict = Depends(get_current_user_optional)):
+async def list_templates(industry: Optional[str] = None, user: dict = Depends(get_current_user)):
+    from app.services.email_templates import visible_templates
     db = await get_db()
     try:
-        if industry:
-            cursor = await db.execute(
-                "SELECT * FROM email_templates WHERE industry = ? OR industry IS NULL ORDER BY name",
-                (industry,),
-            )
-        else:
-            cursor = await db.execute("SELECT * FROM email_templates ORDER BY name")
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        return await visible_templates(db, user, industry)
     finally:
         await db.close()
 
 
 @router.post("/templates")
 async def create_template(payload: TemplateCreate, user: dict = Depends(get_current_user)):
+    from app.services.merge_fields import unknown_fields
+    name, subject, body = payload.name.strip(), payload.subject.strip(), payload.body.strip()
+    if not name or not subject or not body:
+        raise HTTPException(422, "A template needs a name, a subject and a message")
+    bad = sorted(set(unknown_fields(subject) + unknown_fields(body)))
+    if bad:
+        raise HTTPException(422, f"Unknown field(s): {', '.join('{' + b + '}' for b in bad)}")
     db = await get_db()
     try:
         cursor = await db.execute(
             """INSERT INTO email_templates (name, subject, body, industry, use_case, user_id)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (payload.name, payload.subject, payload.body, payload.industry, payload.use_case, user.get("id")),
+            (name, subject, body, (payload.industry or "").strip() or None,
+             (payload.use_case or "").strip() or None, user["id"]),
         )
         await db.commit()
         return {"id": cursor.lastrowid, "ok": True}
@@ -194,10 +206,33 @@ async def create_template(payload: TemplateCreate, user: dict = Depends(get_curr
         await db.close()
 
 
+@router.post("/templates/preview")
+async def preview_template(payload: TemplatePreview, user: dict = Depends(get_current_user)):
+    """The template as one made-up recipient would read it, so a member sees
+    the result of the merge fields while writing, and a typo as an error
+    before saving. Also lists the fields the editor offers."""
+    from app.services.merge_fields import FIELD_HELP, MergeError, SAMPLE_RECIPIENT, render
+    result = {
+        "fields": [{"name": name, "help": text} for name, text in FIELD_HELP.items()],
+        "recipient": SAMPLE_RECIPIENT,
+        "subject": "", "body": "", "error": None,
+    }
+    try:
+        result["subject"] = render(payload.subject, SAMPLE_RECIPIENT)
+        result["body"] = render(payload.body, SAMPLE_RECIPIENT)
+    except MergeError as exc:
+        result["error"] = str(exc)
+    return result
+
+
 @router.delete("/templates/{template_id}")
 async def delete_template(template_id: int, user: dict = Depends(get_current_user)):
+    from app.services.email_templates import require_template
     db = await get_db()
     try:
+        template = await require_template(db, template_id, user)
+        if not template["editable"]:
+            raise HTTPException(403, "Only the author or an administrator can delete a club template")
         await db.execute("DELETE FROM email_templates WHERE id = ?", (template_id,))
         await db.commit()
         return {"ok": True}
@@ -537,17 +572,6 @@ class OutreachCampaignAddContacts(BaseModel):
     contact_ids: list[int]
 
 
-async def _require_worklist(db, campaign_id: int, user: dict, *, write: bool = False):
-    row = await (await db.execute("SELECT * FROM outreach_campaigns WHERE id=?", (campaign_id,))).fetchone()
-    if not row:
-        raise HTTPException(404, "Target list not found")
-    if row["type"] == "individual" and row["owner_id"] != user["id"] and user.get("role") != "admin":
-        raise HTTPException(404, "Target list not found")
-    if write and row["type"] == "community" and user.get("role") != "admin":
-        raise HTTPException(403, "Administrator required to change a club target list")
-    return row
-
-
 @router.get("/campaigns")
 async def list_outreach_campaigns(user: dict = Depends(get_current_user)):
     """List community and individual outreach campaigns. Community = institution priorities; individual = per-user."""
@@ -596,7 +620,7 @@ async def get_outreach_campaign(campaign_id: int, user: dict = Depends(get_curre
     """Get campaign with contacts."""
     db = await get_db()
     try:
-        await _require_worklist(db, campaign_id, user)
+        await require_worklist(db, campaign_id, user)
         cursor = await db.execute(
             """SELECT oc.*, u.name as owner_name, u.email as owner_email
                FROM outreach_campaigns oc LEFT JOIN users u ON oc.owner_id = u.id
@@ -628,7 +652,7 @@ async def add_contacts_to_outreach_campaign(
     """Add contacts to an outreach campaign."""
     db = await get_db()
     try:
-        await _require_worklist(db, campaign_id, user, write=True)
+        await require_worklist(db, campaign_id, user, write=True)
         from app.services.contact_access import require_contact_access
         for cid in payload.contact_ids:
             await require_contact_access(db, cid, user)
@@ -653,7 +677,7 @@ async def remove_contact_from_outreach_campaign(
     """Remove a contact from an outreach campaign."""
     db = await get_db()
     try:
-        await _require_worklist(db, campaign_id, user, write=True)
+        await require_worklist(db, campaign_id, user, write=True)
         await db.execute(
             "DELETE FROM outreach_campaign_contacts WHERE campaign_id = ? AND contact_id = ?",
             (campaign_id, contact_id),
@@ -673,7 +697,7 @@ async def delete_outreach_campaign(campaign_id: int, user: dict = Depends(get_cu
     """Delete an outreach campaign."""
     db = await get_db()
     try:
-        await _require_worklist(db, campaign_id, user, write=True)
+        await require_worklist(db, campaign_id, user, write=True)
         await db.execute("DELETE FROM outreach_campaign_contacts WHERE campaign_id = ?", (campaign_id,))
         await db.execute("DELETE FROM outreach_campaigns WHERE id = ?", (campaign_id,))
         await db.commit()

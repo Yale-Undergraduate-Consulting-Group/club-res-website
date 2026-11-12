@@ -1,5 +1,5 @@
 import { publicSourceUrl } from './contactEvidence';
-import { companyKey, isTooSenior, levelOf, looksLikePerson, type Level } from './recipients';
+import { companyKey, isTooSenior, levelOf, looksLikePerson, yaleOf, type Level } from './recipients';
 import type { CompanyRun, FoundPerson } from './useDiscoveryRuns';
 
 /**
@@ -26,6 +26,8 @@ export type PersonLike = {
   company?: string | null;
   email?: string | null;
   person_level?: unknown;
+  person_function?: unknown;
+  yale_signal?: unknown;
   contact_source?: string | null;
   linkedin_url?: string | null;
   source_url?: string | null;
@@ -38,6 +40,8 @@ export function foundAsPerson(p: FoundPerson): PersonLike {
     company: p.company,
     email: p.email,
     person_level: p.person_level,
+    person_function: p.person_function,
+    yale_signal: p.yale_signal,
     contact_source: p.contact_source,
     linkedin_url: p.linkedin_url,
     source_url: p.contact_profile_url,
@@ -63,6 +67,12 @@ const FIT_ORDER: Record<Wanted, Level[]> = {
 /** 0 is the level asked for; larger is further from it. */
 export function fitRank(person: PersonLike, wanted: Wanted): number {
   return FIT_ORDER[wanted].indexOf(fitLevel(person));
+}
+
+/** The sheet's order: the level asked for first, then people tied to Yale
+ *  within a level. Callers fall back to their own order (name, score) for ties. */
+export function sheetOrder(a: PersonLike, b: PersonLike, wanted: Wanted): number {
+  return fitRank(a, wanted) - fitRank(b, wanted) || Number(Boolean(yaleOf(b))) - Number(Boolean(yaleOf(a)));
 }
 
 /** Shown by default: the level asked for, and a name that is a person's. */

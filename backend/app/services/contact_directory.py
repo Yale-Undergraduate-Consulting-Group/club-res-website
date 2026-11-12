@@ -232,7 +232,7 @@ def _people_sql(viewer: dict, q: str | None, company: str | None) -> tuple[str, 
               AND (r.user_id = ? OR r.origin = 'builder' OR {_SHARED_MEMBER_RUN})
         ),
         ranked AS (
-            SELECT email, pri, found_at,
+            SELECT email, pri, rid, found_at,
                    ROW_NUMBER() OVER (PARTITION BY email ORDER BY pri, rid DESC) AS rn,
                    name, MAX(NULLIF(name, '')) OVER w AS any_name,
                    title, MAX(NULLIF(title, '')) OVER w AS any_title,
@@ -243,7 +243,7 @@ def _people_sql(viewer: dict, q: str | None, company: str | None) -> tuple[str, 
             WINDOW w AS (PARTITION BY email)
         ),
         directory AS (
-            SELECT email, found_at, pri = 0 AS on_file,
+            SELECT email, found_at, pri = 0 AS on_file, CASE WHEN pri = 0 THEN rid END AS contact_id,
                    COALESCE(NULLIF(name, ''), any_name, '') AS name,
                    COALESCE(NULLIF(title, ''), any_title, '') AS title,
                    COALESCE(NULLIF(company, ''), any_company, '') AS company,

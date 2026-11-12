@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  companyStatus, dedupePeople, fitRank, foundNotOnFile, matchReason, matchesWanted, personKey, sourceOf,
+  companyStatus, dedupePeople, fitRank, foundAsPerson, foundNotOnFile, matchReason, matchesWanted, personKey, sheetOrder,
+  sourceOf,
   type PersonLike,
 } from './peopleSheet';
 import type { CompanyRun, FoundPerson } from './useDiscoveryRuns';
@@ -35,6 +36,34 @@ describe('matching the level asked for', () => {
     expect(matchReason(who({ title: 'Trustee', person_level: 'board' }), 'working')).toBe('Board seat, not a team lead');
     expect(matchReason(who({ title: '', person_level: 'unknown' }), 'working')).toBe('No title to judge the level by');
     expect(matchReason(who({ name: 'Choose People' }), 'working')).toMatch(/page text/);
+  });
+});
+
+describe('the sheet order', () => {
+  const yale = 'Education: Yale University';
+
+  it('puts people tied to Yale first within a level, never across one', () => {
+    const lead = who({ name: 'Ada Lovelace' });
+    const yaleLead = who({ name: 'Grace Hopper', yale_signal: yale });
+    const yaleChief = who({ name: 'Alan Turing', title: 'Vice President, Partnerships', person_level: 'executive', yale_signal: yale });
+    const chief = who({ name: 'Dana Scully', title: 'Vice President, Partnerships', person_level: 'executive' });
+    const people = [chief, lead, yaleChief, yaleLead];
+    expect(people.sort((a, b) => sheetOrder(a, b, 'working'))).toEqual([yaleLead, lead, yaleChief, chief]);
+    expect(people.sort((a, b) => sheetOrder(a, b, 'executive'))).toEqual([yaleChief, chief, yaleLead, lead]);
+  });
+
+  it('keeps the list order for people who tie', () => {
+    const first = who({ name: 'Ada Lovelace' });
+    const second = who({ name: 'Grace Hopper' });
+    expect([second, first].sort((a, b) => sheetOrder(a, b, 'working'))).toEqual([second, first]);
+  });
+
+  it('carries Yale and function from a found person to the sheet', () => {
+    const found: FoundPerson = {
+      id: 1, run_id: 1, first_name: 'Grace', last_name: 'Hopper', email: 'g@a24.com', company: 'A24',
+      title: 'Finance Manager', person_function: 'finance', yale_signal: yale,
+    };
+    expect(foundAsPerson(found)).toMatchObject({ person_function: 'finance', yale_signal: yale });
   });
 });
 
