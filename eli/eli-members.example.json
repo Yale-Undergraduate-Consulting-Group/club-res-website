@@ -1,0 +1,11 @@
+{
+  "members": [
+    {
+      "id": "ryan",
+      "email": "you@example.com",
+      "name": "Your Name",
+      "role": "admin",
+      "projects": ["Test Project"]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+HEARTHSIDE COMMUNITY FUND - DONOR RETENTION FINDINGS
+Spring 2024 | 3 consultants | Pro bono engagement
+(Fictional case written for the sample data set. Hearthside Community Fund is not a real nonprofit.)
+
+BACKGROUND
+Hearthside is a community foundation that funds food security and youth programmes in a mid-sized city.
+Individual giving has grown, but only 41% of first-time donors give a second gift within 18 months.
+The development director asked us to find out why and what a small team can do about it.
+
+WHAT WE LOOKED AT
+- Eight years of donation records (22,400 donors, 61,000 gifts)
+- 24 donor interviews (12 retained, 12 lapsed)
+- The board's fundraising calendar and the thank-you process
+
+FINDINGS
+1. The second gift is the whole game. Donors who gave twice within 18 months were retained at 84% over
+   the following five years. First-time donors who heard nothing for 90 days almost never returned.
+2. Thank-you timing matters more than content. Gifts acknowledged within 48 hours had a 12-point higher
+   second-gift rate than gifts acknowledged after a week, regardless of letter quality.
+3. Monthly giving is under-used. Only 6% of donors give monthly, but they retain at 91% and give 2.3 times
+   more per year. Few donors were ever asked.
+4. Event donors behave differently from online donors. Gala attendees give once and rarely again unless
+   someone follows up personally.
+5. Board members want to help but do not know what to say. Three of five said they would make
+   donor thank-you calls if given a script.
+
+RECOMMENDATIONS
+- Automate a 48-hour acknowledgement and a 30-day impact update for every first-time donor.
+- Add a monthly-giving ask to the donation page and the thank-you email.
+- Create a board "thank-a-thon" twice a year with a call list sorted by gift date.
+- Track second-gift rate as the headline retention metric on a one-page dashboard.
+
+IMPACT ESTIMATE
+Lifting the second-gift rate from 41% to 50% adds roughly 70 retained donors a year. At the current
+average annual gift of $185, that is about $13,000 in year one and more as retained donors compound.
+
+NOTE FOR FUTURE TEAMS
+Nonprofit data is messy. Budget two weeks to deduplicate donors before analysis, and agree on one
+definition of "lapsed" with the client on day one.

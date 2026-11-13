@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.msal-cache.json
+.vitest-eli-usage.log
+# Member roster and Slack links: personal data, never committed
+eli-members.json
+eli-links.json
+eli-links.json.*.tmp
