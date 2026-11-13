@@ -4,7 +4,6 @@ import { getNavItems } from '../../lib/navConfig';
 import AppShellHeader from './AppShellHeader';
 import AppShellMobile from './AppShellMobile';
 import AppShellDrawer from './AppShellDrawer';
-import GuideBubble from '../GuideBubble';
 import Tour from '../Tour';
 
 type AppShellProps = {
@@ -43,7 +42,6 @@ export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppSh
         items={navItems}
         onLogout={handleLogout}
       />
-      <GuideBubble />
       <Tour />
     </div>
   );

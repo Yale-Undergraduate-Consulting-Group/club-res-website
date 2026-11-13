@@ -99,7 +99,8 @@ export default function GuideBubble() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="How this page works"
-        className="fixed bottom-5 right-5 z-40 shadow-lg"
+        size="sm"
+        variant="secondary"
       >
         ?
       </Button>
@@ -108,7 +109,7 @@ export default function GuideBubble() {
         <div
           role="dialog"
           aria-label={`How ${guide.title} works`}
-          className="fixed bottom-20 right-5 z-40 w-[22rem] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-[var(--border)] bg-white p-4 shadow-xl"
+          className="fixed top-16 right-5 z-[60] w-[22rem] max-w-[calc(100vw-2.5rem)] border border-[var(--border)] bg-white p-4"
         >
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-deep-navy">{guide.title}</h2>

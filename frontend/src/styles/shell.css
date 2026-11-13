@@ -307,6 +307,11 @@ html:not(.dark) .surface-card,
   }
 }
 
+/* A wide table scrolls sideways on a narrow screen instead of running off it. */
+@media (max-width: 767px) {
+  .app-workspace table { display: block; max-width: 100%; overflow-x: auto; }
+}
+
 .app-shell-profile-link {
   font-size: 0.875rem;
   font-weight: 700;
