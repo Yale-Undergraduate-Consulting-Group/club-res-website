@@ -86,7 +86,9 @@ APP_ENV=$APP_ENV
 EMAIL_DELIVERY_ENABLED=$EMAIL_DELIVERY_ENABLED
 DATABASE_URL=sqlite:////data/clientreach.db
 LLM_PROVIDER=bedrock
-AI_MONTHLY_BUDGET_USD=50
+# Below the $20 spending limit on the temporary Anthropic API key, so the
+# site refuses AI calls before the key does (backend/app/services/llm.py).
+AI_MONTHLY_BUDGET_USD=15
 AI_REVIEW_WORKERS=2
 INBOX_VERIFY_MODE=mx
 CATALOG_BUCKET=$(cfg catalog_bucket)
