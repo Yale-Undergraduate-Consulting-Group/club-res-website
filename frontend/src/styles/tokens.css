@@ -2,19 +2,20 @@
    variables for both themes, and the page's base type. Every app uses these;
    change a token here rather than restating a colour in an app's styles.
 
-   This file applies the YUCG design system (yucg-design-system, design.md):
-   navy + white, ink body text, square corners, no shadows, one serif family.
-   The deliberate departures from that spec are marked "YUCG deviation". */
+   This file applies the YUCG Deck System v1.2.0 (design.md sections 2, 3, 5,
+   8.1; tokens/tokens.css): Lato, navy-900 text, canvas #ECECEC ground, one
+   blue-600 emphasis, no shadows, gradients or rounded corners. Departures for
+   a working web app are marked "Web exception". */
 
 /* Only treat as dark when <html class="dark"> — not OS prefers-color-scheme (fixes grey tabs/cards in app light mode). */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-deep-navy: #1c366a;
-  --color-mid-navy: #3465a8;
-  --color-slate-blue: #445469;
-  --color-steel-blue: #909ab1;
-  --color-light-steel: #c9ced6;
+  --color-deep-navy: #00346b;
+  --color-mid-navy: #1164a3;
+  --color-slate-blue: #44546a;
+  --color-steel-blue: #4c6c9c;
+  --color-light-steel: #adbaca;
   --color-pale-sky: #dfe6ef;
 
   /* Type: Lato everywhere (installed locally; Google Fonts as fallback). */
@@ -56,151 +57,149 @@
          carried by its words, not by green)
        red -> a muted brick: the one semantic hue kept (errors, bounces)
        amber, yellow, orange -> a muted ochre: warnings only */
-  --color-slate-50: #f6f6f5;
-  --color-slate-100: #eeeeed;
-  --color-slate-200: #e2e2e1;
-  --color-slate-300: #d0d0cf;
-  --color-slate-400: #a0a09f;
-  --color-slate-500: #6e6d6c;
-  --color-slate-600: #5a5958;
-  --color-slate-700: #454443;
-  --color-slate-800: #2f2e2e;
-  --color-slate-900: #1f1e1e;
-  --color-slate-950: #141313;
-  --color-gray-50: #f6f6f5;
-  --color-gray-100: #eeeeed;
-  --color-gray-200: #e2e2e1;
-  --color-gray-300: #d0d0cf;
-  --color-gray-400: #a0a09f;
-  --color-gray-500: #6e6d6c;
-  --color-gray-600: #5a5958;
-  --color-gray-700: #454443;
-  --color-gray-800: #2f2e2e;
-  --color-gray-900: #1f1e1e;
-  --color-gray-950: #141313;
-  --color-zinc-50: #f6f6f5;
-  --color-zinc-100: #eeeeed;
-  --color-zinc-200: #e2e2e1;
-  --color-zinc-300: #d0d0cf;
-  --color-zinc-400: #a0a09f;
-  --color-zinc-500: #6e6d6c;
-  --color-zinc-600: #5a5958;
-  --color-zinc-700: #454443;
-  --color-zinc-800: #2f2e2e;
-  --color-zinc-900: #1f1e1e;
-  --color-zinc-950: #141313;
-  --color-neutral-50: #f6f6f5;
-  --color-neutral-100: #eeeeed;
-  --color-neutral-200: #e2e2e1;
-  --color-neutral-300: #d0d0cf;
-  --color-neutral-400: #a0a09f;
-  --color-neutral-500: #6e6d6c;
-  --color-neutral-600: #5a5958;
-  --color-neutral-700: #454443;
-  --color-neutral-800: #2f2e2e;
-  --color-neutral-900: #1f1e1e;
-  --color-neutral-950: #141313;
-
-  --color-sky-50: #f1f5fa;
+  --color-slate-50: #e7e8eb;
+  --color-slate-100: #dfe6ef;
+  --color-slate-200: #d6dce5;
+  --color-slate-300: #adbaca;
+  --color-slate-400: #8497b0;
+  --color-slate-500: #44546a;
+  --color-slate-600: #44546a;
+  --color-slate-700: #364d6e;
+  --color-slate-800: #00346b;
+  --color-slate-900: #00346b;
+  --color-slate-950: #052457;
+  --color-gray-50: #e7e8eb;
+  --color-gray-100: #dfe6ef;
+  --color-gray-200: #d6dce5;
+  --color-gray-300: #adbaca;
+  --color-gray-400: #8497b0;
+  --color-gray-500: #44546a;
+  --color-gray-600: #44546a;
+  --color-gray-700: #364d6e;
+  --color-gray-800: #00346b;
+  --color-gray-900: #00346b;
+  --color-gray-950: #052457;
+  --color-zinc-50: #e7e8eb;
+  --color-zinc-100: #dfe6ef;
+  --color-zinc-200: #d6dce5;
+  --color-zinc-300: #adbaca;
+  --color-zinc-400: #8497b0;
+  --color-zinc-500: #44546a;
+  --color-zinc-600: #44546a;
+  --color-zinc-700: #364d6e;
+  --color-zinc-800: #00346b;
+  --color-zinc-900: #00346b;
+  --color-zinc-950: #052457;
+  --color-neutral-50: #e7e8eb;
+  --color-neutral-100: #dfe6ef;
+  --color-neutral-200: #d6dce5;
+  --color-neutral-300: #adbaca;
+  --color-neutral-400: #8497b0;
+  --color-neutral-500: #44546a;
+  --color-neutral-600: #44546a;
+  --color-neutral-700: #364d6e;
+  --color-neutral-800: #00346b;
+  --color-neutral-900: #00346b;
+  --color-neutral-950: #052457;
+  --color-sky-50: #dfe6ef;
   --color-sky-100: #dfe6ef;
-  --color-sky-200: #c4d4e8;
-  --color-sky-300: #a9bfdc;
-  --color-sky-400: #7aa7d6;
-  --color-sky-500: #3465a8;
-  --color-sky-600: #1c366a;
-  --color-sky-700: #172c57;
-  --color-sky-800: #11224a;
-  --color-sky-900: #0b1f3a;
-  --color-sky-950: #08162b;
-  --color-blue-50: #f1f5fa;
+  --color-sky-200: #c3d0e1;
+  --color-sky-300: #adbaca;
+  --color-sky-400: #8497b0;
+  --color-sky-500: #4c6c9c;
+  --color-sky-600: #1164a3;
+  --color-sky-700: #0d4b7a;
+  --color-sky-800: #00346b;
+  --color-sky-900: #052457;
+  --color-sky-950: #002060;
+  --color-blue-50: #dfe6ef;
   --color-blue-100: #dfe6ef;
-  --color-blue-200: #c4d4e8;
-  --color-blue-300: #a9bfdc;
-  --color-blue-400: #7aa7d6;
-  --color-blue-500: #3465a8;
-  --color-blue-600: #1c366a;
-  --color-blue-700: #172c57;
-  --color-blue-800: #11224a;
-  --color-blue-900: #0b1f3a;
-  --color-blue-950: #08162b;
-  --color-indigo-50: #f1f5fa;
+  --color-blue-200: #c3d0e1;
+  --color-blue-300: #adbaca;
+  --color-blue-400: #8497b0;
+  --color-blue-500: #4c6c9c;
+  --color-blue-600: #1164a3;
+  --color-blue-700: #0d4b7a;
+  --color-blue-800: #00346b;
+  --color-blue-900: #052457;
+  --color-blue-950: #002060;
+  --color-indigo-50: #dfe6ef;
   --color-indigo-100: #dfe6ef;
-  --color-indigo-200: #c4d4e8;
-  --color-indigo-300: #a9bfdc;
-  --color-indigo-400: #7aa7d6;
-  --color-indigo-500: #3465a8;
-  --color-indigo-600: #1c366a;
-  --color-indigo-700: #172c57;
-  --color-indigo-800: #11224a;
-  --color-indigo-900: #0b1f3a;
-  --color-indigo-950: #08162b;
-  --color-cyan-50: #f1f5fa;
+  --color-indigo-200: #c3d0e1;
+  --color-indigo-300: #adbaca;
+  --color-indigo-400: #8497b0;
+  --color-indigo-500: #4c6c9c;
+  --color-indigo-600: #1164a3;
+  --color-indigo-700: #0d4b7a;
+  --color-indigo-800: #00346b;
+  --color-indigo-900: #052457;
+  --color-indigo-950: #002060;
+  --color-cyan-50: #dfe6ef;
   --color-cyan-100: #dfe6ef;
-  --color-cyan-200: #c4d4e8;
-  --color-cyan-300: #a9bfdc;
-  --color-cyan-400: #7aa7d6;
-  --color-cyan-500: #3465a8;
-  --color-cyan-600: #1c366a;
-  --color-cyan-700: #172c57;
-  --color-cyan-800: #11224a;
-  --color-cyan-900: #0b1f3a;
-  --color-cyan-950: #08162b;
-  --color-teal-50: #f1f5fa;
+  --color-cyan-200: #c3d0e1;
+  --color-cyan-300: #adbaca;
+  --color-cyan-400: #8497b0;
+  --color-cyan-500: #4c6c9c;
+  --color-cyan-600: #1164a3;
+  --color-cyan-700: #0d4b7a;
+  --color-cyan-800: #00346b;
+  --color-cyan-900: #052457;
+  --color-cyan-950: #002060;
+  --color-teal-50: #dfe6ef;
   --color-teal-100: #dfe6ef;
-  --color-teal-200: #c4d4e8;
-  --color-teal-300: #a9bfdc;
-  --color-teal-400: #7aa7d6;
-  --color-teal-500: #3465a8;
-  --color-teal-600: #1c366a;
-  --color-teal-700: #172c57;
-  --color-teal-800: #11224a;
-  --color-teal-900: #0b1f3a;
-  --color-teal-950: #08162b;
-  --color-emerald-50: #f1f5fa;
+  --color-teal-200: #c3d0e1;
+  --color-teal-300: #adbaca;
+  --color-teal-400: #8497b0;
+  --color-teal-500: #4c6c9c;
+  --color-teal-600: #1164a3;
+  --color-teal-700: #0d4b7a;
+  --color-teal-800: #00346b;
+  --color-teal-900: #052457;
+  --color-teal-950: #002060;
+  --color-emerald-50: #dfe6ef;
   --color-emerald-100: #dfe6ef;
-  --color-emerald-200: #c4d4e8;
-  --color-emerald-300: #a9bfdc;
-  --color-emerald-400: #7aa7d6;
-  --color-emerald-500: #3465a8;
-  --color-emerald-600: #1c366a;
-  --color-emerald-700: #172c57;
-  --color-emerald-800: #11224a;
-  --color-emerald-900: #0b1f3a;
-  --color-emerald-950: #08162b;
-  --color-green-50: #f1f5fa;
+  --color-emerald-200: #c3d0e1;
+  --color-emerald-300: #adbaca;
+  --color-emerald-400: #8497b0;
+  --color-emerald-500: #4c6c9c;
+  --color-emerald-600: #1164a3;
+  --color-emerald-700: #0d4b7a;
+  --color-emerald-800: #00346b;
+  --color-emerald-900: #052457;
+  --color-emerald-950: #002060;
+  --color-green-50: #dfe6ef;
   --color-green-100: #dfe6ef;
-  --color-green-200: #c4d4e8;
-  --color-green-300: #a9bfdc;
-  --color-green-400: #7aa7d6;
-  --color-green-500: #3465a8;
-  --color-green-600: #1c366a;
-  --color-green-700: #172c57;
-  --color-green-800: #11224a;
-  --color-green-900: #0b1f3a;
-  --color-green-950: #08162b;
-  --color-violet-50: #f1f5fa;
+  --color-green-200: #c3d0e1;
+  --color-green-300: #adbaca;
+  --color-green-400: #8497b0;
+  --color-green-500: #4c6c9c;
+  --color-green-600: #1164a3;
+  --color-green-700: #0d4b7a;
+  --color-green-800: #00346b;
+  --color-green-900: #052457;
+  --color-green-950: #002060;
+  --color-violet-50: #dfe6ef;
   --color-violet-100: #dfe6ef;
-  --color-violet-200: #c4d4e8;
-  --color-violet-300: #a9bfdc;
-  --color-violet-400: #7aa7d6;
-  --color-violet-500: #3465a8;
-  --color-violet-600: #1c366a;
-  --color-violet-700: #172c57;
-  --color-violet-800: #11224a;
-  --color-violet-900: #0b1f3a;
-  --color-violet-950: #08162b;
-  --color-purple-50: #f1f5fa;
+  --color-violet-200: #c3d0e1;
+  --color-violet-300: #adbaca;
+  --color-violet-400: #8497b0;
+  --color-violet-500: #4c6c9c;
+  --color-violet-600: #1164a3;
+  --color-violet-700: #0d4b7a;
+  --color-violet-800: #00346b;
+  --color-violet-900: #052457;
+  --color-violet-950: #002060;
+  --color-purple-50: #dfe6ef;
   --color-purple-100: #dfe6ef;
-  --color-purple-200: #c4d4e8;
-  --color-purple-300: #a9bfdc;
-  --color-purple-400: #7aa7d6;
-  --color-purple-500: #3465a8;
-  --color-purple-600: #1c366a;
-  --color-purple-700: #172c57;
-  --color-purple-800: #11224a;
-  --color-purple-900: #0b1f3a;
-  --color-purple-950: #08162b;
-
+  --color-purple-200: #c3d0e1;
+  --color-purple-300: #adbaca;
+  --color-purple-400: #8497b0;
+  --color-purple-500: #4c6c9c;
+  --color-purple-600: #1164a3;
+  --color-purple-700: #0d4b7a;
+  --color-purple-800: #00346b;
+  --color-purple-900: #052457;
+  --color-purple-950: #002060;
   --color-red-50: #fbf1f0;
   --color-red-100: #f5e1df;
   --color-red-200: #eac3bf;
@@ -223,154 +222,161 @@
   --color-rose-800: #6a2722;
   --color-rose-900: #52201c;
   --color-rose-950: #331310;
-
-  --color-amber-50: #fbf6ec;
-  --color-amber-100: #f4ead3;
-  --color-amber-200: #e8d5a9;
-  --color-amber-300: #d6b877;
-  --color-amber-400: #be9647;
-  --color-amber-500: #a07a2e;
-  --color-amber-600: #86641f;
-  --color-amber-700: #6c4f18;
-  --color-amber-800: #523b13;
-  --color-amber-900: #3b2a0e;
-  --color-amber-950: #281c09;
-  --color-yellow-50: #fbf6ec;
-  --color-yellow-100: #f4ead3;
-  --color-yellow-200: #e8d5a9;
-  --color-yellow-300: #d6b877;
-  --color-yellow-400: #be9647;
-  --color-yellow-500: #a07a2e;
-  --color-yellow-600: #86641f;
-  --color-yellow-700: #6c4f18;
-  --color-yellow-800: #523b13;
-  --color-yellow-900: #3b2a0e;
-  --color-yellow-950: #281c09;
-  --color-orange-50: #fbf6ec;
-  --color-orange-100: #f4ead3;
-  --color-orange-200: #e8d5a9;
-  --color-orange-300: #d6b877;
-  --color-orange-400: #be9647;
-  --color-orange-500: #a07a2e;
-  --color-orange-600: #86641f;
-  --color-orange-700: #6c4f18;
-  --color-orange-800: #523b13;
-  --color-orange-900: #3b2a0e;
-  --color-orange-950: #281c09;
+  --color-amber-50: #e7e8eb;
+  --color-amber-100: #e7e8eb;
+  --color-amber-200: #cbcdd4;
+  --color-amber-300: #cbcdd4;
+  --color-amber-400: #adbaca;
+  --color-amber-500: #8497b0;
+  --color-amber-600: #4c6c9c;
+  --color-amber-700: #44546a;
+  --color-amber-800: #364d6e;
+  --color-amber-900: #00346b;
+  --color-amber-950: #052457;
+  --color-yellow-50: #e7e8eb;
+  --color-yellow-100: #e7e8eb;
+  --color-yellow-200: #cbcdd4;
+  --color-yellow-300: #cbcdd4;
+  --color-yellow-400: #adbaca;
+  --color-yellow-500: #8497b0;
+  --color-yellow-600: #4c6c9c;
+  --color-yellow-700: #44546a;
+  --color-yellow-800: #364d6e;
+  --color-yellow-900: #00346b;
+  --color-yellow-950: #052457;
+  --color-orange-50: #e7e8eb;
+  --color-orange-100: #e7e8eb;
+  --color-orange-200: #cbcdd4;
+  --color-orange-300: #cbcdd4;
+  --color-orange-400: #adbaca;
+  --color-orange-500: #8497b0;
+  --color-orange-600: #4c6c9c;
+  --color-orange-700: #44546a;
+  --color-orange-800: #364d6e;
+  --color-orange-900: #00346b;
+  --color-orange-950: #052457;
 }
 
 :root {
-  /* YUCG palette (design.md section 2 and 11.0). */
-  --yucg-navy: #1c366a;
-  --yucg-navy-06: rgba(28, 54, 106, 0.06);
-  --yucg-navy-20: rgba(28, 54, 106, 0.2);
-  --yucg-navy-overlay: rgba(28, 54, 106, 0.72);
-  --yucg-ink: #2f2e2e;
-  --yucg-muted: #6e6d6c;
-  --yucg-gray: #a0a09f;
-  --yucg-rule: #e2e2e1;
-  --yucg-font: "Lato", "Helvetica Neue", Arial, sans-serif;
-  --yucg-font-chart: "Lato", "Helvetica Neue", Arial, sans-serif;
-  --heading: var(--yucg-navy);
+  /* Deck tokens (tokens/tokens.css), verbatim names. */
+  --navy-900: #00346b;
+  --navy-950: #052457;
+  --navy-1000: #002060;
+  --blue-600: #1164a3;
+  --teal-800: #0d4b7a;
+  --slate-600: #44546a;
+  --slate-700: #364d6e;
+  --steel-600: #4c6c9c;
+  --steel-400: #8497b0;
+  --steel-300: #adbaca;
+  --mist-300: #c3d0e1;
+  --mist-200: #d6dce5;
+  --mist-100: #dfe6ef;
+  --canvas: #ececec;
+  --gray-300: #d4d4d4;
+  --gray-350: #cbcdd4;
+  --gray-100: #e7e8eb;
+  --white: #ffffff;
+  --yucg-font: "Lato", "Calibri", "Segoe UI", system-ui, sans-serif;
+  --yucg-font-chart: var(--yucg-font);
+  /* Names the shell and kit used under the previous fork. */
+  --yucg-navy: var(--navy-900);
+  --yucg-navy-06: var(--mist-200);
 
-  /* Canonical product tokens. Legacy aliases below remain during component migration. */
-  /* White canvas and white surfaces. YUCG deviation: a dense app needs a
-     faint fill to separate a table header, a hovered row or a toolbar; it is
-     the spec's own 6% navy tint (yucg-note), never a grey or another hue. */
-  --canvas: #ffffff;
+  /* Product tokens, by role (deck section 2). */
   --surface: #ffffff;
-  --surface-subtle: #f1f3f7;
+  --surface-subtle: var(--mist-100);
   --surface-raised: #ffffff;
-  --ink: var(--yucg-ink);
-  --ink-muted: var(--yucg-muted);
-  --focus: var(--yucg-navy);
-  /* Semantic colour is kept only for failure and caution, muted, and always
-     appears with words. YUCG deviation: the spec has no status colours. */
+  --ink: var(--navy-900);
+  --ink-muted: var(--slate-600);
+  --heading: var(--navy-900);
+  --focus: var(--blue-600);
+  --info-soft: var(--mist-200);
+  --success-soft: var(--mist-200);
+  --warning-soft: var(--gray-350);
+  /* Web exception: the deck bans red, but a blocking error or a destructive
+     action must not look like anything else. One muted error colour, used
+     only for form errors, failed sends and delete; always with words. */
   --danger: #9e3a31;
-  --danger-soft: #fbf1f0;
-  --success-soft: var(--yucg-navy-06);
-  --warning-soft: #fbf6ec;
-  --info-soft: var(--yucg-navy-06);
+  --danger-soft: #f5e1df;
   --radius-control: 0;
   --radius-panel: 0;
   --control-height: 2.5rem;
   --control-height-sm: 2rem;
-  --yale-blue: var(--yucg-navy);
-  --yale-blue-light: #3465a8;
-  --yale-blue-dark: #0b1f3a;
-  --deep-navy: var(--yucg-navy);
-  --mid-navy: #3465a8;
-  --slate-blue: #445469;
-  --steel-blue: #909ab1;
-  --light-steel: #c9ced6;
-  --pale-sky: #dfe6ef;
+  --yale-blue: var(--navy-900);
+  --yale-blue-light: var(--blue-600);
+  --yale-blue-dark: var(--navy-950);
+  --deep-navy: var(--navy-900);
+  --mid-navy: var(--blue-600);
+  --slate-blue: var(--slate-600);
+  --steel-blue: var(--steel-600);
+  --light-steel: var(--steel-300);
+  --pale-sky: var(--mist-100);
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
-  --accent: var(--yucg-navy);
-  --accent-hover: #0b1f3a;
-  /* Hairlines. The spec's gray #A0A09F is only 2.6:1 on white, too faint to
-     mark a control's edge (WCAG 1.4.11 asks 3:1), so it is kept for
-     placeholders and rules while edges that identify a control use a darker
-     gray. YUCG deviation. */
-  --border: #d4d4d3;
-  --border-control: #8a8a89;
-  /* Chart palette (section 10): navy first, never cycled. */
-  --chart-1: #1c366a;
-  --chart-2: #3465a8;
-  --chart-3: #7aa7d6;
-  --chart-4: #445469;
-  --chart-5: #909ab1;
-  --chart-6: #c4d4e8;
-  --chart-7: #0b1f3a;
-  --chart-8: #dfe6ef;
-  --chart-focus: #1c366a;
-  --chart-context: #c9ced6;
-  --chart-text: #00346b;
-  --chart-grid: rgba(0, 52, 107, 0.6);
+  --accent: var(--navy-900);
+  --accent-hover: var(--navy-950);
+  /* Web exception: control edges. The deck has no form controls and bans
+     outlines; a field still needs a visible edge, and steel-400 is the
+     lightest deck fill that reaches 3:1 on white. */
+  --border: var(--mist-300);
+  --border-control: var(--steel-400);
+  /* Chart palette (deck section 2.4): navy, blue, teal, steel, mist; no
+     red or green. */
+  --chart-1: var(--navy-900);
+  --chart-2: var(--blue-600);
+  --chart-3: var(--teal-800);
+  --chart-4: var(--steel-600);
+  --chart-5: var(--mist-300);
+  --chart-6: var(--steel-300);
+  --chart-7: var(--slate-600);
+  --chart-8: var(--mist-100);
+  --chart-focus: var(--navy-900);
+  --chart-context: var(--steel-300);
+  --chart-text: var(--navy-900);
+  --chart-grid: var(--mist-300);
   /* A reply is the outcome that matters, so it takes the strongest navy; a
-     bounce is the slate series; queued is barely there. */
-  --chart-good: #1c366a;
-  --chart-bad: #445469;
-  --chart-idle: #dfe6ef;
-  --success: #1c366a;
-  --warning: #86641f;
-  /* Primary CTAs: solid navy square. YUCG deviation: the spec's buttons are
-     never filled at rest, but a dense app needs one primary action per view
-     that reads as primary; secondary buttons are the spec's outline ghost. */
+     bounce is slate; queued is barely there. */
+  --chart-good: var(--navy-900);
+  --chart-bad: var(--slate-600);
+  --chart-idle: var(--mist-100);
+  --success: var(--navy-900);
+  --warning: var(--slate-600);
+  /* Primary action: a navy-900 bar with white text. */
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
   --btn-primary-text: #ffffff;
-  /* No elevation anywhere (section 7). */
+  /* No elevation anywhere. */
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;
   --shadow-xl: none;
   --shadow-2xl: none;
-  /* Photo and login overlays: the spec's 72% navy. */
-  --yucg-tint: var(--yucg-navy-overlay);
-  --yucg-tint-strong: var(--yucg-navy-overlay);
+  /* Photo filter: navy-950 at 60% (deck section 11.1), the only treatment. */
+  --yucg-tint: rgba(5, 36, 87, 0.6);
+  --yucg-tint-strong: rgba(5, 36, 87, 0.6);
 }
 
-/* Dark mode. YUCG deviation: the spec is light only. This is a navy-based
-   night palette so the toggle keeps working: navy surfaces, pale ink, and a
-   pale-blue "primary" because navy on navy would vanish. */
+/* Dark mode. Web exception: the deck is light only. Navy-1000 / navy-950
+   surfaces keep the toggle working; the emphasis flips to sky-200 so it
+   stays readable. Not polished. */
 .dark {
-  --canvas: #0b1426;
-  --surface: #111f3a;
-  --surface-subtle: #1a2b4f;
-  --surface-raised: #16264a;
-  --ink: #e8ecf4;
-  --ink-muted: #aab5c9;
-  --heading: #e8ecf4;
-  --focus: #a9bfdc;
+  --canvas: #001a4d;
+  --surface: var(--navy-950);
+  --surface-subtle: #0b2f66;
+  --surface-raised: #0b2f66;
+  --ink: #e7ecf3;
+  --ink-muted: #aebdd2;
+  --heading: #ffffff;
+  --focus: #aed6ff;
   --danger: #f0a49c;
   --danger-soft: #3a1d20;
-  --success-soft: rgba(169, 191, 220, 0.1);
-  --warning-soft: #3a2f16;
-  --info-soft: rgba(169, 191, 220, 0.1);
+  --info-soft: #0b2f66;
+  --success-soft: #0b2f66;
+  --warning-soft: #0b2f66;
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
@@ -378,32 +384,32 @@
   --text-muted: var(--ink-muted);
   /* !important: the accent preference is written inline on <html> and would
      otherwise paint navy on navy in dark mode. */
-  --accent: #a9bfdc !important;
+  --accent: #aed6ff !important;
   --accent-hover: #ffffff !important;
-  --border: #2a3d66;
-  --border-control: #6f82a8;
-  --chart-1: #a9bfdc;
-  --chart-2: #7aa7d6;
-  --chart-3: #3465a8;
-  --chart-4: #909ab1;
-  --chart-5: #5b6a86;
-  --chart-6: #2f4672;
+  --border: #1f4a85;
+  --border-control: #4c6c9c;
+  --chart-1: #aed6ff;
+  --chart-2: #8497b0;
+  --chart-3: #4c6c9c;
+  --chart-4: #c3d0e1;
+  --chart-5: #1164a3;
+  --chart-6: #adbaca;
   --chart-7: #dfe6ef;
-  --chart-8: #1f3158;
-  --chart-focus: #a9bfdc;
-  --chart-context: #4a5c80;
-  --chart-text: #dfe6ef;
-  --chart-grid: rgba(169, 191, 220, 0.45);
-  --chart-good: #a9bfdc;
-  --chart-bad: #909ab1;
-  --chart-idle: #1f3158;
-  --success: #a9bfdc;
-  --warning: #e0c070;
+  --chart-8: #0b2f66;
+  --chart-focus: #aed6ff;
+  --chart-context: #4c6c9c;
+  --chart-text: #e7ecf3;
+  --chart-grid: #1f4a85;
+  --chart-good: #aed6ff;
+  --chart-bad: #8497b0;
+  --chart-idle: #0b2f66;
+  --success: #aed6ff;
+  --warning: #aebdd2;
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
-  --btn-primary-text: #0b1f3a;
-  --yucg-tint: rgba(8, 18, 38, 0.78);
-  --yucg-tint-strong: rgba(8, 18, 38, 0.78);
+  --btn-primary-text: var(--navy-950);
+  --yucg-tint: rgba(5, 36, 87, 0.75);
+  --yucg-tint-strong: rgba(5, 36, 87, 0.75);
 }
 
 /* Section 7: corners are square everywhere, whatever a page's utility class
@@ -446,8 +452,8 @@
 /* The logo is navy on transparent; in dark mode it is drawn white. */
 .dark img[src*="yucg-logo"] { filter: brightness(0) invert(1); }
 
-/* Section 3: one serif family for headings and UI, line-height 1.4. In the
-   base layer so a page's own text-* utilities (white banner titles) still win. */
+/* Deck section 5: Lato throughout. Titles 32/400, panel headings 16/700, body
+   14/400. In the base layer so a page's own text-* utilities still win. */
 @layer base {
   html {
     font-family: var(--yucg-font);
@@ -455,13 +461,15 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Headings are navy bold serif; body copy is ink (never navy). */
+  body { font-size: 0.875rem; }
+
+  h1 { font-size: 2rem; font-weight: 400; }
+  h2, h3, h4 { font-size: 1rem; font-weight: 700; }
+
   h1, h2, h3, h4 {
     font-family: var(--yucg-font);
-    font-weight: 700;
     color: var(--heading);
-    line-height: 1.4;
-    text-wrap: balance;
+    line-height: 1.3;
   }
 }
 

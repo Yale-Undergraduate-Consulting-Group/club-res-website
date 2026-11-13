@@ -3,12 +3,13 @@
    opening motion every menu and panel shares. */
 
 /* ——— Product UI primitives ———
-   YUCG design system, section 11: square, serif, navy. Buttons are
-   rectangles outlined in navy that fill on hover (11.4); the primary action is
-   the one filled-at-rest exception. Inputs are underlines (11.5). */
+   YUCG Deck System: navy-900 bars with white text, mist fills with navy text,
+   blue-600 as the one emphasis, square, flat, Lato. The deck bans outlines, so
+   buttons are filled; only form controls and focus rings keep an edge
+   (accessibility: web exception). */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 
 .ui-button {
@@ -20,21 +21,23 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.5rem 1.25rem;
-  border: 1px solid var(--accent);
+  border: 0;
   border-radius: 0;
-  background: transparent;
-  color: var(--accent);
+  background: var(--mist-100);
+  color: var(--navy-900);
   font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 400;
+  font-size: 0.8125rem;
+  font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
+.dark .ui-button { background: var(--surface-subtle); color: var(--text-primary); }
+
 .ui-button:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -42,7 +45,7 @@
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
   padding: 0.25rem 0.875rem;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 /* Icon-only: one square per size step. */
@@ -55,9 +58,8 @@
 .ui-button--icon { width: var(--control-height); }
 .ui-button--icon.ui-button--sm { width: var(--control-height-sm); }
 
-/* Toggles, filters and segmented choices (yucg-segmented / yucg-chip): a navy
-   outline; the selected one fills navy. The size is fixed; state changes
-   colour only, so a selected chip is exactly as tall as an unselected one. */
+/* Toggles, filters and segmented choices: a mist fill; the selected one is a
+   navy-900 bar with white text. Size is fixed; only colour changes. */
 .ui-chip {
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
@@ -67,21 +69,25 @@
   justify-content: center;
   gap: 0.375rem;
   padding: 0.25rem 0.875rem;
-  border: 1px solid var(--accent);
+  border: 0;
   border-radius: 0;
-  background: transparent;
-  color: var(--accent);
+  background: var(--mist-100);
+  color: var(--navy-900);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
 }
 
+.dark .ui-chip { background: var(--surface-subtle); color: var(--text-primary); }
+
 .ui-chip:hover:not(:disabled) {
-  background: var(--surface-subtle);
+  background: var(--mist-300);
 }
+
+.dark .ui-chip:hover:not(:disabled) { background: var(--border); }
 
 .ui-chip[aria-pressed="true"],
 .ui-chip[aria-checked="true"],
@@ -90,12 +96,12 @@
 .ui-chip[aria-checked="true"]:hover:not(:disabled),
 .ui-chip[aria-current="step"]:hover:not(:disabled) {
   background: var(--btn-primary-bg);
-  border-color: var(--btn-primary-bg);
   color: var(--btn-primary-text);
+  font-weight: 700;
 }
 
 .ui-chip:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -104,79 +110,67 @@
 .company-chip-body .ui-button--ghost { color: inherit; }
 .company-chip-body .ui-button--ghost:hover:not(:disabled) { background: rgb(0 0 0 / 0.12); }
 
-/* Primary: solid navy square (YUCG deviation; see tokens.css). */
-.ui-button--primary {
+/* Primary: a navy-900 bar, white text. */
+.ui-button--primary,
+.dark .ui-button--primary {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
-  border-color: var(--btn-primary-bg);
 }
 
 .ui-button--primary:hover:not(:disabled) {
   background: var(--btn-primary-hover);
-  border-color: var(--btn-primary-hover);
 }
 
-/* Secondary: yucg-btn, the outline ghost that fills navy on hover. */
+/* Secondary: a mist-100 fill with navy text (the default above). */
 .ui-button--secondary:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--btn-primary-text);
+  background: var(--mist-300);
 }
 
-/* Danger: the same outline, in the muted error red. */
-.ui-button--danger {
-  border-color: var(--danger);
-  color: var(--danger);
+.dark .ui-button--secondary:hover:not(:disabled) { background: var(--border); }
+
+/* Danger: the one muted error colour (web exception), destructive actions only. */
+.ui-button--danger,
+.dark .ui-button--danger {
+  background: var(--danger);
+  color: #ffffff;
 }
+
+.dark .ui-button--danger { color: var(--navy-950); }
 
 .ui-button--danger:hover:not(:disabled) {
-  background: var(--danger);
-  color: var(--canvas);
+  background: #832f28;
 }
 
-/* Ghost: text only (yucg-link feel), a faint navy fill on hover. */
-.ui-button--ghost {
-  border-color: transparent;
-  color: var(--accent);
+/* Ghost: text only in blue-600, no fill until hover. */
+.ui-button--ghost,
+.dark .ui-button--ghost {
+  background: transparent;
+  color: var(--blue-600);
 }
+
+.dark .ui-button--ghost { color: var(--accent); }
 
 .ui-button--ghost:hover:not(:disabled) {
-  background: var(--surface-subtle);
+  background: var(--mist-100);
 }
 
-/* Forms (11.5): no box, a 1px underline that turns navy on focus. Applies to
-   every raw input, select and textarea so pages that never adopted the kit
-   match; a control that opts out with border-0 / border-none is left alone.
-   :where() keeps specificity at zero, so a component's own class still wins;
-   being unlayered it beats Tailwind's border and rounded utilities. The darker
-   --border-control is used rather than the spec's #A0A09F (2.6:1 on white). */
+.dark .ui-button--ghost:hover:not(:disabled) { background: var(--surface-subtle); }
+
+/* Forms: white fill, a 1px steel edge (web exception, see --border-control),
+   square. Applies to every raw input, select and textarea so pages that never
+   adopted the kit match; border-0 / border-none opts out. :where() keeps
+   specificity at zero, so a component's own class still wins; being unlayered
+   it beats Tailwind's border and rounded utilities. */
 :where(
   input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not(.border-0):not(.border-none),
   select:not(.border-0):not(.border-none),
   textarea
 ) {
-  border: 0 solid var(--border-control);
-  border-bottom-width: 1px;
+  border: 1px solid var(--border-control);
   border-radius: 0;
-  background-color: transparent;
+  background-color: var(--surface);
   color: var(--text-primary);
   caret-color: var(--text-primary);
-  transition: border-color 0.15s ease;
-}
-
-/* YUCG deviation: a multi-line area keeps a full hairline box, since an
-   underline alone does not show how large it is. */
-:where(textarea) {
-  border-width: 1px;
-}
-
-:where(
-  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
-  select,
-  textarea
-):focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 1px 0 var(--accent);
 }
 
 :where(select:not([multiple]):not([size])) {
@@ -184,11 +178,17 @@
   cursor: pointer;
   padding-right: 1.75rem;
   background-image:
-    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
-    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--navy-900) 50%),
+    linear-gradient(135deg, var(--navy-900) 50%, transparent 50%);
   background-position: calc(100% - 0.75rem) 55%, calc(100% - 0.45rem) 55%;
   background-size: 5px 5px;
   background-repeat: no-repeat;
+}
+
+.dark :where(select:not([multiple]):not([size])) {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
 }
 
 :where(input, select, textarea):disabled {
@@ -196,96 +196,107 @@
   cursor: not-allowed;
 }
 
-/* Inputs and selects share the button metrics so a control row lines up:
-   same height, same font. */
 .ui-input {
   min-height: var(--control-height);
   width: 100%;
-  padding: 0.5rem 0.25rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 0;
   color: var(--ink);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   line-height: 1.4;
 }
 
 .ui-input--sm {
   min-height: 2rem;
   width: auto;
-  padding: 0.25rem 0.375rem;
-  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
 }
 
-/* Tables (11.6): navy rule under the header, hairlines between rows. Text
-   in a header is navy bold, never uppercase. Zero specificity, so a page's
-   own classes still win. */
+/* Tables (deck 8.1): steel-600 column-header row with white bold text, body
+   rows alternating white / mist-100. Web exception: the deck alternates
+   mist-300 / mist-100, which is heavy on long app tables. Zero specificity so
+   a page's own classes still win. */
 :where(th) {
-  color: var(--heading);
+  padding: 0.5rem 0.75rem;
+  background: var(--steel-600);
+  color: #ffffff;
+  font-size: 0.8125rem;
   font-weight: 700;
-  border-bottom: 1px solid var(--accent);
+  text-align: left;
 }
 
-:where(tbody tr):hover {
-  background: var(--surface-subtle);
-}
+:where(td) { padding: 0.5rem 0.75rem; }
 
-/* Notices (yucg-note): a faint navy fill, no border. Warnings and errors keep
-   a muted rule so the meaning survives without the colour; every notice also
-   says what it means in words. */
+:where(tbody tr:nth-child(even)) { background: var(--mist-100); }
+.dark :where(tbody tr:nth-child(even)) { background: var(--surface-subtle); }
+
+/* Notices: a mist-200 bar with navy text (Central Question style). Warnings
+   take gray-350; only a blocking error takes the muted error colour. */
 .ui-notice {
   padding: 0.75rem 1rem;
   border: 0;
   border-radius: 0;
   background: var(--info-soft);
   color: var(--ink);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   line-height: 1.4;
 }
 
-.ui-notice--warning { background: var(--warning-soft); border-left: 3px solid var(--warning); }
-.ui-notice--danger { background: var(--danger-soft); border-left: 3px solid var(--danger); }
+.ui-notice--warning { background: var(--warning-soft); }
+.ui-notice--danger { background: var(--danger-soft); border-left: 4px solid var(--danger); color: var(--danger); }
+.dark .ui-notice--danger { color: var(--text-primary); }
 
-/* Status badges (yucg-chip): outline, square. Success fills navy; warning and
-   danger are the only coloured ones. */
+/* Status badges: the navy scale with the word always printed. Strong navy-900
+   white, medium blue-600 white, weak mist-100 navy, completed / N/A gray-350.
+   Danger is the muted error colour (failed). */
 .ui-status {
   display: inline-flex;
   align-items: center;
   min-height: 1.5rem;
   padding: 0.1rem 0.5rem;
-  border: 1px solid var(--border-control);
+  border: 0;
   border-radius: 0;
-  background: transparent;
-  color: var(--ink);
+  background: var(--gray-350);
+  color: var(--navy-900);
   font-size: 0.8125rem;
   font-weight: 700;
   white-space: nowrap;
 }
 
-.ui-status--info { border-color: var(--accent); color: var(--accent); }
-.ui-status--success { background: var(--btn-primary-bg); border-color: var(--btn-primary-bg); color: var(--btn-primary-text); }
-.ui-status--warning { background: var(--warning-soft); border-color: var(--warning); color: var(--warning); }
-.ui-status--danger { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+.ui-status--info { background: var(--blue-600); color: #ffffff; }
+.ui-status--success { background: var(--navy-900); color: #ffffff; }
+.ui-status--warning { background: var(--mist-100); color: var(--navy-900); }
+.ui-status--danger { background: var(--danger-soft); color: var(--danger); }
 
-/* Empty state (yucg-dropzone): faint navy fill, dashed gray outline. */
+.dark .ui-status { background: var(--surface-subtle); color: var(--text-primary); }
+.dark .ui-status--info { background: var(--blue-600); color: #ffffff; }
+.dark .ui-status--success { background: var(--accent); color: var(--navy-950); }
+.dark .ui-status--danger { background: var(--danger-soft); color: var(--danger); }
+
+/* Empty state: a mist-100 panel, no dashed outline. */
 .ui-empty {
   padding: clamp(2rem, 6vw, 4rem) 1.25rem;
-  border: 1px dashed var(--border-control);
+  border: 0;
   border-radius: 0;
-  background: var(--info-soft);
+  background: var(--mist-100);
   color: var(--ink);
   text-align: center;
 }
 
+.dark .ui-empty { background: var(--surface-subtle); }
+
 .ui-empty h3 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1rem;
 }
 
 .ui-empty p {
   max-width: 34rem;
   margin: 0.5rem auto 0;
   color: var(--ink-muted);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
 .ui-empty__action { margin-top: 1rem; }
@@ -303,20 +314,20 @@
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(11, 31, 58, 0.6);
+  background: rgba(5, 36, 87, 0.6);
 }
 
 .ui-dialog {
   position: relative;
   width: min(32rem, 100%);
   padding: 1.5rem;
-  border: 1px solid var(--accent);
+  border: 0;
   border-radius: 0;
   background: var(--surface-raised);
   color: var(--ink);
 }
 
-.ui-dialog h2 { margin: 0; font-size: 1.25rem; }
+.ui-dialog h2 { margin: 0; font-size: 1rem; }
 .ui-dialog__body { margin-top: 0.75rem; color: var(--ink-muted); line-height: 1.5; }
 .ui-dialog__actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem; }
 
