@@ -1460,7 +1460,19 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 /* Inside a card, each block (heading, text, field, button row, table) gets
    the same breathing room, and a label sits a little above its field. */
 .app-workspace .surface-card > * + * { margin-top: var(--stack-gap); }
-.app-workspace label > :where(input, select, textarea) { margin-top: 0.375rem; }
+
+/* Text boxes: one text indent, one text size and one label gap everywhere,
+   so the words in every field start on the same line as its label. */
+.app-workspace :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):not([type="range"]), select, textarea) {
+  padding-left: 0.75rem;
+  font-size: 0.9375rem;
+}
+.app-workspace textarea { padding: 0.5rem 0.75rem; }
+.app-workspace input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { padding-right: 0.75rem; }
+.app-workspace .surface-card label + :is(input, select, textarea),
+.app-workspace label + :is(input, select, textarea),
+.app-workspace label > :is(input, select, textarea) { margin-top: 0.375rem; }
+.app-workspace label:has(+ :is(input, select, textarea)) { margin-bottom: 0; display: block; }
 
 .app-toolbar {
   display: flex;
