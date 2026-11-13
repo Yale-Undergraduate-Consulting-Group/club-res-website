@@ -489,7 +489,7 @@
 .research-evidence p { margin: 0; color: var(--ink-muted); }
 .research-evidence blockquote { margin: 0.25rem 0 0; padding: 0.5rem; border-left: 3px solid var(--border); background: var(--surface-subtle); color: var(--ink); }
 .research-sources li { display: grid; gap: 0.25rem; }
-.research-error { color: var(--danger, #b42318); }
+.research-error { color: var(--navy-1000, #002060); font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) {
   .research-workspace * { transition: none !important; animation: none !important; }

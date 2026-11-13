@@ -21,9 +21,9 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.5rem 1.25rem;
-  border: 0;
+  border: 1px solid var(--border-control);
   border-radius: 0;
-  background: var(--mist-100);
+  background: var(--white, #ffffff);
   color: var(--navy-900);
   font: inherit;
   font-size: 0.8125rem;
@@ -34,10 +34,10 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.dark .ui-button { background: var(--surface-subtle); color: var(--text-primary); }
+.dark .ui-button { background: var(--surface); color: var(--text-primary); border-color: var(--border); }
 
 .ui-button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -58,8 +58,8 @@
 .ui-button--icon { width: var(--control-height); }
 .ui-button--icon.ui-button--sm { width: var(--control-height-sm); }
 
-/* Toggles, filters and segmented choices: a mist fill; the selected one is a
-   navy-900 bar with white text. Size is fixed; only colour changes. */
+/* Toggles, filters and segmented choices: white with a steel edge; the
+   selected one is a navy-900 bar with white text. Size is fixed. */
 .ui-chip {
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
@@ -69,9 +69,9 @@
   justify-content: center;
   gap: 0.375rem;
   padding: 0.25rem 0.875rem;
-  border: 0;
+  border: 1px solid var(--border-control);
   border-radius: 0;
-  background: var(--mist-100);
+  background: var(--white, #ffffff);
   color: var(--navy-900);
   font: inherit;
   font-size: 0.8125rem;
@@ -81,13 +81,14 @@
   cursor: pointer;
 }
 
-.dark .ui-chip { background: var(--surface-subtle); color: var(--text-primary); }
+.dark .ui-chip { background: var(--surface); color: var(--text-primary); border-color: var(--border); }
 
 .ui-chip:hover:not(:disabled) {
-  background: var(--mist-300);
+  background: var(--mist-100);
+  border-color: var(--steel-400);
 }
 
-.dark .ui-chip:hover:not(:disabled) { background: var(--border); }
+.dark .ui-chip:hover:not(:disabled) { background: var(--surface-subtle); }
 
 .ui-chip[aria-pressed="true"],
 .ui-chip[aria-checked="true"],
@@ -95,8 +96,9 @@
 .ui-chip[aria-pressed="true"]:hover:not(:disabled),
 .ui-chip[aria-checked="true"]:hover:not(:disabled),
 .ui-chip[aria-current="step"]:hover:not(:disabled) {
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
+  background: var(--navy-900);
+  border-color: var(--navy-900);
+  color: #ffffff;
   font-weight: 700;
 }
 
@@ -110,28 +112,34 @@
 .company-chip-body .ui-button--ghost { color: inherit; }
 .company-chip-body .ui-button--ghost:hover:not(:disabled) { background: rgb(0 0 0 / 0.12); }
 
-/* Primary: a navy-900 bar, white text. */
+/* Primary: a navy-900 bar, white text; blue-600 on hover. */
 .ui-button--primary,
 .dark .ui-button--primary {
   background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
   color: var(--btn-primary-text);
 }
 
 .ui-button--primary:hover:not(:disabled) {
-  background: var(--btn-primary-hover);
+  background: var(--blue-600);
+  border-color: var(--blue-600);
 }
 
-/* Secondary: a mist-100 fill with navy text (the default above). */
-.ui-button--secondary:hover:not(:disabled) {
-  background: var(--mist-300);
+/* Secondary: white with a steel edge and navy text (the default above);
+   a mist tint on hover, the edge darkening to navy. */
+.ui-button--secondary:hover:not(:disabled),
+.ui-button:not([class*="ui-button--"]):hover:not(:disabled) {
+  background: var(--mist-100);
+  border-color: var(--navy-900);
 }
 
-.dark .ui-button--secondary:hover:not(:disabled) { background: var(--border); }
+.dark .ui-button--secondary:hover:not(:disabled) { background: var(--surface-subtle); }
 
 /* Danger: the one muted error colour (web exception), destructive actions only. */
 .ui-button--danger,
 .dark .ui-button--danger {
   background: var(--danger);
+  border-color: var(--danger);
   color: #ffffff;
 }
 
@@ -141,20 +149,22 @@
   background: #832f28;
 }
 
-/* Ghost: text only in blue-600, no fill until hover. */
+/* Ghost: text only in blue-600; underlined on hover, never a fill. */
 .ui-button--ghost,
 .dark .ui-button--ghost {
   background: transparent;
+  border-color: transparent;
   color: var(--blue-600);
 }
 
 .dark .ui-button--ghost { color: var(--accent); }
 
-.ui-button--ghost:hover:not(:disabled) {
-  background: var(--mist-100);
+.ui-button--ghost:hover:not(:disabled),
+.dark .ui-button--ghost:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
-
-.dark .ui-button--ghost:hover:not(:disabled) { background: var(--surface-subtle); }
 
 /* Forms: white fill, a 1px steel edge (web exception, see --border-control),
    square. Applies to every raw input, select and textarea so pages that never
@@ -245,7 +255,8 @@
 }
 
 .ui-notice--warning { background: var(--warning-soft); }
-.ui-notice--danger { background: var(--danger-soft); border-left: 4px solid var(--danger); color: var(--danger); }
+/* Errors stay in the palette: a gray panel with a deep-navy bar; the words say it is an error. */
+.ui-notice--danger { background: var(--gray-100); border-left: 4px solid var(--navy-1000); color: var(--navy-1000); font-weight: 700; }
 .dark .ui-notice--danger { color: var(--text-primary); }
 
 /* Status badges: the navy scale with the word always printed. Strong navy-900
@@ -268,24 +279,24 @@
 .ui-status--info { background: var(--blue-600); color: #ffffff; }
 .ui-status--success { background: var(--navy-900); color: #ffffff; }
 .ui-status--warning { background: var(--mist-100); color: var(--navy-900); }
-.ui-status--danger { background: var(--danger-soft); color: var(--danger); }
+.ui-status--danger { background: var(--slate-700); color: #ffffff; }
 
 .dark .ui-status { background: var(--surface-subtle); color: var(--text-primary); }
 .dark .ui-status--info { background: var(--blue-600); color: #ffffff; }
 .dark .ui-status--success { background: var(--accent); color: var(--navy-950); }
-.dark .ui-status--danger { background: var(--danger-soft); color: var(--danger); }
+.dark .ui-status--danger { background: var(--steel-600); color: #ffffff; }
 
-/* Empty state: a mist-100 panel, no dashed outline. */
+/* Empty state: a plain white panel with a hairline, not a filled block. */
 .ui-empty {
   padding: clamp(2rem, 6vw, 4rem) 1.25rem;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: 0;
-  background: var(--mist-100);
+  background: var(--white, #ffffff);
   color: var(--ink);
   text-align: center;
 }
 
-.dark .ui-empty { background: var(--surface-subtle); }
+.dark .ui-empty { background: var(--surface); }
 
 .ui-empty h3 {
   margin: 0;
