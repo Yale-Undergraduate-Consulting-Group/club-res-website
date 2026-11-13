@@ -1,115 +1,424 @@
 /* Design tokens: the dark variant, Tailwind theme, colour and radius
    variables for both themes, and the page's base type. Every app uses these;
-   change a token here rather than restating a colour in an app's styles. */
+   change a token here rather than restating a colour in an app's styles.
+
+   This file applies the YUCG design system (yucg-design-system, design.md):
+   navy + white, ink body text, square corners, no shadows, one serif family.
+   The deliberate departures from that spec are marked "YUCG deviation". */
 
 /* Only treat as dark when <html class="dark"> — not OS prefers-color-scheme (fixes grey tabs/cards in app light mode). */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-deep-navy: #1a2f5a;
-  --color-mid-navy: #1e3a6e;
-  --color-slate-blue: #3d5c82;
-  --color-steel-blue: #5b7fa6;
-  --color-light-steel: #8aaabf;
-  --color-pale-sky: #c8dced;
+  --color-deep-navy: #1c366a;
+  --color-mid-navy: #3465a8;
+  --color-slate-blue: #445469;
+  --color-steel-blue: #909ab1;
+  --color-light-steel: #c9ced6;
+  --color-pale-sky: #dfe6ef;
+
+  /* Type (design.md section 3): YaleNew is licensed to Yale affiliates only,
+     so the fallback chain is what most browsers show. Everything is serif. */
+  --font-sans: "YaleNew", "Libre Caslon Text", Georgia, "Times New Roman", serif;
+  --font-serif: "YaleNew", "Libre Caslon Text", Georgia, "Times New Roman", serif;
+  --font-chart: "Lato", "Helvetica Neue", Arial, sans-serif;
+
+  /* Square corners and no elevation everywhere (sections 7 and 9). */
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
+  --inset-shadow-2xs: 0 0 #0000;
+  --inset-shadow-xs: 0 0 #0000;
+  --inset-shadow-sm: 0 0 #0000;
+  --drop-shadow-xs: 0 0 #0000;
+  --drop-shadow-sm: 0 0 #0000;
+  --drop-shadow-md: 0 0 #0000;
+  --drop-shadow-lg: 0 0 #0000;
+  --drop-shadow-xl: 0 0 #0000;
+  --drop-shadow-2xl: 0 0 #0000;
+
+  /* Palette: pages use Tailwind colour utilities directly (bg-sky-100,
+     text-emerald-700 ...). Re-pointing the ramps here is what keeps those
+     pages on-system without editing every file.
+       neutrals -> the spec's ink / gray / rule
+       blues, greens, teals, violets -> navy ramp (no accent hues; success is
+         carried by its words, not by green)
+       red -> a muted brick: the one semantic hue kept (errors, bounces)
+       amber, yellow, orange -> a muted ochre: warnings only */
+  --color-slate-50: #f6f6f5;
+  --color-slate-100: #eeeeed;
+  --color-slate-200: #e2e2e1;
+  --color-slate-300: #d0d0cf;
+  --color-slate-400: #a0a09f;
+  --color-slate-500: #6e6d6c;
+  --color-slate-600: #5a5958;
+  --color-slate-700: #454443;
+  --color-slate-800: #2f2e2e;
+  --color-slate-900: #1f1e1e;
+  --color-slate-950: #141313;
+  --color-gray-50: #f6f6f5;
+  --color-gray-100: #eeeeed;
+  --color-gray-200: #e2e2e1;
+  --color-gray-300: #d0d0cf;
+  --color-gray-400: #a0a09f;
+  --color-gray-500: #6e6d6c;
+  --color-gray-600: #5a5958;
+  --color-gray-700: #454443;
+  --color-gray-800: #2f2e2e;
+  --color-gray-900: #1f1e1e;
+  --color-gray-950: #141313;
+  --color-zinc-50: #f6f6f5;
+  --color-zinc-100: #eeeeed;
+  --color-zinc-200: #e2e2e1;
+  --color-zinc-300: #d0d0cf;
+  --color-zinc-400: #a0a09f;
+  --color-zinc-500: #6e6d6c;
+  --color-zinc-600: #5a5958;
+  --color-zinc-700: #454443;
+  --color-zinc-800: #2f2e2e;
+  --color-zinc-900: #1f1e1e;
+  --color-zinc-950: #141313;
+  --color-neutral-50: #f6f6f5;
+  --color-neutral-100: #eeeeed;
+  --color-neutral-200: #e2e2e1;
+  --color-neutral-300: #d0d0cf;
+  --color-neutral-400: #a0a09f;
+  --color-neutral-500: #6e6d6c;
+  --color-neutral-600: #5a5958;
+  --color-neutral-700: #454443;
+  --color-neutral-800: #2f2e2e;
+  --color-neutral-900: #1f1e1e;
+  --color-neutral-950: #141313;
+
+  --color-sky-50: #f1f5fa;
+  --color-sky-100: #dfe6ef;
+  --color-sky-200: #c4d4e8;
+  --color-sky-300: #a9bfdc;
+  --color-sky-400: #7aa7d6;
+  --color-sky-500: #3465a8;
+  --color-sky-600: #1c366a;
+  --color-sky-700: #172c57;
+  --color-sky-800: #11224a;
+  --color-sky-900: #0b1f3a;
+  --color-sky-950: #08162b;
+  --color-blue-50: #f1f5fa;
+  --color-blue-100: #dfe6ef;
+  --color-blue-200: #c4d4e8;
+  --color-blue-300: #a9bfdc;
+  --color-blue-400: #7aa7d6;
+  --color-blue-500: #3465a8;
+  --color-blue-600: #1c366a;
+  --color-blue-700: #172c57;
+  --color-blue-800: #11224a;
+  --color-blue-900: #0b1f3a;
+  --color-blue-950: #08162b;
+  --color-indigo-50: #f1f5fa;
+  --color-indigo-100: #dfe6ef;
+  --color-indigo-200: #c4d4e8;
+  --color-indigo-300: #a9bfdc;
+  --color-indigo-400: #7aa7d6;
+  --color-indigo-500: #3465a8;
+  --color-indigo-600: #1c366a;
+  --color-indigo-700: #172c57;
+  --color-indigo-800: #11224a;
+  --color-indigo-900: #0b1f3a;
+  --color-indigo-950: #08162b;
+  --color-cyan-50: #f1f5fa;
+  --color-cyan-100: #dfe6ef;
+  --color-cyan-200: #c4d4e8;
+  --color-cyan-300: #a9bfdc;
+  --color-cyan-400: #7aa7d6;
+  --color-cyan-500: #3465a8;
+  --color-cyan-600: #1c366a;
+  --color-cyan-700: #172c57;
+  --color-cyan-800: #11224a;
+  --color-cyan-900: #0b1f3a;
+  --color-cyan-950: #08162b;
+  --color-teal-50: #f1f5fa;
+  --color-teal-100: #dfe6ef;
+  --color-teal-200: #c4d4e8;
+  --color-teal-300: #a9bfdc;
+  --color-teal-400: #7aa7d6;
+  --color-teal-500: #3465a8;
+  --color-teal-600: #1c366a;
+  --color-teal-700: #172c57;
+  --color-teal-800: #11224a;
+  --color-teal-900: #0b1f3a;
+  --color-teal-950: #08162b;
+  --color-emerald-50: #f1f5fa;
+  --color-emerald-100: #dfe6ef;
+  --color-emerald-200: #c4d4e8;
+  --color-emerald-300: #a9bfdc;
+  --color-emerald-400: #7aa7d6;
+  --color-emerald-500: #3465a8;
+  --color-emerald-600: #1c366a;
+  --color-emerald-700: #172c57;
+  --color-emerald-800: #11224a;
+  --color-emerald-900: #0b1f3a;
+  --color-emerald-950: #08162b;
+  --color-green-50: #f1f5fa;
+  --color-green-100: #dfe6ef;
+  --color-green-200: #c4d4e8;
+  --color-green-300: #a9bfdc;
+  --color-green-400: #7aa7d6;
+  --color-green-500: #3465a8;
+  --color-green-600: #1c366a;
+  --color-green-700: #172c57;
+  --color-green-800: #11224a;
+  --color-green-900: #0b1f3a;
+  --color-green-950: #08162b;
+  --color-violet-50: #f1f5fa;
+  --color-violet-100: #dfe6ef;
+  --color-violet-200: #c4d4e8;
+  --color-violet-300: #a9bfdc;
+  --color-violet-400: #7aa7d6;
+  --color-violet-500: #3465a8;
+  --color-violet-600: #1c366a;
+  --color-violet-700: #172c57;
+  --color-violet-800: #11224a;
+  --color-violet-900: #0b1f3a;
+  --color-violet-950: #08162b;
+  --color-purple-50: #f1f5fa;
+  --color-purple-100: #dfe6ef;
+  --color-purple-200: #c4d4e8;
+  --color-purple-300: #a9bfdc;
+  --color-purple-400: #7aa7d6;
+  --color-purple-500: #3465a8;
+  --color-purple-600: #1c366a;
+  --color-purple-700: #172c57;
+  --color-purple-800: #11224a;
+  --color-purple-900: #0b1f3a;
+  --color-purple-950: #08162b;
+
+  --color-red-50: #fbf1f0;
+  --color-red-100: #f5e1df;
+  --color-red-200: #eac3bf;
+  --color-red-300: #dc9b95;
+  --color-red-400: #c86f67;
+  --color-red-500: #b4493f;
+  --color-red-600: #9e3a31;
+  --color-red-700: #832f28;
+  --color-red-800: #6a2722;
+  --color-red-900: #52201c;
+  --color-red-950: #331310;
+  --color-rose-50: #fbf1f0;
+  --color-rose-100: #f5e1df;
+  --color-rose-200: #eac3bf;
+  --color-rose-300: #dc9b95;
+  --color-rose-400: #c86f67;
+  --color-rose-500: #b4493f;
+  --color-rose-600: #9e3a31;
+  --color-rose-700: #832f28;
+  --color-rose-800: #6a2722;
+  --color-rose-900: #52201c;
+  --color-rose-950: #331310;
+
+  --color-amber-50: #fbf6ec;
+  --color-amber-100: #f4ead3;
+  --color-amber-200: #e8d5a9;
+  --color-amber-300: #d6b877;
+  --color-amber-400: #be9647;
+  --color-amber-500: #a07a2e;
+  --color-amber-600: #86641f;
+  --color-amber-700: #6c4f18;
+  --color-amber-800: #523b13;
+  --color-amber-900: #3b2a0e;
+  --color-amber-950: #281c09;
+  --color-yellow-50: #fbf6ec;
+  --color-yellow-100: #f4ead3;
+  --color-yellow-200: #e8d5a9;
+  --color-yellow-300: #d6b877;
+  --color-yellow-400: #be9647;
+  --color-yellow-500: #a07a2e;
+  --color-yellow-600: #86641f;
+  --color-yellow-700: #6c4f18;
+  --color-yellow-800: #523b13;
+  --color-yellow-900: #3b2a0e;
+  --color-yellow-950: #281c09;
+  --color-orange-50: #fbf6ec;
+  --color-orange-100: #f4ead3;
+  --color-orange-200: #e8d5a9;
+  --color-orange-300: #d6b877;
+  --color-orange-400: #be9647;
+  --color-orange-500: #a07a2e;
+  --color-orange-600: #86641f;
+  --color-orange-700: #6c4f18;
+  --color-orange-800: #523b13;
+  --color-orange-900: #3b2a0e;
+  --color-orange-950: #281c09;
 }
 
 :root {
+  /* YUCG palette (design.md section 2 and 11.0). */
+  --yucg-navy: #1c366a;
+  --yucg-navy-06: rgba(28, 54, 106, 0.06);
+  --yucg-navy-20: rgba(28, 54, 106, 0.2);
+  --yucg-navy-overlay: rgba(28, 54, 106, 0.72);
+  --yucg-ink: #2f2e2e;
+  --yucg-muted: #6e6d6c;
+  --yucg-gray: #a0a09f;
+  --yucg-rule: #e2e2e1;
+  --yucg-font: "YaleNew", "Libre Caslon Text", Georgia, "Times New Roman", serif;
+  --yucg-font-chart: "Lato", "Helvetica Neue", Arial, sans-serif;
+  --heading: var(--yucg-navy);
+
   /* Canonical product tokens. Legacy aliases below remain during component migration. */
-  --canvas: #f5f7fa;
+  /* White canvas and white surfaces. YUCG deviation: a dense app needs a
+     faint fill to separate a table header, a hovered row or a toolbar; it is
+     the spec's own 6% navy tint (yucg-note), never a grey or another hue. */
+  --canvas: #ffffff;
   --surface: #ffffff;
-  --surface-subtle: #eef2f6;
+  --surface-subtle: #f1f3f7;
   --surface-raised: #ffffff;
-  --ink: #102442;
-  --ink-muted: #52647a;
-  --focus: #286dc0;
-  --danger: #b42318;
-  --danger-soft: #fff1f0;
-  --success-soft: #ecfdf3;
-  --warning-soft: #fffaeb;
-  --info-soft: #eff8ff;
-  --radius-control: 0.5rem;
-  --radius-panel: 0.5rem;
-  --control-height: 2.75rem;
-  --control-height-sm: 2.25rem;
-  --yale-blue: #00356b;
-  --yale-blue-light: #286dc0;
-  --yale-blue-dark: #002244;
-  --deep-navy: #1a2f5a;
-  --mid-navy: #1e3a6e;
-  --slate-blue: #3d5c82;
-  --steel-blue: #42658a;
-  --light-steel: #8aaabf;
-  --pale-sky: #c8dced;
+  --ink: var(--yucg-ink);
+  --ink-muted: var(--yucg-muted);
+  --focus: var(--yucg-navy);
+  /* Semantic colour is kept only for failure and caution, muted, and always
+     appears with words. YUCG deviation: the spec has no status colours. */
+  --danger: #9e3a31;
+  --danger-soft: #fbf1f0;
+  --success-soft: var(--yucg-navy-06);
+  --warning-soft: #fbf6ec;
+  --info-soft: var(--yucg-navy-06);
+  --radius-control: 0;
+  --radius-panel: 0;
+  --control-height: 2.5rem;
+  --control-height-sm: 2rem;
+  --yale-blue: var(--yucg-navy);
+  --yale-blue-light: #3465a8;
+  --yale-blue-dark: #0b1f3a;
+  --deep-navy: var(--yucg-navy);
+  --mid-navy: #3465a8;
+  --slate-blue: #445469;
+  --steel-blue: #909ab1;
+  --light-steel: #c9ced6;
+  --pale-sky: #dfe6ef;
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
-  --accent: var(--yale-blue);
-  --accent-hover: var(--yale-blue-dark);
-  --border: #cbd5df;
-  /* Chart ramp: the club's own blue ladder, dark to pale, so a chart reads as
-     part of the product rather than a stock palette dropped in. Danger stays
-     the product's danger red because a bounce is the one bad outcome. */
-  /* Blues and greys only, separated by lightness rather than hue so adjacent
-     slices stay legible without leaving the club's palette. */
-  --chart-1: #00356b;
-  --chart-2: #2f5585;
-  --chart-3: #5b7fa6;
-  --chart-4: #8aaabf;
-  --chart-5: #a9b8c6;
-  --chart-6: #c8dced;
-  /* A reply is the outcome that matters, so it takes the strongest blue; a
-     bounce is inert grey; queued is barely there. */
-  --chart-good: #00356b;
-  --chart-bad: #5a6675;
-  --chart-idle: #d7dee7;
-  --success: #16794b;
-  --warning: #9a5b00;
-  /* Primary CTAs: same hue family as headings and links (--accent from :root or user prefs) */
+  --accent: var(--yucg-navy);
+  --accent-hover: #0b1f3a;
+  /* Hairlines. The spec's gray #A0A09F is only 2.6:1 on white, too faint to
+     mark a control's edge (WCAG 1.4.11 asks 3:1), so it is kept for
+     placeholders and rules while edges that identify a control use a darker
+     gray. YUCG deviation. */
+  --border: #d4d4d3;
+  --border-control: #8a8a89;
+  /* Chart palette (section 10): navy first, never cycled. */
+  --chart-1: #1c366a;
+  --chart-2: #3465a8;
+  --chart-3: #7aa7d6;
+  --chart-4: #445469;
+  --chart-5: #909ab1;
+  --chart-6: #c4d4e8;
+  --chart-7: #0b1f3a;
+  --chart-8: #dfe6ef;
+  --chart-focus: #1c366a;
+  --chart-context: #c9ced6;
+  --chart-text: #00346b;
+  --chart-grid: rgba(0, 52, 107, 0.6);
+  /* A reply is the outcome that matters, so it takes the strongest navy; a
+     bounce is the slate series; queued is barely there. */
+  --chart-good: #1c366a;
+  --chart-bad: #445469;
+  --chart-idle: #dfe6ef;
+  --success: #1c366a;
+  --warning: #86641f;
+  /* Primary CTAs: solid navy square. YUCG deviation: the spec's buttons are
+     never filled at rest, but a dense app needs one primary action per view
+     that reads as primary; secondary buttons are the spec's outline ghost. */
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
   --btn-primary-text: #ffffff;
-  /* Elevation: bright highlight + pale-sky tint — no heavy black drop shadow */
-  --shadow-sm: 0 1px 2px rgba(255, 255, 255, 0.92), 0 2px 8px rgba(200, 220, 237, 0.42);
-  --shadow-md: 0 2px 4px rgba(255, 255, 255, 0.88), 0 6px 16px rgba(200, 220, 237, 0.36);
-  --shadow-lg: 0 4px 8px rgba(255, 255, 255, 0.82), 0 10px 28px rgba(200, 220, 237, 0.32);
-  --shadow-xl: 0 8px 16px rgba(255, 255, 255, 0.78), 0 14px 40px rgba(200, 220, 237, 0.28);
-  --shadow-2xl: 0 12px 24px rgba(255, 255, 255, 0.72), 0 22px 56px rgba(200, 220, 237, 0.22);
+  /* No elevation anywhere (section 7). */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
+  /* Photo and login overlays: the spec's 72% navy. */
+  --yucg-tint: var(--yucg-navy-overlay);
+  --yucg-tint-strong: var(--yucg-navy-overlay);
 }
 
-/* Dark mode (YUCG palette adapted) */
+/* Dark mode. YUCG deviation: the spec is light only. This is a navy-based
+   night palette so the toggle keeps working: navy surfaces, pale ink, and a
+   pale-blue "primary" because navy on navy would vanish. */
 .dark {
-  --canvas: #0f172a;
-  --surface: #1e293b;
-  --surface-subtle: #273449;
-  --surface-raised: #243247;
-  --ink: #f1f5f9;
-  --ink-muted: #cbd5e1;
-  --focus: #8ab4e6;
-  --danger: #fda29b;
-  --danger-soft: #4a1d22;
-  --success-soft: #123a2d;
-  --warning-soft: #493616;
-  --info-soft: #173455;
+  --canvas: #0b1426;
+  --surface: #111f3a;
+  --surface-subtle: #1a2b4f;
+  --surface-raised: #16264a;
+  --ink: #e8ecf4;
+  --ink-muted: #aab5c9;
+  --heading: #e8ecf4;
+  --focus: #a9bfdc;
+  --danger: #f0a49c;
+  --danger-soft: #3a1d20;
+  --success-soft: rgba(169, 191, 220, 0.1);
+  --warning-soft: #3a2f16;
+  --info-soft: rgba(169, 191, 220, 0.1);
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
-  --accent: #5b7fa6;
-  --accent-hover: #8aaabf;
-  --border: #334155;
+  --accent: #a9bfdc;
+  --accent-hover: #ffffff;
+  --border: #2a3d66;
+  --border-control: #6f82a8;
+  --chart-1: #a9bfdc;
+  --chart-2: #7aa7d6;
+  --chart-3: #3465a8;
+  --chart-4: #909ab1;
+  --chart-5: #5b6a86;
+  --chart-6: #2f4672;
+  --chart-7: #dfe6ef;
+  --chart-8: #1f3158;
+  --chart-focus: #a9bfdc;
+  --chart-context: #4a5c80;
+  --chart-text: #dfe6ef;
+  --chart-grid: rgba(169, 191, 220, 0.45);
+  --chart-good: #a9bfdc;
+  --chart-bad: #909ab1;
+  --chart-idle: #1f3158;
+  --success: #a9bfdc;
+  --warning: #e0c070;
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
-  --btn-primary-text: #ffffff;
-  /* Dark: soft white rim + airy lift (not black blobs) */
-  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 2px 10px rgba(255, 255, 255, 0.05);
-  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 4px 16px rgba(255, 255, 255, 0.06);
-  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.11), 0 8px 28px rgba(255, 255, 255, 0.07);
-  --shadow-xl: 0 0 0 1px rgba(255, 255, 255, 0.13), 0 12px 36px rgba(255, 255, 255, 0.08);
-  --shadow-2xl: 0 0 0 1px rgba(255, 255, 255, 0.15), 0 20px 50px rgba(255, 255, 255, 0.09);
+  --btn-primary-text: #0b1f3a;
+  --yucg-tint: rgba(8, 18, 38, 0.78);
+  --yucg-tint-strong: rgba(8, 18, 38, 0.78);
+}
+
+/* Section 7: corners are square everywhere, whatever a page's utility class
+   asks for. Unlayered, so it outranks Tailwind's layered rounded-* classes
+   (including rounded-full); the theme radius vars above cover the rest. */
+*,
+*::before,
+*::after {
+  border-radius: 0;
+}
+
+/* Section 3: no uppercase transforms anywhere. */
+*,
+*::before,
+*::after {
+  text-transform: none !important;
 }
 
 .dark body {
@@ -117,36 +426,40 @@
   color: var(--text-primary);
 }
 
-/* Dark: field text matches --text-primary (same as rest of UI) */
-.dark input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
-.dark select,
-.dark textarea {
-  background-color: #334155;
-  color: var(--text-primary);
-  caret-color: var(--text-primary);
-  border-color: #475569;
-}
-
 .dark .bg-white { background-color: var(--bg-card); }
-.dark .bg-slate-50 { background-color: #334155; }
-.dark .bg-pale-sky\/50 { background-color: rgba(91, 127, 166, 0.2); }
-.dark .bg-pale-sky\/20 { background-color: rgba(91, 127, 166, 0.15); }
-.dark .bg-pale-sky\/30 { background-color: rgba(91, 127, 166, 0.2); }
+.dark .bg-slate-50 { background-color: var(--surface-subtle); }
+.dark .bg-pale-sky\/50 { background-color: rgba(169, 191, 220, 0.12); }
+.dark .bg-pale-sky\/20 { background-color: rgba(169, 191, 220, 0.08); }
+.dark .bg-pale-sky\/30 { background-color: rgba(169, 191, 220, 0.1); }
 .dark .border-pale-sky,
 .dark .border-slate-200,
-.dark .border-slate-300 { border-color: #475569; }
+.dark .border-slate-300 { border-color: var(--border); }
 .dark .text-deep-navy { color: var(--text-primary); }
-.dark nav.border-b { border-color: #334155; }
-.dark .hover\:bg-slate-50:hover { background-color: #334155; }
-.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(91, 127, 166, 0.2); }
-.dark .bg-red-50 { background-color: rgba(185, 28, 28, 0.15); }
-.dark .bg-green-50 { background-color: rgba(5, 150, 105, 0.15); }
-.dark .bg-amber-50 { background-color: rgba(180, 83, 9, 0.15); }
-.dark .bg-slate-50 { background-color: #334155; }
-.dark code { background-color: #475569; color: #e2e8f0; }
+.dark nav.border-b { border-color: var(--border); }
+.dark .hover\:bg-slate-50:hover { background-color: var(--surface-subtle); }
+.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(169, 191, 220, 0.1); }
+.dark .bg-red-50 { background-color: rgba(240, 164, 156, 0.12); }
+.dark .bg-green-50 { background-color: var(--info-soft); }
+.dark .bg-amber-50 { background-color: rgba(224, 192, 112, 0.12); }
+.dark code { background-color: var(--surface-subtle); color: var(--text-primary); }
 
-html {
-  font-family: 'Lato', system-ui, sans-serif;
+/* Section 3: one serif family for headings and UI, line-height 1.4. In the
+   base layer so a page's own text-* utilities (white banner titles) still win. */
+@layer base {
+  html {
+    font-family: var(--yucg-font);
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Headings are navy bold serif; body copy is ink (never navy). */
+  h1, h2, h3, h4 {
+    font-family: var(--yucg-font);
+    font-weight: 700;
+    color: var(--heading);
+    line-height: 1.4;
+    text-wrap: balance;
+  }
 }
 
 /* Form controls and tables do not inherit the page font by default, which is
@@ -157,4 +470,12 @@ select,
 textarea,
 table {
   font-family: inherit;
+}
+
+/* Checkboxes, radios and sliders are navy (section 11.5). */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress {
+  accent-color: var(--accent);
 }

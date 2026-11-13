@@ -2,10 +2,13 @@
    chip, input, notice, status, empty state, dialog, disclosure) and the one
    opening motion every menu and panel shares. */
 
-/* ——— Product UI primitives ——— */
+/* ——— Product UI primitives ———
+   YUCG design system, section 11: square, serif, navy. Buttons are
+   rectangles outlined in navy that fill on hover (11.4); the primary action is
+   the one filled-at-rest exception. Inputs are underlines (11.5). */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
 .ui-button {
@@ -16,27 +19,30 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  border: 2px solid transparent;
-  border-radius: var(--radius-control) !important;
+  padding: 0.5rem 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 700;
+  font-size: 0.9375rem;
+  font-weight: 400;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .ui-button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .ui-button--sm {
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
-  padding: 0.4rem 0.75rem;
-  font-size: 0.8125rem;
+  padding: 0.25rem 0.875rem;
+  font-size: 0.875rem;
 }
 
 /* Icon-only: one square per size step. */
@@ -49,8 +55,9 @@
 .ui-button--icon { width: var(--control-height); }
 .ui-button--icon.ui-button--sm { width: var(--control-height-sm); }
 
-/* Toggles, filters and segmented choices. The size is fixed; state changes
-   colour only, so a selected pill is exactly as tall as an unselected one. */
+/* Toggles, filters and segmented choices (yucg-segmented / yucg-chip): a navy
+   outline; the selected one fills navy. The size is fixed; state changes
+   colour only, so a selected chip is exactly as tall as an unselected one. */
 .ui-chip {
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
@@ -59,14 +66,14 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  padding: 0.4rem 0.875rem;
-  border: 1px solid var(--border);
-  border-radius: 9999px;
-  background: var(--surface);
-  color: var(--ink);
+  padding: 0.25rem 0.875rem;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 400;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
@@ -88,7 +95,7 @@
 }
 
 .ui-chip:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -97,6 +104,7 @@
 .company-chip-body .ui-button--ghost { color: inherit; }
 .company-chip-body .ui-button--ghost:hover:not(:disabled) { background: rgb(0 0 0 / 0.12); }
 
+/* Primary: solid navy square (YUCG deviation; see tokens.css). */
 .ui-button--primary {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
@@ -108,114 +116,176 @@
   border-color: var(--btn-primary-hover);
 }
 
-.ui-button--secondary {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--border);
+/* Secondary: yucg-btn, the outline ghost that fills navy on hover. */
+.ui-button--secondary:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--btn-primary-text);
 }
 
-.ui-button--secondary:hover:not(:disabled),
+/* Danger: the same outline, in the muted error red. */
+.ui-button--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.ui-button--danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--canvas);
+}
+
+/* Ghost: text only (yucg-link feel), a faint navy fill on hover. */
+.ui-button--ghost {
+  border-color: transparent;
+  color: var(--accent);
+}
+
 .ui-button--ghost:hover:not(:disabled) {
   background: var(--surface-subtle);
 }
 
-.ui-button--danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #ffffff;
+/* Forms (11.5): no box, a 1px underline that turns navy on focus. Applies to
+   every raw input, select and textarea so pages that never adopted the kit
+   match; a control that opts out with border-0 / border-none is left alone.
+   :where() keeps specificity at zero, so a component's own class still wins;
+   being unlayered it beats Tailwind's border and rounded utilities. The darker
+   --border-control is used rather than the spec's #A0A09F (2.6:1 on white). */
+:where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not(.border-0):not(.border-none),
+  select:not(.border-0):not(.border-none),
+  textarea
+) {
+  border: 0 solid var(--border-control);
+  border-bottom-width: 1px;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+  transition: border-color 0.15s ease;
 }
 
-.ui-button--ghost {
-  background: transparent;
-  color: var(--ink);
+/* YUCG deviation: a multi-line area keeps a full hairline box, since an
+   underline alone does not show how large it is. */
+:where(textarea) {
+  border-width: 1px;
 }
 
-/* Inputs and selects share the button metrics so a control row lines up:
-   same height, same radius, same font. Buttons had a system; these did not,
-   which is why fields and the buttons beside them sat at different heights. */
-.ui-input {
-  min-height: var(--control-height);
-  width: 100%;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.875rem;
-  line-height: 1.2;
+:where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+  select,
+  textarea
+):focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 1px 0 var(--accent);
 }
 
-.ui-input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+:where(select:not([multiple]):not([size])) {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 1.75rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+  background-position: calc(100% - 0.75rem) 55%, calc(100% - 0.45rem) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
 }
 
-.ui-input:disabled {
+:where(input, select, textarea):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.ui-input--sm {
-  min-height: 2.25rem;
-  width: auto;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.8125rem;
+/* Inputs and selects share the button metrics so a control row lines up:
+   same height, same font. */
+.ui-input {
+  min-height: var(--control-height);
+  width: 100%;
+  padding: 0.5rem 0.25rem;
+  border-radius: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.4;
 }
 
+.ui-input--sm {
+  min-height: 2rem;
+  width: auto;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.875rem;
+}
+
+/* Tables (11.6): navy rule under the header, hairlines between rows. Text
+   in a header is navy bold, never uppercase. Zero specificity, so a page's
+   own classes still win. */
+:where(th) {
+  color: var(--heading);
+  font-weight: 700;
+  border-bottom: 1px solid var(--accent);
+}
+
+:where(tbody tr):hover {
+  background: var(--surface-subtle);
+}
+
+/* Notices (yucg-note): a faint navy fill, no border. Warnings and errors keep
+   a muted rule so the meaning survives without the colour; every notice also
+   says what it means in words. */
 .ui-notice {
   padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-left-width: 4px;
-  border-radius: var(--radius-panel);
+  border: 0;
+  border-radius: 0;
+  background: var(--info-soft);
   color: var(--ink);
-  font-size: 0.875rem;
-  line-height: 1.45;
+  font-size: 0.9375rem;
+  line-height: 1.4;
 }
 
-.ui-notice--info { background: var(--info-soft); border-left-color: var(--focus); }
-.ui-notice--success { background: var(--success-soft); border-left-color: var(--success); }
-.ui-notice--warning { background: var(--warning-soft); border-left-color: var(--warning); }
-.ui-notice--danger { background: var(--danger-soft); border-left-color: var(--danger); }
+.ui-notice--warning { background: var(--warning-soft); border-left: 3px solid var(--warning); }
+.ui-notice--danger { background: var(--danger-soft); border-left: 3px solid var(--danger); }
 
+/* Status badges (yucg-chip): outline, square. Success fills navy; warning and
+   danger are the only coloured ones. */
 .ui-status {
   display: inline-flex;
   align-items: center;
   min-height: 1.5rem;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 999px !important;
-  background: var(--surface-subtle);
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border-control);
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   white-space: nowrap;
 }
 
-.ui-status--info { background: var(--info-soft); border-color: var(--focus); }
-.ui-status--success { background: var(--success-soft); border-color: var(--success); }
-.ui-status--warning { background: var(--warning-soft); border-color: var(--warning); }
-.ui-status--danger { background: var(--danger-soft); border-color: var(--danger); }
+.ui-status--info { border-color: var(--accent); color: var(--accent); }
+.ui-status--success { background: var(--btn-primary-bg); border-color: var(--btn-primary-bg); color: var(--btn-primary-text); }
+.ui-status--warning { background: var(--warning-soft); border-color: var(--warning); color: var(--warning); }
+.ui-status--danger { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
 
+/* Empty state (yucg-dropzone): faint navy fill, dashed gray outline. */
 .ui-empty {
   padding: clamp(2rem, 6vw, 4rem) 1.25rem;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
+  border: 1px dashed var(--border-control);
+  border-radius: 0;
+  background: var(--info-soft);
   color: var(--ink);
   text-align: center;
 }
 
 .ui-empty h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.125rem;
 }
 
 .ui-empty p {
   max-width: 34rem;
   margin: 0.5rem auto 0;
   color: var(--ink-muted);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 
 .ui-empty__action { margin-top: 1rem; }
@@ -233,21 +303,20 @@
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(15, 23, 42, 0.58);
+  background: rgba(11, 31, 58, 0.6);
 }
 
 .ui-dialog {
   position: relative;
   width: min(32rem, 100%);
-  padding: 1.25rem;
-  border: 2px solid var(--deep-navy);
-  border-radius: var(--radius-panel);
+  padding: 1.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 0;
   background: var(--surface-raised);
   color: var(--ink);
-  box-shadow: var(--shadow-xl);
 }
 
-.ui-dialog h2 { margin: 0; font-size: 1.125rem; }
+.ui-dialog h2 { margin: 0; font-size: 1.25rem; }
 .ui-dialog__body { margin-top: 0.75rem; color: var(--ink-muted); line-height: 1.5; }
 .ui-dialog__actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem; }
 
