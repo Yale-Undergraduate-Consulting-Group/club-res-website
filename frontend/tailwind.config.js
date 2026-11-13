@@ -10,7 +10,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['YaleNew', 'Libre Caslon Text', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Lato', 'Helvetica Neue', 'Arial', 'sans-serif'],
         chart: ['Lato', 'Helvetica Neue', 'Arial', 'sans-serif'],
       },
       colors: {

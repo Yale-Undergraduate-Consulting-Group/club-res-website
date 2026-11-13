@@ -17,10 +17,9 @@
   --color-light-steel: #c9ced6;
   --color-pale-sky: #dfe6ef;
 
-  /* Type (design.md section 3): YaleNew is licensed to Yale affiliates only,
-     so the fallback chain is what most browsers show. Everything is serif. */
-  --font-sans: "YaleNew", "Libre Caslon Text", Georgia, "Times New Roman", serif;
-  --font-serif: "YaleNew", "Libre Caslon Text", Georgia, "Times New Roman", serif;
+  /* Type: Lato everywhere (installed locally; Google Fonts as fallback). */
+  --font-sans: "Lato", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Lato", "Helvetica Neue", Arial, sans-serif;
   --font-chart: "Lato", "Helvetica Neue", Arial, sans-serif;
 
   /* Square corners and no elevation everywhere (sections 7 and 9). */
@@ -270,7 +269,7 @@
   --yucg-muted: #6e6d6c;
   --yucg-gray: #a0a09f;
   --yucg-rule: #e2e2e1;
-  --yucg-font: "YaleNew", "Libre Caslon Text", Georgia, "Times New Roman", serif;
+  --yucg-font: "Lato", "Helvetica Neue", Arial, sans-serif;
   --yucg-font-chart: "Lato", "Helvetica Neue", Arial, sans-serif;
   --heading: var(--yucg-navy);
 
