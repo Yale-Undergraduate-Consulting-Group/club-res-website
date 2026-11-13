@@ -183,6 +183,18 @@
   caret-color: var(--text-primary);
 }
 
+/* Single-line fields share the button height exactly, so a field and the
+   button beside it line up top and bottom. */
+:where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+  select:not([multiple]):not([size])
+) {
+  box-sizing: border-box;
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding-block: 0;
+}
+
 :where(select:not([multiple]):not([size])) {
   appearance: none;
   cursor: pointer;

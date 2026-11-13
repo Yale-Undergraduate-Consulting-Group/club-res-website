@@ -301,8 +301,9 @@
   --danger-soft: #f5e1df;
   --radius-control: 0;
   --radius-panel: 0;
-  --control-height: 2.5rem;
-  --control-height-sm: 2rem;
+  /* One control height: buttons, chips, inputs and selects share a line. */
+  --control-height: 2.25rem;
+  --control-height-sm: 2.25rem;
   --yale-blue: var(--navy-900);
   --yale-blue-light: var(--blue-600);
   --yale-blue-dark: var(--navy-950);

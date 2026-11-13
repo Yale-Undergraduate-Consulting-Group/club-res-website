@@ -1430,13 +1430,32 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   padding: 1.125rem 1.25rem;
 }
 
-@layer components {
-  .app-workspace {
-    width: 100%;
-    max-width: 90rem;
-    margin-inline: auto;
-  }
+/* ——— Layout system ———
+   One content width for every page, so titles, rules and edges line up when
+   moving between pages; one vertical rhythm between page sections; one
+   control height, so buttons, inputs and chips sit on the same line.
+   Unlayered on purpose: it overrides the per-page max-w-* and space-y-*
+   utilities, which are what made each page a different width. */
+:root {
+  --page-max: 80rem;
+  --section-gap: 1.5rem;
+  --stack-gap: 0.75rem;
 }
+
+.app-workspace {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+}
+
+/* The email editor is a full-width tool, the one exception. */
+.email-studio.app-workspace { max-width: min(100%, 1920px); }
+
+.app-workspace > * + * { margin-top: var(--section-gap); }
+.app-workspace > .app-page-header { margin-bottom: 0; }
+
+/* Cards in a grid share a row height, so their bottoms line up. */
+.app-workspace .grid > .surface-card { height: 100%; }
 
 .app-toolbar {
   display: flex;
@@ -1469,6 +1488,6 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 .app-nav-group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 @media (min-width: 768px) {
-  .app-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+  .app-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; }
   .app-page-header-actions { margin-top: 0; flex-shrink: 0; }
 }
