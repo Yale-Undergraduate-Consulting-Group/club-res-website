@@ -20,7 +20,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.5rem 1.25rem;
+  padding: 0.5rem 1.5rem;
   border: 1px solid var(--border-control);
   border-radius: 0;
   background: var(--white, #ffffff);
@@ -241,7 +241,7 @@
    mist-300 / mist-100, which is heavy on long app tables. Zero specificity so
    a page's own classes still win. */
 :where(th) {
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   background: var(--steel-600);
   color: #ffffff;
   font-size: 0.8125rem;
@@ -249,7 +249,7 @@
   text-align: left;
 }
 
-:where(td) { padding: 0.5rem 0.75rem; }
+:where(td) { padding: 0.75rem 1rem; }
 
 :where(tbody tr:nth-child(even)) { background: var(--mist-100); }
 .dark :where(tbody tr:nth-child(even)) { background: var(--surface-subtle); }
@@ -257,7 +257,7 @@
 /* Notices: a mist-200 bar with navy text (Central Question style). Warnings
    take gray-350; only a blocking error takes the muted error colour. */
 .ui-notice {
-  padding: 0.75rem 1rem;
+  padding: 1rem 1.25rem;
   border: 0;
   border-radius: 0;
   background: var(--info-soft);

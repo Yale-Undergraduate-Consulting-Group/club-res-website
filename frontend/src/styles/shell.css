@@ -104,7 +104,7 @@ html.yucg-brand-redesign .app-auth-shell {
 body {
   margin: 0;
   font-family: var(--yucg-font);
-  line-height: 1.4;
+  line-height: 1.5;
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
@@ -1438,8 +1438,8 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
    utilities, which are what made each page a different width. */
 :root {
   --page-max: 80rem;
-  --section-gap: 1.5rem;
-  --stack-gap: 0.75rem;
+  --section-gap: 2rem;
+  --stack-gap: 1rem;
 }
 
 .app-workspace {
@@ -1456,6 +1456,11 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 
 /* Cards in a grid share a row height, so their bottoms line up. */
 .app-workspace .grid > .surface-card { height: 100%; }
+
+/* Inside a card, each block (heading, text, field, button row, table) gets
+   the same breathing room, and a label sits a little above its field. */
+.app-workspace .surface-card > * + * { margin-top: var(--stack-gap); }
+.app-workspace label > :where(input, select, textarea) { margin-top: 0.375rem; }
 
 .app-toolbar {
   display: flex;
