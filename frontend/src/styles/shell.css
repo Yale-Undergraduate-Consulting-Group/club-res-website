@@ -1456,7 +1456,9 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 /* The email editor is a full-width tool, the one exception. */
 .email-studio.app-workspace { max-width: min(100%, 1920px); }
 
-.app-workspace > * + * { margin-top: var(--section-gap); }
+/* Stacked layouts only: in a row (flex or grid) a top margin would push
+   every item after the first below the line. */
+.app-workspace:not(.flex):not(.grid):not(.inline-flex) > * + * { margin-top: var(--section-gap); }
 .app-workspace > .app-page-header { margin-bottom: 0; }
 
 /* Cards in a grid share a row height, so their bottoms line up. */
@@ -1464,7 +1466,7 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 
 /* Inside a card, each block (heading, text, field, button row, table) gets
    the same breathing room, and a label sits a little above its field. */
-.app-workspace .surface-card > * + * { margin-top: var(--stack-gap); }
+.app-workspace .surface-card:not(.flex):not(.grid):not(.inline-flex):not([class*="md:flex"]):not([class*="md:grid"]):not([class*="lg:grid"]) > * + * { margin-top: var(--stack-gap); }
 
 /* Text boxes: one text indent, one text size and one label gap everywhere,
    so the words in every field start on the same line as its label. */
