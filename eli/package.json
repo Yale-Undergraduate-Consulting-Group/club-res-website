@@ -1,0 +1,36 @@
+{
+  "name": "custom-slack-agent",
+  "version": "0.1.0",
+  "description": "Eli, a Slack assistant on the Anthropic API",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "eli": "tsx --env-file=.env src/eli/index.ts",
+    "eli:ask": "tsx --env-file=.env src/eli/cli.ts",
+    "eli:microsoft": "tsx --env-file=.env src/eli/microsoft.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file=.env dist/eli/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@azure/msal-node": "^3.8.10",
+    "@googleapis/drive": "^22.0.0",
+    "@slack/bolt": "^5.1.0",
+    "officeparser": "^7.8.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "pdfjs-dist": "6.2.108"
+  }
+}

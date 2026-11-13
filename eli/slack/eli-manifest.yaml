@@ -1,0 +1,67 @@
+# Paste this at https://api.slack.com/apps -> Create New App -> From a manifest.
+display_information:
+  name: Eli
+  description: YUCG's assistant. Tag @Eli in a thread or DM it.
+  background_color: "#0f4d92"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Eli
+    always_online: true
+  slash_commands:
+    - command: /eli-stats
+      description: Your Eli usage and limits (admins can see everyone's)
+      usage_hint: "[days]"
+      should_escape: false
+    - command: /help
+      description: List Eli's commands
+      should_escape: false
+    - command: /onboard
+      description: A one-minute tour of Eli for new members
+      should_escape: false
+    - command: /eli-console
+      description: Sign-in link to Eli's usage dashboard (board only)
+      should_escape: false
+    - command: /requests
+      description: Send Eli's maintainer a feature request
+      usage_hint: "[your idea]"
+      should_escape: false
+    - command: /eli-link
+      description: Link your Slack account to your club member record
+      should_escape: false
+    - command: /eli-whoami
+      description: Show which club member you're linked as
+      should_escape: false
+    - command: /eli-unlink
+      description: Remove your Slack-to-member link
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read   # see messages that @mention Eli
+      - chat:write          # reply in the thread
+      - channels:history    # read the thread Eli was tagged in (public channels it is in)
+      - groups:history      # same, for private channels it was added to
+      - im:history          # read DMs sent to Eli
+      - im:read
+      - reactions:write     # the 👀 "working on it" reaction
+      - users:read          # show people's names in the thread context, and their time zone for reminders
+      - users:read.email    # /eli-link (local mode): match the verified Slack email to the member roster
+      - files:read          # read files attached to the thread Eli was asked in
+      - commands            # Eli's slash commands
+      - channels:read       # reminders: check who is in a public channel before pinging them
+      - groups:read         # same, for private channels
+      - mpim:read           # same, for group DMs
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.im
+  interactivity:
+    is_enabled: true        # reminder Schedule / Cancel buttons (Socket Mode delivers clicks; no URL)
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

@@ -1,0 +1,97 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 1937 >>
+stream
+BT
+/F2 16 Tf 1 0 0 1 56 740 Tm (Verdant Grid: Climate-Tech Market Entry Assessment) Tj
+/F1 11 Tf 1 0 0 1 56 714 Tm (Spring 2024 | 5 consultants | Industry: Climate technology, grid software) Tj
+/F1 11 Tf 1 0 0 1 56 698 Tm (Fictional case written for the sample data set. Verdant Grid is not a real company.) Tj
+/F1 11 Tf 1 0 0 1 56 682 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 658 Tm (Situation) Tj
+/F1 11 Tf 1 0 0 1 56 638 Tm (Verdant Grid builds software that lets owners of grid-scale batteries and solar farms bid) Tj
+/F1 11 Tf 1 0 0 1 56 622 Tm (flexibly into power markets. After three European deployments it asked whether to enter the) Tj
+/F1 11 Tf 1 0 0 1 56 606 Tm (US market and, if so, which region and customer segment to start with.) Tj
+/F1 11 Tf 1 0 0 1 56 590 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 566 Tm (Approach) Tj
+/F1 11 Tf 1 0 0 1 56 546 Tm (We scored 14 US power markets on price volatility, storage policy support, and speed of) Tj
+/F1 11 Tf 1 0 0 1 56 530 Tm (interconnection. We interviewed 19 developers, utilities and market operators, and sized the) Tj
+/F1 11 Tf 1 0 0 1 56 514 Tm (serviceable market bottom-up from storage capacity under development.) Tj
+/F1 11 Tf 1 0 0 1 56 498 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 474 Tm (Key findings) Tj
+/F1 11 Tf 1 0 0 1 56 454 Tm (1. Demand is concentrated. Three markets \(Texas, California and the Mid-Atlantic\) hold 71%) Tj
+/F1 11 Tf 1 0 0 1 56 438 Tm (of storage capacity under development and have the volatility that makes software-driven) Tj
+/F1 11 Tf 1 0 0 1 56 422 Tm (bidding valuable.) Tj
+/F1 11 Tf 1 0 0 1 56 406 Tm () Tj
+/F1 11 Tf 1 0 0 1 56 382 Tm (2. The binding constraint is the interconnection queue, not demand. Median wait in the) Tj
+/F1 11 Tf 1 0 0 1 56 366 Tm (interconnection queue is 4.1 years in California and 2.6 years in Texas, so near-term) Tj
+/F1 11 Tf 1 0 0 1 56 350 Tm (revenue depends on projects already in the queue.) Tj
+/F1 11 Tf 1 0 0 1 56 334 Tm () Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 1734 >>
+stream
+BT
+/F1 11 Tf 1 0 0 1 56 740 Tm (3. Developers buy on proven revenue uplift. Prospects wanted a 12-month back-test on their) Tj
+/F1 11 Tf 1 0 0 1 56 724 Tm (own sites before signing, and rated references from US operators above European case) Tj
+/F1 11 Tf 1 0 0 1 56 708 Tm (studies.) Tj
+/F1 11 Tf 1 0 0 1 56 692 Tm () Tj
+/F1 11 Tf 1 0 0 1 56 668 Tm (4. Utilities are a slower but larger channel. Procurement cycles run 14 to 20 months, with) Tj
+/F1 11 Tf 1 0 0 1 56 652 Tm (pilots funded from innovation budgets.) Tj
+/F1 11 Tf 1 0 0 1 56 636 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 612 Tm (Recommendation) Tj
+/F1 11 Tf 1 0 0 1 56 592 Tm (Enter Texas first with independent power producers, where merchant exposure is highest and) Tj
+/F1 11 Tf 1 0 0 1 56 576 Tm (sales cycles are shortest \(6 to 9 months\). Pursue one utility pilot in the Mid-Atlantic in) Tj
+/F1 11 Tf 1 0 0 1 56 560 Tm (parallel to build references. Defer California until the team has a US operations lead.) Tj
+/F1 11 Tf 1 0 0 1 56 544 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 520 Tm (Milestones for the first 18 months) Tj
+/F1 11 Tf 1 0 0 1 56 500 Tm (Months 0-3: hire a US head of customer success and sign two back-test pilots. Months 4-9:) Tj
+/F1 11 Tf 1 0 0 1 56 484 Tm (convert pilots to contracts and reach 150 MW under management. Months 10-18: launch the) Tj
+/F1 11 Tf 1 0 0 1 56 468 Tm (utility pilot and decide on California.) Tj
+/F1 11 Tf 1 0 0 1 56 452 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 428 Tm (Risks) Tj
+/F1 11 Tf 1 0 0 1 56 408 Tm (Policy reversal on storage tax credits; slower-than-expected queue reform; competition from) Tj
+/F1 11 Tf 1 0 0 1 56 392 Tm (incumbent asset managers bundling bidding software with operations contracts.) Tj
+/F1 11 Tf 1 0 0 1 56 376 Tm () Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Title (Verdant Grid Market Entry Assessment) /Producer (YUCG fixture generator) >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000218 00000 n 
+0000000320 00000 n 
+0000002309 00000 n 
+0000002445 00000 n 
+0000004231 00000 n 
+0000004367 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R /Info 9 0 R >>
+startxref
+4469
+%%EOF
