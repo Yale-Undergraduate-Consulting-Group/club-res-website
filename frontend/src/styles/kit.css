@@ -404,3 +404,10 @@ details[open] > *:not(summary),
   .studio-panel > * { animation: none; }
   .ui-disclosure, .ui-disclosure-chevron, .studio-panel { transition: none; }
 }
+
+/* Charts (design.md section 10): Lato, every word in the chart navy, never gray. */
+.yucg-chart,
+.yucg-chart :is(span, p, h4, button, li, text) {
+  font-family: var(--yucg-font-chart);
+  color: var(--chart-text);
+}

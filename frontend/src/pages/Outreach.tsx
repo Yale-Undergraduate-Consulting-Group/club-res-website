@@ -702,7 +702,7 @@ export default function Outreach() {
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-medium text-slate-800">{oc.name}</span>
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${oc.type === 'community' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${oc.type === 'community' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
                           {oc.type}
                         </span>
                       </div>
@@ -728,7 +728,7 @@ export default function Outreach() {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="font-semibold text-deep-navy">{selectedCampaign.name}</h3>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${selectedCampaign.type === 'community' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 ${selectedCampaign.type === 'community' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
                     {selectedCampaign.type}
                   </span>
                   <p className="text-sm text-slate-500 mt-1">
@@ -1099,7 +1099,7 @@ export default function Outreach() {
                     <div>
                       <div className="font-medium text-slate-800">
                         {t.name}
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${t.scope === 'club' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${t.scope === 'club' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
                           {t.scope === 'club' ? 'Club' : 'Private'}
                         </span>
                       </div>

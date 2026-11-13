@@ -377,8 +377,10 @@
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
-  --accent: #a9bfdc;
-  --accent-hover: #ffffff;
+  /* !important: the accent preference is written inline on <html> and would
+     otherwise paint navy on navy in dark mode. */
+  --accent: #a9bfdc !important;
+  --accent-hover: #ffffff !important;
   --border: #2a3d66;
   --border-control: #6f82a8;
   --chart-1: #a9bfdc;
@@ -442,6 +444,8 @@
 .dark .bg-green-50 { background-color: var(--info-soft); }
 .dark .bg-amber-50 { background-color: rgba(224, 192, 112, 0.12); }
 .dark code { background-color: var(--surface-subtle); color: var(--text-primary); }
+/* The logo is navy on transparent; in dark mode it is drawn white. */
+.dark img[src*="yucg-logo"] { filter: brightness(0) invert(1); }
 
 /* Section 3: one serif family for headings and UI, line-height 1.4. In the
    base layer so a page's own text-* utilities (white banner titles) still win. */

@@ -25,7 +25,7 @@ export default function SectionChart({ section }: { section: BreakdownSection })
       {section.note && <p className="mt-0.5 text-xs text-slate-500">{section.note}</p>}
 
       {section.chart === 'pie' ? (
-        <div className="mt-3">
+        <div className="mt-3 yucg-chart">
           <OutcomePie
             title={section.title}
             showTitle={false}
@@ -38,7 +38,7 @@ export default function SectionChart({ section }: { section: BreakdownSection })
           />
         </div>
       ) : (
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-3 space-y-2 yucg-chart">
           {rows.map((row, index) => {
             const on = active === row.label;
             const share = Math.round((row.value / max) * 100);

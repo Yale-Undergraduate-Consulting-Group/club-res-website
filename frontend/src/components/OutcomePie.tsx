@@ -63,7 +63,7 @@ export default function OutcomePie({ title, slices, empty, size = 116, showTitle
   const activeSlice = shown.find((s) => s.label === active);
 
   return (
-    <figure className="m-0 flex items-center gap-4">
+    <figure className="yucg-chart m-0 flex items-center gap-4">
       {total === 0 ? (
         <div
           className="grid shrink-0 place-items-center rounded-full border-2 border-dashed text-[11px] text-slate-400"
