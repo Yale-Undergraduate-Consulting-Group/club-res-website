@@ -257,6 +257,8 @@
 .ui-notice--warning { background: var(--warning-soft); }
 /* Errors stay in the palette: a gray panel with a deep-navy bar; the words say it is an error. */
 .ui-notice--danger { background: var(--gray-100); border-left: 4px solid var(--navy-1000); color: var(--navy-1000); font-weight: 700; }
+/* Colour no longer marks an error, so the notice says so itself. */
+.ui-notice--danger::before { content: "Error: "; font-weight: 900; }
 .dark .ui-notice--danger { color: var(--text-primary); }
 
 /* Status badges: the navy scale with the word always printed. Strong navy-900
