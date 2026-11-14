@@ -435,7 +435,7 @@ def _quality_score(contact: dict, title_hints: str = "", level: str | None = Non
     elif ai == "junk":
         score -= 40
     src = contact.get("contact_source") or ""
-    if src in ("domain_scrape", "roster_sec", "roster_cache"):
+    if src in ("domain_scrape", "roster_sec", "roster_register", "roster_cache"):
         score += 12
     elif src == "web_discovery":
         score += 8
@@ -761,7 +761,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         alongside it."""
         try:
             from app.services.roster_email import (
-                cached_roster_contacts, refresh_roster_on_demand, roster_refresh_note,
+                cached_roster_contacts, merge_register_officers, refresh_roster_on_demand,
+                register_officer_contacts, roster_refresh_note,
             )
 
             # Only a domain the member typed, or the entity's mail domain, may
@@ -781,7 +782,10 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     _BACKGROUND.add(refresh)
                     refresh.add_done_callback(_background_done)
                     rows = []
-            return rows, await roster_refresh_note(company, domain)
+            # Officers already stored in the company register (Form D, 990, or
+            # the member's "Look up officers") join the roster's people.
+            register_rows = await register_officer_contacts(company, domain, legal_name=entity.get("legal_name"))
+            return merge_register_officers(rows, register_rows), await roster_refresh_note(company, domain)
         except Exception:
             logger.exception("roster cache-first lookup failed")
             return [], ""

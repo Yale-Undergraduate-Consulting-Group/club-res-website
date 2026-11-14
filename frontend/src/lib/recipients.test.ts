@@ -23,6 +23,18 @@ describe('defaultSelection', () => {
     ];
     expect(defaultSelection(people)).toEqual([1, 7, 8]);
   });
+
+  it('ticks officers named in the company filing, but not its board seats', () => {
+    const people = [
+      person(1, { title: 'President and CEO', contact_source: 'roster_sec' }),
+      person(2, { title: 'Chief Financial Officer', contact_source: 'roster_cache_pattern' }),
+      person(3, { title: 'Independent Director', contact_source: 'roster_sec' }),
+      person(4, { title: 'Chairman', person_level: 'board', contact_source: 'roster_sec' }),
+      person(5, { title: 'President and CEO', contact_source: 'web_discovery' }),
+      person(6, { title: 'Treasurer', contact_source: 'roster_cache', email: '' }),
+    ];
+    expect(defaultSelection(people)).toEqual([1, 2]);
+  });
 });
 
 describe('isTooSenior', () => {
