@@ -22,20 +22,23 @@ const PEOPLE = [
 const dirPerson = (name: string, email: string, extra: Record<string, unknown> = {}) => ({
   name, email, title: 'Head of Finance', company: 'Acme', source: 'Company website', on_file: true,
   proof: 'mailbox_confirmed', reach: { state: 'not_contacted', by: null, by_me: false, at: null, sends: 0, claimed_by: null },
-  ready: true, contact_id: null, ...extra,
+  ready: true, contact_id: null, run_id: null, prospect_id: null, ...extra,
 });
 
 const DIRECTORY = [
   dirPerson('Barbara Liskov', 'barbara@clean.com', { contact_id: 21 }),
   dirPerson('Edsger Dijkstra', 'edsger@clean.com', { contact_id: 22 }),
-  // Found by a search, not yet in the member's contacts: cannot be queued.
-  dirPerson('Margaret Hamilton', 'margaret@neon.com', { on_file: false }),
+  // Found by a search, not yet in the member's contacts: ticking it imports it from its run when queued.
+  dirPerson('Margaret Hamilton', 'margaret@neon.com', { on_file: false, run_id: 9, prospect_id: 90 }),
+  // Found by a search but not ready: cannot be ticked.
+  dirPerson('Grace Hopper', 'grace@neon.com', { on_file: false, run_id: 9, prospect_id: 91, ready: false }),
   // Someone already wrote to her: not ready, so not selectable.
   dirPerson('Ada Lovelace', 'ada@acme.com', { contact_id: 23, ready: false, reach: { state: 'contacted', by: 'Ana', by_me: false, at: null, sends: 1, claimed_by: null } }),
 ];
 
 async function mockServer(page: Page, opts: { aiDown?: boolean } = {}) {
   const builds: Record<string, unknown>[] = [];
+  const imports: Record<string, unknown>[] = [];
   const releases: string[] = [];
   await page.route('**/api/**', async route => {
     const request = route.request();
@@ -54,6 +57,10 @@ async function mockServer(page: Page, opts: { aiDown?: boolean } = {}) {
       };
     } else if (path === '/api/outreach/campaigns') body = [{ id: 7, name: 'Spring targets', type: 'individual', contact_count: 3 }];
     else if (path === '/api/outreach/campaigns/7') body = { id: 7, name: 'Spring targets', type: 'individual', contacts: PEOPLE };
+    else if (path === '/api/yucgoutreach/runs/9/import-contacts') {
+      imports.push(request.postDataJSON());
+      body = { created: 1, updated: 0, skipped: 0, results: [{ prospect_id: 90, contact_id: 31, outcome: 'created' }] };
+    }
     else if (path === '/api/campaigns/build') {
       const sent = request.postDataJSON();
       builds.push(sent);
@@ -86,7 +93,7 @@ async function mockServer(page: Page, opts: { aiDown?: boolean } = {}) {
     else if (/\/companies\/summary$|\/sequences$|\/generated$|\/releases$|\/my-projects$|\/attachments$/.test(path)) body = [];
     await route.fulfill({ status, json: body });
   });
-  return { builds, releases };
+  return { builds, releases, imports };
 }
 
 async function pickTemplateAndQueue(page: Page) {
@@ -119,26 +126,26 @@ test('a worklist is queued in one panel: template, preview, create and release',
   expect(releases).toHaveLength(1);
 });
 
-test('ticked Directory people are queued, but only those who are in contacts and ready', async ({ page }) => {
-  const { builds } = await mockServer(page);
+test('ticked Directory people are queued; a search result is added to contacts first, and only ready people can be ticked', async ({ page }) => {
+  const { builds, imports } = await mockServer(page);
   await page.goto('/directory');
   await page.getByRole('button', { name: /Ready to contact/ }).click();
 
   const people = page.getByRole('region', { name: 'People' });
-  // A search result not yet in contacts says why it cannot be ticked.
-  await expect(people.getByRole('row', { name: /Margaret Hamilton/ })).toContainText('Import first');
-  await expect(people.getByRole('row', { name: /Margaret Hamilton/ }).getByRole('checkbox')).toHaveCount(0);
   await expect(people.getByRole('row', { name: /Ada Lovelace/ })).toHaveCount(0);
+  await expect(people.getByRole('row', { name: /Grace Hopper/ })).toHaveCount(0);
 
   await page.getByLabel('Select everyone on this page who can be queued').check();
-  await expect(page.getByText('2 selected')).toBeVisible();
+  await expect(page.getByText('3 selected')).toBeVisible();
   await page.getByLabel('Select Edsger Dijkstra').uncheck();
-  await expect(page.getByText('1 selected')).toBeVisible();
+  await expect(page.getByText('2 selected')).toBeVisible();
   await page.getByLabel('Select Edsger Dijkstra').check();
   await page.getByRole('button', { name: 'Queue outreach' }).click();
 
   await pickTemplateAndQueue(page);
-  expect(builds.at(-1)).toEqual({ contact_ids: [21, 22], template_id: 11, name: 'Directory selection: Intro' });
+  // The search result is imported from its own run by prospect id, then queued with the others.
+  expect(imports).toEqual([{ prospect_ids: [90] }]);
+  expect(builds.at(-1)).toEqual({ contact_ids: [21, 22, 31], template_id: 11, name: 'Directory selection: Intro' });
 });
 
 test('when the AI model is unavailable the member is told, and can use a template instead', async ({ page }) => {

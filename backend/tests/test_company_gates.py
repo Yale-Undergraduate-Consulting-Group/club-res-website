@@ -136,6 +136,55 @@ async def first_sends_are_held_after_a_reply() -> None:
     await db.close()
 
 
+async def follow_ups_stop_when_a_meeting_is_booked() -> None:
+    db = await get_db()
+    await _base(db)
+    await _person(db, 1, "Acme", "acme.com", "acme.com")      # a teammate's contact who booked a meeting
+    await _person(db, 2, "Acme Corporation", "acme.com", "acme.com")  # same company, a different person of mine
+    await _person(db, 3, "Initech", "initech.com", "initech.com")  # closed
+    await _person(db, 4, "Initech Inc", "initech.com", "initech.com")
+    await _person(db, 5, "Globex", "globex.com", "globex.com")  # unrelated
+    await _mailed(db, 1, 2, 2)
+    for n in (2, 3, 4, 5):
+        await _mailed(db, n, 1, 1)
+    await db.execute("UPDATE contacts SET pipeline_status='meeting' WHERE id=1")
+    await db.execute("UPDATE contacts SET pipeline_status='closed' WHERE id=3")
+    await db.commit()
+    await _run_follow_ups()
+    assert await _follow_up_state(db, 2) == "ready", "a teammate's meeting stops my follow-up to someone else there"
+    assert await _follow_up_state(db, 3) == "ready", "closed stops the contact's own follow-up"
+    assert await _follow_up_state(db, 4) == "ready", "closed stops the rest of its company"
+    assert await _follow_up_state(db, 5) == "sent", "an unrelated company is unaffected"
+    await db.execute("UPDATE contacts SET pipeline_status='contacted' WHERE id IN (1, 3)")
+    await db.commit()
+    await _run_follow_ups()
+    assert await _follow_up_state(db, 2) == "sent", "moving the contact back resumes follow-ups"
+    assert await _follow_up_state(db, 3) == "sent"
+    await db.close()
+
+
+async def first_sends_are_held_after_a_meeting() -> None:
+    db = await get_db()
+    await _base(db)
+    await db.execute("UPDATE campaigns SET status='releasing' WHERE id=1")
+    await _person(db, 10, "Acme", "acme.com", "acme.com")
+    await db.execute("UPDATE contacts SET pipeline_status='meeting' WHERE id=10")
+    await _person(db, 13, "Initech", "initech.com", "initech.com")
+    await db.execute("UPDATE contacts SET pipeline_status='closed' WHERE id=13")
+    await _pending(db, 11, 1, 1, "ACME Inc", None, "acme.com")
+    await _pending(db, 14, 1, 1, "Initech", "initech.com", "initech.com")
+    await _pending(db, 12, 1, 1, "Globex", "globex.com", "globex.com")
+    claimed, held = await _claim_pending_rows(db, 1, 10, 1)
+    assert [row["id"] for row in claimed] == [12], "only the unrelated company goes"
+    assert {h["reason"] for h in held} == {"company_meeting"}
+    assert "A teammate already has a meeting with Acme" in describe_hold(held)
+    await db.execute("UPDATE contacts SET pipeline_status='contacted' WHERE id IN (10, 13)")
+    await db.commit()
+    claimed, _ = await _claim_pending_rows(db, 1, 10, 1)
+    assert sorted(row["id"] for row in claimed) == [11, 14], "moving the contact back releases the hold"
+    await db.close()
+
+
 async def _queue(db, campaign: int, sender: int, first: int, count: int, company="Acme", domain="acme.com") -> None:
     for n in range(first, first + count):
         await _pending(db, n, campaign, sender, company, domain, domain)
@@ -224,6 +273,8 @@ def tests() -> None:
     for name, run in [
         ("reply stops follow-ups", follow_ups_stop_when_a_teammate_has_a_reply),
         ("reply holds first sends", first_sends_are_held_after_a_reply),
+        ("meeting stops follow-ups", follow_ups_stop_when_a_meeting_is_booked),
+        ("meeting holds first sends", first_sends_are_held_after_a_meeting),
         ("cap and window", cap_allows_three_and_holds_the_fourth),
         ("cap off", cap_zero_disables),
         ("racing claims", racing_claims_cannot_exceed_the_cap),

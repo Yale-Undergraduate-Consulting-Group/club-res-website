@@ -137,7 +137,7 @@ async def create_release(body: ReleaseCreate, user: dict = Depends(get_current_u
             pass
         from app.services.week_slack import post_week_event
 
-        post_week_event(f"Week slate created: {body.name} ({len(picked)} companies).")
+        await post_week_event(f"Week slate created: {body.name} ({len(picked)} companies).")
         return {"id": release_id, "status": "draft", "targets": len(picked)}
     finally:
         await db.close()
