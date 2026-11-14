@@ -9,7 +9,11 @@ const reach = (state: string, extra: Partial<Reach> = {}): Reach => ({
 });
 const person = (name: string, email: string, proof: string, reachState: Reach, extra: Record<string, unknown> = {}) => ({
   name, email, title: 'Head of Finance', company: 'Acme', source: 'Company website', on_file: true,
-  proof, reach: reachState, ready: false, ...extra,
+  proof, reach: reachState, ready: false, contact_id: 1, run_id: null, prospect_id: null, ...extra,
+});
+
+const PROSPECT = person('Margaret Hamilton', 'margaret@neon.com', 'mailbox_confirmed', reach('not_contacted'), {
+  ready: true, on_file: false, contact_id: null, run_id: 9, prospect_id: 90, company: 'Neon',
 });
 
 const PEOPLE = [
@@ -107,4 +111,22 @@ test('a failed load shows the reason and can be retried', async ({ page }) => {
   await page.goto('/directory');
   await expect(page.getByRole('alert')).toContainText('The directory is unavailable');
   await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+});
+
+test('a person found by a search is added to contacts when queued; a refused import says so and queues nothing', async ({ page }) => {
+  await mock(page, { people: [...PEOPLE, PROSPECT] });
+  let imports = 0;
+  await page.route('**/api/yucgoutreach/runs/9/import-contacts', (route) => {
+    imports += 1;
+    return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'Run not found' }) });
+  });
+  await page.goto('/directory');
+  const people = page.getByRole('region', { name: 'People' });
+  await expect(people.getByRole('row', { name: /Margaret Hamilton/ }).getByRole('checkbox')).toBeVisible();
+  await people.getByLabel('Select Margaret Hamilton').check();
+  await expect(page.getByText(/1 selected, 1 from searches that will be added to your contacts first/)).toBeVisible();
+  await page.getByRole('button', { name: 'Queue outreach' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Run not found' })).toBeVisible();
+  expect(imports).toBe(1);
+  await expect(page.getByTestId('queue-outreach')).toHaveCount(0);
 });
