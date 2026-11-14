@@ -189,6 +189,20 @@ function findProblems(): Problem[] {
       if (w > 1 && h > 1) out.push(`label overlaps a neighbour: ${describe(label)} / ${describe(other)}`);
     }
   }
+
+  // 4. The message field is never covered: what is drawn at its centre and
+  //    near its bottom edge is the field itself.
+  const message = document.querySelector('.email-studio-body');
+  if (message && visible(message)) {
+    const r = message.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    for (const y of [r.top + r.height / 2, r.bottom - 6]) {
+      // Only points on screen can be hit-tested; the rest are scrolled out of the window.
+      if (y < 0 || y > window.innerHeight) continue;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && !message.contains(hit) && !hit.contains(message)) out.push(`message field is covered at y=${Math.round(y)} by ${describe(hit)}`);
+    }
+  }
   return [...new Set(out)];
 }
 
@@ -220,6 +234,7 @@ const SURFACES: Surface[] = [
       async (page) => { await page.getByText('Jordan Rivers', { exact: true }).first().click(); },
       draftsStep('2. AI assistance'),
       draftsStep('3. Write'),
+      async (page) => { await page.locator('.email-studio-body').evaluate((el) => el.scrollIntoView({ block: 'center' })); },
     ],
   },
   { name: 'Directory', url: '/directory', ready: 'Jean Bartik' },

@@ -342,14 +342,6 @@
     flex-shrink: 0;
   }
 
-  .studio-draft-actions {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    padding-block: 0.5rem;
-    background: var(--surface);
-  }
-
   .email-studio-editor-stack {
     flex: 0 0 auto;
     min-height: 0;
@@ -365,7 +357,6 @@
   .email-studio-body {
     flex: 1 1 auto;
     min-height: 17.5rem;
-    padding-bottom: 5rem;
   }
 
   .email-studio-gmail-card {
