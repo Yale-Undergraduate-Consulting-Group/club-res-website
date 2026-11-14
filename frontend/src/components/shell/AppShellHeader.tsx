@@ -76,7 +76,7 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
               }}
             />
           )}
-          <NavLink to="/profile" className="app-shell-profile-link app-shell-header-profile">
+          <NavLink to="/profile" className="app-shell-profile-link app-shell-header-profile" title={user.name || user.email}>
             {user.name || user.email?.split('@')[0] || 'User'}
           </NavLink>
           <Button variant="secondary" size="sm" onClick={onLogout} className="app-shell-header-logout">

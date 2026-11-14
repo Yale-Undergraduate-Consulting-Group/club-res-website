@@ -188,7 +188,7 @@ html:not(.dark) .surface-card.surface-card--compact,
 }
 
 .app-nav-menu {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.25rem;
   background: transparent;
   display: none;
@@ -196,7 +196,8 @@ html:not(.dark) .surface-card.surface-card--compact,
 
 .app-shell-desktop-nav {
   display: none;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   justify-content: flex-start;
   margin-left: 1.5rem;
 }
@@ -212,7 +213,7 @@ html:not(.dark) .surface-card.surface-card--compact,
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: var(--control-height);
+  min-height: var(--control-height);
   padding: 0 0.75rem;
   font-size: 0.9375rem;
   font-weight: 700;
@@ -256,7 +257,7 @@ html:not(.dark) .surface-card.surface-card--compact,
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 3.5rem;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -545,19 +546,8 @@ html:not(.dark) .surface-card.surface-card--compact,
   background: var(--bg-primary);
 }
 
-/* Responsive page menus — scroll on narrow viewports */
+/* Responsive page menus: tabs wrap onto a second row; segmented choices scroll. */
 @media (max-width: 1023px) {
-  .app-tab-menu {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .app-tab-menu-item {
-    flex: 0 0 auto;
-    margin-bottom: 0;
-  }
-
   .app-subnav {
     max-width: 100%;
     overflow-x: auto;
@@ -568,6 +558,7 @@ html:not(.dark) .surface-card.surface-card--compact,
    is full strength with a navy rule beneath (Outreach, Admin, Profile) ——— */
 .app-tab-menu {
   display: flex;
+  flex-wrap: wrap;
   gap: 0 1.75rem;
   border-bottom: 1px solid var(--border);
   background: transparent;
@@ -580,7 +571,7 @@ html:not(.dark) .surface-card.surface-card--compact,
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: var(--control-height);
+  min-height: var(--control-height);
   padding: 0;
   margin-bottom: -1px;
   font-size: 0.9375rem;
@@ -622,7 +613,8 @@ html:not(.dark) .surface-card.surface-card--compact,
   align-items: center;
   justify-content: center;
   min-height: var(--control-height-sm);
-  padding: 0 1.25rem;
+  padding: 0.25rem 1.25rem;
+  text-align: center;
   font-size: 0.875rem;
   font-weight: 400;
   border-right: 1px solid var(--accent);
@@ -705,9 +697,10 @@ html:not(.dark) .surface-card.surface-card--compact,
 }
 
 .app-subnav--stretch .app-subnav-item {
-  flex: 1;
-  text-align: center;
-  white-space: nowrap;
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 0.5rem;
+  overflow-wrap: anywhere;
 }
 
 .app-sidebar-integration {

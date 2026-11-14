@@ -23,8 +23,8 @@ export default function AppShellDrawer({ open, onClose, user, onLogout, items }:
               <img src={user.picture} alt="" className="app-avatar" referrerPolicy="no-referrer" />
             )}
             <div className="min-w-0">
-              <div className="font-bold text-sm truncate">{user.name || 'User'}</div>
-              <div className="text-xs text-slate-500 truncate">{user.email}</div>
+              <div className="font-bold text-sm truncate" title={user.name || undefined}>{user.name || 'User'}</div>
+              <div className="text-xs text-slate-500 truncate" title={user.email}>{user.email}</div>
             </div>
           </div>
           <Button variant="ghost" size="sm" iconOnly onClick={onClose} aria-label="Close">

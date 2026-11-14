@@ -52,7 +52,7 @@ export function AnimatedBarChart({
           return (
             <div key={String(row[labelKey] || i)} className="space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="truncate pr-2" style={{ color: 'var(--text-primary)' }}>
+                <span className="truncate pr-2" style={{ color: 'var(--text-primary)' }} title={String(row[labelKey] || '—')}>
                   {String(row[labelKey] || '—')}
                 </span>
                 <span className="font-medium tabular-nums shrink-0" style={{ color: 'var(--text-primary)' }}>

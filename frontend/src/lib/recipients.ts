@@ -115,13 +115,21 @@ export function yaleOf(person: { yale_signal?: unknown }): string {
   return typeof person.yale_signal === 'string' ? person.yale_signal.trim() : '';
 }
 
+/** Named as an officer in the company's own filing: what "Look up officers"
+ *  reads. A member who picked a company for its officers means to write to
+ *  them, so seniority does not hold them back; a board seat still does. */
+export function isFiledOfficer(person: { contact_source?: string | null }): boolean {
+  return (person.contact_source || '').startsWith('roster');
+}
+
 /** The default tick: people who work there and can be reached, minus anyone
- *  already written to. A board seat, someone too senior to answer, or a row
- *  whose name is not a person's is never ticked by default - reaching one is
- *  a deliberate act here, not a side effect of pressing "select all". People
- *  tied to Yale come first; the order is otherwise the list's own. */
+ *  already written to. A board seat, someone too senior to answer (unless the
+ *  company's filing names them as an officer), or a row whose name is not a
+ *  person's is never ticked by default - reaching one is a deliberate act
+ *  here, not a side effect of pressing "select all". People tied to Yale come
+ *  first; the order is otherwise the list's own. */
 export function defaultSelection(people: Contact[]): number[] {
   const ticked = people.filter((p) => isWritable(p) && !p.last_sent_at && levelOf(p) !== 'board'
-    && !isTooSenior(p) && looksLikePerson(p));
+    && !BOARD_SEAT.test(p.title || '') && (isFiledOfficer(p) || !isTooSenior(p)) && looksLikePerson(p));
   return [...ticked.filter((p) => yaleOf(p)), ...ticked.filter((p) => !yaleOf(p))].map((p) => p.id);
 }
