@@ -180,7 +180,9 @@ async def a_model_question_says_working_then_pings_the_asker() -> None:
     from app.services import slack_agent
 
     post = AsyncMock(return_value=True)
+    react = AsyncMock(return_value=None)
     with patch("app.services.slack_agent.post_reply", post), \
+            patch("app.services.slack_agent.react", react), \
             patch("app.services.slack_agent._claude_answer", AsyncMock(return_value="Here is the summary.")):
         await slack_agent.answer_event({
             "type": "message", "channel_type": "im", "channel": "D1", "user": ADMIN_SLACK,
@@ -197,13 +199,45 @@ async def a_model_question_says_working_then_pings_the_asker() -> None:
     assert channel_working.args[1] == slack_agent.WORKING_REPLY and channel_working.args[3] == ADMIN_SLACK
     assert channel_answer.args[3] == ADMIN_SLACK
 
+    assert [c.args for c in react.await_args_list] == [
+        ("reactions.add", "D1", ""), ("reactions.remove", "D1", ""),
+        ("reactions.add", "C1", "1.0"), ("reactions.remove", "C1", "1.0"),
+    ]
+
     post.reset_mock()
-    with patch("app.services.slack_agent.post_reply", post):
+    react.reset_mock()
+    with patch("app.services.slack_agent.post_reply", post), patch("app.services.slack_agent.react", react):
         await slack_agent.answer_event({
             "type": "message", "channel_type": "im", "channel": "D1", "user": ADMIN_SLACK, "text": "what's queued?",
         })
     assert post.await_count == 1, "an instant shortcut needs no working note"
     assert not post.await_args.args[1].startswith("<@")
+    assert react.await_count == 0, "an instant shortcut needs no reaction"
+
+
+async def a_token_without_reactions_write_still_answers() -> None:
+    from app.services import slack_agent
+
+    slack = Mock(return_value=httpx.Response(200, json={"ok": False, "error": "missing_scope"}))
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            return slack(url, json)
+
+    with patch("httpx.AsyncClient", FakeClient), \
+            patch("app.services.slack_tokens.workspace_access_token", AsyncMock(return_value="xoxb-test")):
+        await slack_agent.react("reactions.add", "C1", "1.0")  # must not raise
+    url, body = slack.call_args.args
+    assert url.endswith("/reactions.add") and body == {"channel": "C1", "timestamp": "1.0", "name": "eyes"}
 
 
 async def main() -> None:
@@ -223,6 +257,7 @@ async def main() -> None:
             await a_request_is_saved_capped_and_sent_to_admins(client)
             await the_same_words_work_in_a_direct_message()
             await a_model_question_says_working_then_pings_the_asker()
+            await a_token_without_reactions_write_still_answers()
             await link_names_the_account_and_unlink_removes_only_mine(client)
         print("slack commands: ok")
 

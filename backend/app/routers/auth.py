@@ -503,7 +503,8 @@ async def update_my_profile(payload: ProfileUpdate, user: dict = Depends(get_cur
 SLACK_SCOPES = (
     "chat:write,im:write,im:history,im:read,app_mentions:read,"
     "users:read,users:read.email,team:read,"
-    "channels:history,groups:history,channels:read,groups:read"
+    "channels:history,groups:history,channels:read,groups:read,"
+    "reactions:write"
 )
 SLACK_STATE_TTL = 600
 

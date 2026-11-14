@@ -72,9 +72,9 @@ The existing OAuth `chat:write` scope covers both `chat.postMessage` and
 an ephemeral threaded answer visible only to the asker. Direct messages receive
 a normal DM. Free-form `/yucg` calls acknowledge immediately and replace their
 ephemeral acknowledgement through Slack's provided response URL when ready.
-A question that goes to the model first gets "Working on it, I'll ping you
-when I'm ready." (private in a channel), and the answer starts with an
-@mention of the asker. Instant shortcuts and subcommands skip both.
+A question that goes to the model gets :eyes: on the asker's message and
+"Working on it, I'll ping you when I'm ready." (private in a channel); the
+answer starts with an @mention of the asker and the reaction is removed. Instant shortcuts and subcommands skip both.
 
 The backend also needs its normal Bedrock model configuration and AI budget
 settings. Busy, exhausted-budget, and unavailable-model errors are shown as
@@ -157,7 +157,15 @@ data, and is not stored by the club app (see retention above for what is).
 
 `chat:write`, `im:write`, `im:history`, `im:read`, `app_mentions:read`,
 `users:read`, `users:read.email`, `team:read`,
-**`channels:history`**, **`groups:history`**, **`channels:read`**, **`groups:read`**
+**`channels:history`**, **`groups:history`**, **`channels:read`**, **`groups:read`**,
+`reactions:write`
+
+`reactions:write` puts :eyes: on a message while a model answer is being
+written. Add it under **OAuth & Permissions → Bot Token Scopes** too, then
+**Reinstall to Workspace**, and have at least one member press **Connect Slack**
+again: replies use the newest member's token, so the reaction appears once that
+token carries the scope. Without it the answer still arrives, just without the
+reaction.
 
 The last four (bold) are new for reading Slack. `im:history` was already
 present. After deploying this change, add those four under **OAuth &

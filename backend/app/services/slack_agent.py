@@ -626,6 +626,36 @@ async def post_reply(
     return bool(response.json().get("ok"))
 
 
+async def react(method: str, channel: str, ts: str) -> None:
+    """Add or remove the :eyes: reaction on the asker's message. Never raises.
+
+    Needs `reactions:write`; a token without it gets `missing_scope` and the
+    answer goes out without the reaction.
+    """
+    import httpx
+
+    from app.services.slack_tokens import (
+        SlackReauthorizationRequired, workspace_access_token,
+    )
+
+    if not channel or not ts:
+        return
+    try:
+        token = await workspace_access_token()
+        if not token:
+            return
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"https://slack.com/api/{method}",
+                json={"channel": channel, "timestamp": ts, "name": "eyes"},
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+        if not response.json().get("ok"):
+            logger.info("Slack %s failed: %s", method, response.json().get("error"))
+    except (SlackReauthorizationRequired, httpx.HTTPError, ValueError):
+        logger.info("Slack %s could not be sent", method)
+
+
 async def answer_event(event: dict) -> bool:
     """Answer a channel mention ephemerally or a direct message normally."""
     text = str(event.get("text") or "")
@@ -658,13 +688,19 @@ async def answer_event(event: dict) -> bool:
         )
     private_to = slack_user if mention else None
     to_model = not is_deterministic_message(text)
+    message_ts = str(event.get("ts") or "")
     if to_model:
+        await react("reactions.add", channel, message_ts)
         await post_reply(channel, WORKING_REPLY, reply_thread, private_to)
-    answer = await handle_message(text, member, context)
-    reply = str(answer.get("text") or slack_commands.help_text(member))
-    return await post_reply(
-        channel,
-        f"<@{slack_user}> {reply}" if to_model else reply,
-        reply_thread,
-        private_to,
-    )
+    try:
+        answer = await handle_message(text, member, context)
+        reply = str(answer.get("text") or slack_commands.help_text(member))
+        return await post_reply(
+            channel,
+            f"<@{slack_user}> {reply}" if to_model else reply,
+            reply_thread,
+            private_to,
+        )
+    finally:
+        if to_model:
+            await react("reactions.remove", channel, message_ts)
