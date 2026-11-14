@@ -1,64 +1,36 @@
-import { useEffect, useRef } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { HEADER_LAYOUT, type NavItem } from '../../lib/navConfig';
+import { Link, NavLink } from 'react-router-dom';
+import type { NavItem } from '../../lib/navConfig';
+import type { AppModule } from '../../modules';
+import { memberFirstName } from '../../lib/memberName';
 import AppNavLink from './AppNavLink';
 import { Button } from '../ui/Primitives';
 import GuideBubble from '../GuideBubble';
 
 type AppShellHeaderProps = {
+  app: AppModule;
   user: { email: string; name?: string; picture?: string };
+  /** This app's bar: Home, then its own pages. */
   navItems: NavItem[];
   onLogout: () => void;
 };
 
-export default function AppShellHeader({ user, navItems, onLogout }: AppShellHeaderProps) {
-  const dropdowns = useRef<Array<HTMLDetailsElement | null>>([]);
-  const { pathname } = useLocation();
-  useEffect(() => {
-    const closeOutside = (event: PointerEvent) => {
-      if (!(event.target instanceof Node)) return;
-      dropdowns.current.forEach(dropdown => {
-        if (dropdown && !dropdown.contains(event.target as Node)) dropdown.open = false;
-      });
-    };
-    document.addEventListener('pointerdown', closeOutside);
-    return () => document.removeEventListener('pointerdown', closeOutside);
-  }, []);
+/** One app's bar: its name and icon, its pages, and the member's controls. The logo leads Home. */
+export default function AppShellHeader({ app, user, navItems, onLogout }: AppShellHeaderProps) {
+  const isCore = app.id === 'core';
   return (
-    <header className="app-shell-header app-top-nav sticky top-0 z-50">
+    <header className="app-shell-header app-top-nav sticky top-0 z-50" data-app={app.id}>
       <div className="app-shell-header-inner">
-        <div className="app-shell-brand">
-          <img src="/yucg-logo.png" alt="YUCG" className="app-shell-logo" decoding="async" />
-          <div className="min-w-0">
-            <div className="app-shell-title">YUCG Resources</div>
-            <div className="app-shell-subtitle hidden xl:block">Yale Undergraduate Consulting Group</div>
-          </div>
-        </div>
+        <Link to="/" className="app-shell-brand" aria-label="YUCG Resources home">
+          <img src="/yucg-logo.png" alt="" className="app-shell-logo" decoding="async" />
+          {app.icon && <span className="app-shell-app-icon" aria-hidden="true">{app.icon}</span>}
+          <span className="min-w-0">
+            <span className="app-shell-title block">{isCore ? 'YUCG Resources' : app.title}</span>
+            {!isCore && <span className="app-shell-subtitle hidden xl:block">YUCG Resources</span>}
+          </span>
+        </Link>
 
         <nav className="app-nav-menu app-shell-desktop-nav" aria-label="Main navigation">
-          {HEADER_LAYOUT.map((entry, index) => {
-            if (typeof entry === 'string') {
-              const item = navItems.find(candidate => candidate.id === entry);
-              return item ? <AppNavLink key={item.id} item={item} variant="desktop" /> : null;
-            }
-            const group = entry;
-            const items = navItems.filter(item => group.ids.includes(item.id));
-            // A member who may not use an app gets no empty dropdown for it.
-            if (items.length === 0) return null;
-            const active = items.some(item => pathname === item.to || pathname.startsWith(item.to + '/'));
-            return <details key={`${pathname}:${group.label}`} ref={node => { dropdowns.current[index] = node; }} className="app-nav-group" onKeyDown={event => {
-              if (event.key === 'Escape') {
-                const dropdown = dropdowns.current[index];
-                if (dropdown) { dropdown.open = false; dropdown.querySelector('summary')?.focus(); }
-              }
-            }}>
-              <summary className={`app-nav-link ${active ? 'app-nav-link--active' : ''}`}>{group.label} ▾</summary>
-              <div className="app-nav-group-panel" onClick={() => { const dropdown = dropdowns.current[index]; if (dropdown) dropdown.open = false; }}>
-                {items.map(item => <AppNavLink key={item.id} item={item} variant="desktop" />)}
-              </div>
-            </details>;
-          })}
-          {navItems.filter(item => item.id === 'admin').map(item => <AppNavLink key={item.id} item={item} variant="desktop" />)}
+          {navItems.map((item) => <AppNavLink key={item.id} item={item} variant="desktop" />)}
         </nav>
 
         <div className="app-shell-header-actions">
@@ -75,7 +47,7 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
             />
           )}
           <NavLink to="/profile" className="app-shell-profile-link app-shell-header-profile" title={user.name || user.email}>
-            {user.name || user.email?.split('@')[0] || 'User'}
+            {memberFirstName(user)}
           </NavLink>
           <Button variant="secondary" size="sm" onClick={onLogout} className="app-shell-header-logout">
             Log out

@@ -385,7 +385,6 @@ select:not([multiple]):not([size]) {
   to { opacity: 1; transform: translateY(0) scaleY(1); }
 }
 
-.app-nav-group[open] > .app-nav-group-panel,
 details[open] > *:not(summary),
 .ui-disclosure-panel,
 .app-shell-drawer,
@@ -444,7 +443,6 @@ details[open] > *:not(summary),
 .ui-disclosure-chevron[data-open='false'] { transform: rotate(-90deg); }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-nav-group[open] > .app-nav-group-panel,
   details[open] > *:not(summary),
   .ui-disclosure-panel,
   .app-shell-drawer,

@@ -10,8 +10,8 @@ restricts it (Admin -> Apps):
 - backend/app/routers/<id>.py       each member's own items: GET and POST /api/<id>
 - backend/tests/test_<id>.py        smoke test: sign-in, per-member data, app access
 - frontend/src/pages/<Name>.tsx     the page at /<id>, with loading, error and empty states
-- registered in all_modules(), frontend/src/modules, the header menu and
-  the docs table of apps
+- registered in all_modules(), frontend/src/modules (its Home tile and its
+  own header come from that manifest) and the docs table of apps
 
 Replace the item list with the app's real data and keep the smoke test's
 access checks. Nothing is written when the id, its URL or a file is taken.
@@ -75,10 +75,6 @@ def plan(root: Path, app_id: str, title: str, purpose: str) -> dict[Path, str]:
     text = insert(text, r"^(/\*\* Every app, core first\. \*/)$", APP_MODULE.format(**fill) + r"\1", "MODULES in modules/index.tsx")
     text = insert(text, r"^(export const MODULES: AppModule\[\] = \[[\w, ]+)\];$", rf"\1, {camel}];", "the MODULES list")
     out[modules] = text
-
-    nav = frontend / "lib" / "navConfig.ts"
-    out[nav] = insert(nav.read_text(), r"^(export const HEADER_LAYOUT: [^\n]*= \[\n(?:  [^\n]*\n)*)\];$",
-                      rf"\1  '{app_id}',\n];", "HEADER_LAYOUT in lib/navConfig.ts")
 
     docs = root / "docs" / "PLATFORM.md"
     out[docs] = insert(docs.read_text(), r"^(\| `projects` \|.*\|\n(?:\|.*\|\n)*)",

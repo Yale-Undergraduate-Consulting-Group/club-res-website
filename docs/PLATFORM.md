@@ -23,12 +23,12 @@ and jobs must not collide with another app's.
 | Side | Manifest | Declares |
 |---|---|---|
 | Server | `backend/app/modules/<app>.py` → `MODULE` | its routers (`Route`: prefix, tag, `signed_in`), scheduled jobs (`Job`: id, schedule, `sends_mail`, `first_run_after`) and startup hooks |
-| Browser | an `AppModule` in `frontend/src/modules/index.tsx` | its page routes and menu entries (`adminOnly` for admin pages) |
+| Browser | an `AppModule` in `frontend/src/modules/index.tsx` | its page routes, menu entries (`adminOnly` for admin pages; the first is the app's home) and `icon` |
 
 `backend/main.py` mounts every app listed by `app.modules.all_modules()`;
-`App.tsx` mounts every route in `MODULES`; `lib/navConfig.ts` takes its items
-from the manifests and only decides where each sits (top level, a dropdown,
-the mobile bar).
+`App.tsx` mounts every route in `MODULES`; `lib/navConfig.ts` takes the menu
+entries from the manifests and works out which app a page belongs to, so
+each app's bar holds Home and its own pages.
 
 Rules every manifest keeps, enforced by tests:
 
@@ -61,13 +61,19 @@ change in behaviour.
 ## Portal
 
 The site is "YUCG Resources". Sign-in (`LoginPage`) is the logo, the name and
-the sign-in button; Home (`/`, `pages/Hub.tsx`, core) is a centred tile per
-app the member may use (every app but core): the app's icon and title,
-linking to its first menu entry, plus an Admin link for admins. Each app has
-its own home page: Outreach's is Overview at `/campaigns`. The `icon` in an
-app's `AppModule` is a line drawing in `components/AppIcons.tsx` (24-unit
-grid, `currentColor`, 1.6 stroke); an app without one shows its initial. The
-header (`HEADER_LAYOUT` in `lib/navConfig.ts`) lists Home, then each app.
+the sign-in button. Home (`/`, `pages/Hub.tsx`, core) fills the page with no
+bar: "Welcome, <first name>" (a member whose Google name is missing or only
+their address gets the first part of the address, capitalised), a centred
+tile per app the member may use (every app but core) with its icon and
+title, and Profile, Admin (admins) and Log out. A tile opens the app's first
+menu entry; Outreach's is Overview at `/campaigns`. Every other page shows
+the bar of the app it belongs to (`appForPath`, `appBarItems` in
+`lib/navConfig.ts`): the logo (back to Home), the app's icon and name, Home
+and that app's pages; Profile and Admin use the core bar. The bar slides in
+when an app opens and stays put between one app's pages; reduced motion
+turns that off. The `icon` is a line drawing in `components/AppIcons.tsx`
+(24-unit grid, `currentColor`, 1.6 stroke); an app without one shows its
+initial.
 
 ## Apps today
 

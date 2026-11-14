@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
-/** The portal's Home: one card per app the member may use, each leading to
- *  that app's home page. */
+/** The portal's Home: the whole page, one tile per app the member may use,
+ *  each opening that app with its own bar. */
 
 async function mock(page: Page, user: Record<string, unknown>) {
   await page.route('**/api/**', async route => {
@@ -19,8 +19,21 @@ test('Home shows a card for each app the member may use and opens its home page'
   await expect(tools.getByRole('link', { name: /Survey builder/ })).toBeVisible();
   await expect(tools.getByRole('link', { name: /Market sentiment/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Admin', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Main navigation' })).toHaveCount(0);
   await tools.getByRole('link', { name: /Outreach/ }).click();
   await expect(page).toHaveURL(/\/campaigns$/);
+  // Outreach's bar: Home and Outreach's own pages, not the other tools.
+  const bar = page.getByRole('navigation', { name: 'Main navigation' }).first();
+  await expect(bar.getByRole('link', { name: 'Home' })).toBeVisible();
+  await expect(bar.getByRole('link', { name: 'Survey builder' })).toHaveCount(0);
+  await bar.getByRole('link', { name: 'Home' }).click();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test('a member without a Google name is greeted by the first part of their address', async ({ page }) => {
+  await mock(page, { id: 4, email: 'andre.h.costa@yale.edu', name: 'andre.h.costa', role: 'standard', is_active: 1 });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Welcome, Andre' })).toBeVisible();
 });
 
 test('an administrator gets the admin link on Home', async ({ page }) => {

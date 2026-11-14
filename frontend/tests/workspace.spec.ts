@@ -323,21 +323,11 @@ test('the composer formats like a mail client, and the preview shows the same th
   expect(await editor.innerHTML()).not.toContain('text-align: center');
 });
 
-test('every panel the app draws opens with the same motion', async ({ page }, testInfo) => {
+test('every panel the app draws opens with the same motion', async ({ page }) => {
   await page.goto('/studio');
   const duration = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--disclosure-duration').trim());
   expect(duration).toBe('180ms');
-
-  // A header nav dropdown and an in-page collapsible are different mechanisms
-  // (absolute panel vs animated grid row); both read as one motion. The nav
-  // dropdowns exist on desktop; mobile navigates through the drawer.
-  if (testInfo.project.name === 'desktop') {
-    const panel = page.locator('.app-nav-group-panel').first();
-    await page.locator('.app-nav-group summary').first().click();
-    await expect(panel).toBeVisible();
-    expect(await panel.evaluate(el => getComputedStyle(el).animationDuration)).toBe('0.18s');
-  }
 
   const collapsible = page.locator('.ui-disclosure').first();
   expect(await collapsible.evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0.18s');
