@@ -1,11 +1,10 @@
 import { Link, useOutletContext } from 'react-router-dom';
-import PageHeader from '../components/PageHeader';
 import { usableModules } from '../modules';
 
 /**
- * The portal's front door: one card per app this member may use. It fetches
- * nothing; the cards come from the app manifests, so a new app appears here
- * as soon as its manifest carries a description.
+ * The portal's front door: one icon per app this member may use, centred.
+ * It fetches nothing; the tiles come from the app manifests, so a new app
+ * appears here as soon as its manifest carries a description.
  */
 export default function Hub() {
   const { user } = useOutletContext<{ user: { name?: string; email: string; role?: string; apps?: string[] } }>();
@@ -13,20 +12,26 @@ export default function Hub() {
   const apps = usableModules(user.apps).filter((module) => module.description);
 
   return (
-    <div className="app-workspace max-w-5xl space-y-4">
-      <PageHeader title={`Welcome, ${firstName}`} subtitle="YUCG Resources: the club's tools in one place." />
-      <section aria-label="Your tools" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="app-workspace flex hub">
+      <header className="hub-header">
+        <img src="/yucg-logo.png" alt="" className="hub-logo" decoding="async" />
+        <h1 className="hub-title">Welcome, {firstName}</h1>
+        <p className="hub-subtitle">YUCG Resources: the club&apos;s tools in one place.</p>
+      </header>
+      <section aria-label="Your tools" className="hub-tools">
         {apps.map((module) => (
-          <Link key={module.id} to={module.nav[0].to} className="surface-card block hover:border-[var(--accent)]">
-            <h2 className="app-section-title mb-1">{module.title}</h2>
-            <p className="text-sm text-slate-600">{module.description}</p>
+          <Link key={module.id} to={module.nav[0].to} className="hub-tile">
+            <span className="hub-tile__icon">{module.icon ?? <span className="hub-tile__initial">{module.title[0]}</span>}</span>
+            <span className="hub-tile__text">
+              <span className="hub-tile__name">{module.title}</span>
+              <span className="hub-tile__description">{module.description}</span>
+            </span>
           </Link>
         ))}
       </section>
       {user.role === 'admin' && (
-        <p className="text-sm text-slate-600">
-          Administrator: <Link to="/admin" className="font-semibold text-[var(--accent)] hover:underline">Admin</Link>{' '}
-          manages members and app access.
+        <p className="hub-admin">
+          Administrator: <Link to="/admin">Admin</Link> manages members and app access.
         </p>
       )}
     </div>

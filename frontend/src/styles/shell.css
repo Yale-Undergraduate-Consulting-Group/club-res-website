@@ -1553,3 +1553,103 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   .app-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; }
   .app-page-header-actions { margin-top: 0; flex-shrink: 0; }
 }
+
+/* Home (the portal hub): the greeting and one icon tile per app, centred.
+   Deck rules hold: square edges, navy line icons, no shadows. Tile text is
+   one group so the phone layout can sit it beside the icon. */
+.hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: clamp(1.5rem, 6vh, 4rem);
+  padding-bottom: 2rem;
+  text-align: center;
+}
+.hub-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hub-logo { width: 3.5rem; height: auto; }
+.hub-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--navy-900);
+}
+/* The deck's navy title rule, short and centred under the subtitle. */
+.hub-subtitle {
+  margin: 0;
+  padding-bottom: 0.75rem;
+  color: var(--ink-muted);
+  background: linear-gradient(var(--navy-900), var(--navy-900)) bottom center / 3rem 1.5px no-repeat;
+}
+.app-workspace.hub > .hub-tools { margin-top: 2.5rem; }
+.hub-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 52rem;
+}
+.hub-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.625rem;
+  width: 15rem;
+  padding: 2rem 1.25rem 1.5rem;
+  background: var(--white, #ffffff);
+  border: 1px solid var(--border);
+  color: var(--navy-900);
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.hub-tile:hover {
+  border-color: var(--navy-900);
+  background: var(--mist-100);
+}
+.hub-tile__icon {
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin-bottom: 0.375rem;
+  color: var(--navy-900);
+  border: 1.5px solid var(--navy-900);
+}
+.hub-tile__icon svg { width: 2.5rem; height: 2.5rem; }
+.hub-tile:hover .hub-tile__icon {
+  background: var(--navy-900);
+  color: #ffffff;
+}
+.hub-tile__initial { font-size: 1.75rem; font-weight: 700; }
+.hub-tile__text { display: flex; flex-direction: column; gap: 0.375rem; }
+.hub-tile__name { font-size: 1.0625rem; font-weight: 700; }
+.hub-tile__description {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+.app-workspace.hub > .hub-admin { margin-top: 2rem; }
+.hub-admin { font-size: 0.875rem; color: var(--ink-muted); }
+.hub-admin a { font-weight: 700; color: var(--navy-900); }
+.hub-admin a:hover { text-decoration: underline; }
+.dark .hub-title,
+.dark .hub-tile,
+.dark .hub-tile__icon { color: var(--text-primary); border-color: var(--border); }
+.dark .hub-tile { background: var(--surface); }
+.dark .hub-tile:hover { background: var(--surface-subtle); }
+.dark .hub-tile:hover .hub-tile__icon { background: transparent; color: var(--text-primary); }
+@media (max-width: 639px) {
+  .hub-tile { width: 100%; flex-direction: row; text-align: left; padding: 1rem; gap: 1rem; }
+  .hub-tile__icon { width: 3.5rem; height: 3.5rem; margin: 0; flex-shrink: 0; }
+  .hub-tile__icon svg { width: 2rem; height: 2rem; }
+  .hub-tile__text { gap: 0.125rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-tile { transition: none; }
+}

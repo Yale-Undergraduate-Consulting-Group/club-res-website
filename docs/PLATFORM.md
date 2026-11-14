@@ -61,12 +61,14 @@ change in behaviour.
 ## Portal
 
 The site is "YUCG Resources". Sign-in (`LoginPage`) lists the apps; Home (`/`,
-`pages/Hub.tsx`, core) is a card per app the member may use, built from the
-manifests' `description` and linking to the app's first menu entry, plus an
-admin link for admins. Each app has its own home page: Outreach's is Overview
-at `/campaigns`. An app that wants a hub card sets `description` in its
-`AppModule`; the header (`HEADER_LAYOUT` in `lib/navConfig.ts`) lists Home,
-then each app.
+`pages/Hub.tsx`, core) is a centred tile per app the member may use: the
+app's icon, title and `description` from its manifest, linking to the app's
+first menu entry, plus an admin link for admins. Each app has its own home
+page: Outreach's is Overview at `/campaigns`. An app appears on the hub when
+its `AppModule` sets `description`; its `icon` is a line drawing in
+`components/AppIcons.tsx` (24-unit grid, `currentColor`, 1.6 stroke), and an
+app without one shows its initial. The header (`HEADER_LAYOUT` in
+`lib/navConfig.ts`) lists Home, then each app.
 
 ## Apps today
 
