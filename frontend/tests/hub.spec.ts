@@ -28,6 +28,11 @@ test('Home shows a card for each app the member may use and opens its home page'
   await expect(bar.getByRole('link', { name: 'Survey builder' })).toHaveCount(0);
   await bar.getByRole('link', { name: 'Home' }).click();
   await expect(page).toHaveURL(/\/$/);
+  // Leaving an app removes its bar; opening another shows only that one.
+  await expect(page.locator('.app-shell-header')).toHaveCount(0);
+  await page.getByRole('region', { name: 'Your tools' }).getByRole('link', { name: /Survey builder/ }).click();
+  await expect(page.locator('.app-shell-header')).toHaveCount(1);
+  await expect(page.locator('.app-shell-header')).toHaveAttribute('data-app', 'surveys');
 });
 
 test('a member without a Google name is greeted by the first part of their address', async ({ page }) => {

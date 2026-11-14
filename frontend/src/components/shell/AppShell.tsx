@@ -35,7 +35,7 @@ export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppSh
 
   return (
     <div className={`app-shell min-h-screen flex flex-col ${onHub ? 'app-shell--hub' : ''}`}>
-      {!onHub && <AppShellHeader key={app.id} app={app} user={user} navItems={barItems} onLogout={handleLogout} />}
+      {!onHub && <AppShellHeader key={`bar:${app.id}`} app={app} user={user} navItems={barItems} onLogout={handleLogout} />}
       {headerExtra}
       <div className="app-shell-body flex flex-1 min-h-0">
         <main className="app-shell-main flex-1 min-w-0 min-h-0">
@@ -44,7 +44,7 @@ export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppSh
           </div>
         </main>
       </div>
-      {!onHub && <AppShellMobile key={app.id} items={barItems} onOpenMenu={() => setDrawerOpen(true)} />}
+      {!onHub && <AppShellMobile key={`mobile-bar:${app.id}`} items={barItems} onOpenMenu={() => setDrawerOpen(true)} />}
       <AppShellDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
