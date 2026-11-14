@@ -99,7 +99,8 @@ export default function GuideBubble() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="How this page works"
-        className="fixed bottom-5 right-5 z-40 shadow-lg"
+        size="sm"
+        variant="secondary"
       >
         ?
       </Button>
@@ -108,7 +109,7 @@ export default function GuideBubble() {
         <div
           role="dialog"
           aria-label={`How ${guide.title} works`}
-          className="fixed bottom-20 right-5 z-40 w-[22rem] max-w-[calc(100vw-2.5rem)] rounded-2xl border border-[var(--border)] bg-white p-4 shadow-xl"
+          className="fixed top-16 right-5 z-[60] w-[22rem] max-w-[calc(100vw-2.5rem)] border border-[var(--border)] bg-white p-4"
         >
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-deep-navy">{guide.title}</h2>
@@ -119,7 +120,7 @@ export default function GuideBubble() {
           <ol className="mt-2 space-y-2 text-[13px] leading-5 text-slate-700">
             {guide.steps.map((step, index) => (
               <li key={step} className="flex gap-2">
-                <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-pale-sky text-[10px] font-semibold text-deep-navy">
+                <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center bg-pale-sky text-[10px] font-semibold text-deep-navy">
                   {index + 1}
                 </span>
                 <span>{step}</span>

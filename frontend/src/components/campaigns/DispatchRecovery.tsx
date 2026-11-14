@@ -15,7 +15,7 @@ export default function DispatchRecovery({ campaignId, onReconciled }: { campaig
   }, [campaignId]);
   const uncertain = dispatches.filter(item => ['claimed', 'ambiguous'].includes(item.state));
   if (!uncertain.length && !error && !message) return null;
-  return <section className="surface-card p-4 mb-5" aria-label="Send recovery">
+  return <section className="surface-card mb-5" aria-label="Send recovery">
     <h2 className="app-section-title">Sending needs review</h2>
     <p className="text-sm text-slate-600 my-2">An interrupted request may have reached Gmail. These messages stay paused until their status is known. Checking Sent mail does not send another email.</p>
     {error && <Notice tone="danger">{error}</Notice>}

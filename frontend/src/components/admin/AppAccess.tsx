@@ -53,7 +53,7 @@ export default function AppAccess() {
       <p className="text-sm text-slate-600">
         Every app is open to all active members unless you restrict it. Admins can always use every app.
       </p>
-      <section className="surface-card rounded-xl p-6 space-y-3" data-testid="app-settings-core">
+      <section className="surface-card space-y-3" data-testid="app-settings-core">
         <h2 className="font-semibold text-deep-navy">Platform</h2>
         <SettingsList rows={settings.filter((s) => s.app === 'core')} />
       </section>
@@ -61,7 +61,7 @@ export default function AppAccess() {
         const draft = drafts[saved.app];
         const changed = JSON.stringify(draft) !== JSON.stringify(saved);
         return (
-          <section key={saved.app} className="surface-card rounded-xl p-6 space-y-3" data-testid={`app-access-${saved.app}`}>
+          <section key={saved.app} className="surface-card space-y-3" data-testid={`app-access-${saved.app}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-semibold text-deep-navy">{saved.title}</h2>
               <StatusBadge tone={saved.restricted ? 'warning' : 'success'}>

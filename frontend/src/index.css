@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap');
+/* YUCG design system font: Lato everywhere. The installed copy is used when
+   present; Google Fonts serves it otherwise. */
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
 
 @import "tailwindcss";
 

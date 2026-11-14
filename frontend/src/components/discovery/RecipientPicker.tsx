@@ -237,7 +237,7 @@ export default function RecipientPicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Name, title or address"
-              className="mt-1 block w-56 rounded-lg border border-pale-sky px-3 py-2 text-sm text-deep-navy"
+              className="mt-1 block w-56 border border-pale-sky px-3 py-2 text-sm text-deep-navy"
             />
           </label>
           <label className="text-xs text-slate-600">
@@ -245,7 +245,7 @@ export default function RecipientPicker({
             <select
               value={level}
               onChange={(e) => setLevel(e.target.value as 'all' | Level)}
-              className="mt-1 block rounded-lg border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+              className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
             >
               <option value="all">Anyone found</option>
               <option value="working">Working level (the people who answer)</option>
@@ -259,7 +259,7 @@ export default function RecipientPicker({
             <select
               value={fn}
               onChange={(e) => setFn(e.target.value as 'all' | Fn)}
-              className="mt-1 block rounded-lg border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+              className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
               data-testid="function-filter"
             >
               <option value="all">Any function</option>
@@ -271,7 +271,7 @@ export default function RecipientPicker({
             Hide the {hiddenWritten} already written to
           </label>
           {noAddress > 0 && (
-            <span className="pb-2 text-xs text-amber-800">
+            <span className="pb-2 text-xs text-deep-navy">
               {noAddress} without an address cannot be written to
             </span>
           )}
@@ -308,7 +308,7 @@ export default function RecipientPicker({
         const bodyId = `group-${key.replace(/[^a-z0-9]+/gi, '-')}`;
         return (
           <div key={key} data-company={company.name} data-folded={isFolded || undefined}
-               className="overflow-hidden rounded-xl border border-pale-sky">
+               className="overflow-hidden border border-pale-sky">
             <div className="flex flex-wrap items-center justify-between gap-2 bg-pale-sky/30 px-3 py-2">
               <span className="flex min-w-0 items-center gap-1">
                 <button
@@ -352,7 +352,7 @@ export default function RecipientPicker({
             </div>
 
             {mode !== 'review' && status && (
-              <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${status.tone === 'paused' ? 'text-amber-900' : 'text-slate-600'}`}
+              <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${status.tone === 'paused' ? 'text-deep-navy' : 'text-slate-600'}`}
                  data-testid="company-status" data-tone={status.tone}>
                 {status.long}
               </p>
@@ -391,14 +391,14 @@ export default function RecipientPicker({
                   </p>
                 )}
                 {run.state === 'done' && run.shortfall && (
-                  <p className="mt-1 text-xs text-amber-900" data-testid="shortfall">
+                  <p className="mt-1 text-xs text-deep-navy" data-testid="shortfall">
                     Only {run.shortfall.found} qualified {run.shortfall.found === 1 ? 'person' : 'people'} found
                     at {company.name}
                     {SHORTFALL_REASON[run.shortfall.reason] ? ` — ${SHORTFALL_REASON[run.shortfall.reason]}.` : '.'}
                   </p>
                 )}
                 {searching && (
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-pale-sky/70"
+                  <div className="mt-1 h-1.5 overflow-hidden bg-pale-sky/70"
                        role="progressbar" aria-valuenow={Math.round(run.pct)} aria-valuemin={0} aria-valuemax={100}>
                     <div className="h-full bg-[var(--btn-primary-bg)] transition-[width] duration-300"
                          style={{ width: `${Math.min(100, Math.max(4, run.pct))}%` }} />
@@ -438,7 +438,7 @@ export default function RecipientPicker({
                         <PersonWhy person={person} wanted={wanted}>
                           {writableRow
                             ? <span className="truncate">{person.email}</span>
-                            : <span className="text-amber-800">no address yet</span>}
+                            : <span className="text-deep-navy">no address yet</span>}
                           {person.last_sent_at && (
                             <span>written {shortDate(person.last_sent_at)}
                               {person.last_campaign_name ? ` · ${person.last_campaign_name}` : ''}</span>
@@ -454,7 +454,7 @@ export default function RecipientPicker({
                   anyone a search left for a deliberate add. */}
               {group.found.length > 0 && (
                 <div className="border-t border-pale-sky" data-testid="found-rows">
-                  <div className="flex items-center justify-between gap-2 bg-amber-50/60 px-3 py-1.5 text-xs text-amber-900">
+                  <div className="flex items-center justify-between gap-2 bg-pale-sky/60 px-3 py-1.5 text-xs text-deep-navy">
                     <span>{group.found.length} found · not on file yet</span>
                     {selectable && addable.length > 1 && (
                       <button
@@ -475,16 +475,16 @@ export default function RecipientPicker({
                           <span className="min-w-0 flex-1">
                             <PersonHeadline name={name || ''} person={foundAsPerson(person)} company={company.name} />
                             <PersonWhy person={foundAsPerson(person)} wanted={wanted}>
-                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">found</span>
+                              <span className="bg-pale-sky/60 px-2 py-0.5 text-deep-navy">found</span>
                               {person.groupUnit && (
-                                <span className="rounded-full bg-pale-sky/60 px-2 py-0.5 text-slate-600" data-testid="group-unit"
+                                <span className="bg-pale-sky/60 px-2 py-0.5 text-slate-600" data-testid="group-unit"
                                       title={`Works at ${person.groupUnit}, part of ${company.name}`}>
                                   {person.groupUnit}
                                 </span>
                               )}
                               <span className="truncate">{person.email}</span>
                               {person.skippedReason && (
-                                <span className="text-amber-900">not added: {person.skippedReason}</span>
+                                <span className="text-deep-navy">not added: {person.skippedReason}</span>
                               )}
                             </PersonWhy>
                           </span>

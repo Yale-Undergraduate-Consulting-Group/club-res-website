@@ -52,7 +52,7 @@ export default function CatalogBuilderCard() {
     : 'On, waiting for the next tick';
 
   return (
-    <div className="surface-card rounded-xl p-6" data-section="catalog-builder">
+    <div className="surface-card" data-section="catalog-builder">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">Catalog builder</h2>
         <button
@@ -71,28 +71,28 @@ export default function CatalogBuilderCard() {
         Everyone it finds shows on the Find page for that company; members still keep them before
         they reach contacts. It pauses whenever the club passes its share of searches or AI.
       </p>
-      {error && <p className="text-sm text-red-700 mb-3">{error}</p>}
+      {error && <p className="ui-notice ui-notice--danger mb-3">{error}</p>}
       <p className="text-sm font-medium text-deep-navy mb-3" data-testid="catalog-builder-state">
         {state}
         {status?.current_company && status.current_progress ? ` · ${status.current_progress}` : ''}
       </p>
       {status && (
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <div className="rounded-lg border border-pale-sky/80 px-4 py-3">
+          <div className="border border-pale-sky/80 px-4 py-3">
             <dt className="text-xs text-slate-500">Companies today</dt>
             <dd className="font-semibold text-deep-navy tabular-nums">{status.companies_done_today}</dd>
           </div>
-          <div className="rounded-lg border border-pale-sky/80 px-4 py-3">
+          <div className="border border-pale-sky/80 px-4 py-3">
             <dt className="text-xs text-slate-500">People found today</dt>
             <dd className="font-semibold text-deep-navy tabular-nums">{status.people_found_today}</dd>
           </div>
-          <div className="rounded-lg border border-pale-sky/80 px-4 py-3">
+          <div className="border border-pale-sky/80 px-4 py-3">
             <dt className="text-xs text-slate-500">Club searches, last hour</dt>
             <dd className="font-semibold text-deep-navy tabular-nums">
               {status.searches_last_hour ?? '—'} / {status.limits.searches_per_hour}
             </dd>
           </div>
-          <div className="rounded-lg border border-pale-sky/80 px-4 py-3">
+          <div className="border border-pale-sky/80 px-4 py-3">
             <dt className="text-xs text-slate-500">Companies so far</dt>
             <dd className="font-semibold text-deep-navy tabular-nums">{status.companies_done_total}</dd>
           </div>
