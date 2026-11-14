@@ -34,7 +34,7 @@ export default function OutreachLedger() {
   const items = data?.items ?? [];
 
   return (
-    <section className="surface-card p-5" aria-label="Club outreach activity">
+    <section className="surface-card" aria-label="Club outreach activity">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="app-section-title">Club outreach activity</h2>

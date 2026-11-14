@@ -32,7 +32,7 @@ export default function ContactMaintenance() {
   };
 
   return (
-    <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm space-y-4"
+    <div className="surface-card border border-[var(--border)] space-y-4"
          data-section="contact-maintenance">
       <div>
         <h3 className="font-semibold text-deep-navy">Contact data maintenance</h3>
@@ -47,11 +47,11 @@ export default function ContactMaintenance() {
         onChange={(event) => setDomain(event.target.value)}
         placeholder="Limit to a company domain (optional)"
         aria-label="Limit to a company domain"
-        className="w-full max-w-sm px-3 py-2 rounded-xl border border-pale-sky text-sm"
+        className="w-full max-w-sm px-3 py-2 border border-pale-sky text-sm"
       />
 
-      {note && <p className="text-sm text-emerald-800">{note}</p>}
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {note && <p className="text-sm text-deep-navy">{note}</p>}
+      {error && <p className="ui-notice ui-notice--danger">{error}</p>}
 
       <div className="flex flex-wrap gap-3">
         <button

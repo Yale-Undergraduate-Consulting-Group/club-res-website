@@ -11,7 +11,7 @@ export default function CampaignOwnershipReview({ campaignId, onResolved }: { ca
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(false);
-  return <section className="surface-card p-4 mt-3" aria-label="Legacy campaign ownership review">
+  return <section className="surface-card mt-3" aria-label="Legacy campaign ownership review">
     <p className="text-sm mb-3">This campaign cannot send until its original account is established. Historical send records remain unchanged.</p>
     {error && <Notice tone="danger">{error}</Notice>}
     {!evidence ? <Button variant="secondary" disabled={busy} onClick={async () => {

@@ -28,29 +28,29 @@ export function PersonWhy({ person, wanted, children }: { person: PersonLike; wa
       {/* The title outranks the stored level: a CFO whose filing title reads as
           working level is still a CFO. */}
       {!looksLikePerson(person) ? (
-        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900"
+        <span className="bg-pale-sky/60 px-2 py-0.5 text-deep-navy"
               title="This name looks like page text a search picked up, not a person, so it is not ticked by default">
           Not a person? Check the name
         </span>
       ) : isTooSenior(person) ? (
-        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900"
+        <span className="bg-pale-sky/60 px-2 py-0.5 text-deep-navy"
               title="Chief officers, presidents and senior vice presidents rarely answer a student's cold email, so they are not ticked by default">
           Very senior · rarely replies
         </span>
       ) : (
-        <span className={`rounded-full px-2 py-0.5 ${matches ? 'bg-emerald-50 text-emerald-800' : 'bg-pale-sky/60 text-deep-navy'}`}
+        <span className={`px-2 py-0.5 ${matches ? 'bg-pale-sky/60 text-deep-navy' : 'bg-pale-sky/60 text-deep-navy'}`}
               data-testid="match-reason" data-match={matches || undefined}>
           {matchReason(person, wanted)}
         </span>
       )}
       {yale && (
-        <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-900" data-testid="yale-badge"
+        <span className="ui-status ui-status--info" data-testid="yale-badge"
               title={`Tied to Yale by what the search read: ${yale}`} aria-label={`Yale: ${yale}`}>
           Yale
         </span>
       )}
       {fn && (
-        <span className="rounded-full bg-pale-sky/60 px-2 py-0.5 text-deep-navy" data-testid="person-function">
+        <span className="bg-pale-sky/60 px-2 py-0.5 text-deep-navy" data-testid="person-function">
           {FUNCTIONS.find((f) => f.id === fn)?.label}
         </span>
       )}

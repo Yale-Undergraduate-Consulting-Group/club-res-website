@@ -24,12 +24,12 @@ export default function TrackingSync({ onSynced }: { onSynced?: () => Promise<vo
     return () => { active = false; clearInterval(timer); };
   }, []);
   return (
-    <section className="surface-card rounded-xl p-4 mb-6 flex flex-wrap items-center justify-between gap-3" aria-label="Gmail tracking">
+    <section className="surface-card mb-6 flex flex-wrap items-center justify-between gap-3" aria-label="Gmail tracking">
       <div className="text-sm" aria-live="polite">
         <p className="font-semibold text-deep-navy">Your Gmail tracking</p>
         <p className="text-slate-600">Last successful sync: {trackingTime(state?.last_success_at)}</p>
         <p className="text-xs text-slate-500">Checks every two minutes while the server is running. Open detection is approximate.</p>
-        {(error || state?.error) && <p className="text-red-700 mt-1" role="alert">{error || state?.error}</p>}
+        {(error || state?.error) && <p className="ui-notice ui-notice--danger mt-1" role="alert">{error || state?.error}</p>}
       </div>
       <button type="button" disabled={busy || state?.in_progress} className="ui-button ui-button--secondary ui-button--sm shrink-0"
         onClick={async () => {

@@ -120,7 +120,7 @@ export default function GuideBubble() {
           <ol className="mt-2 space-y-2 text-[13px] leading-5 text-slate-700">
             {guide.steps.map((step, index) => (
               <li key={step} className="flex gap-2">
-                <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-pale-sky text-[10px] font-semibold text-deep-navy">
+                <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center bg-pale-sky text-[10px] font-semibold text-deep-navy">
                   {index + 1}
                 </span>
                 <span>{step}</span>

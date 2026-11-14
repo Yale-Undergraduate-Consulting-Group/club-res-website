@@ -20,7 +20,7 @@ export default function SectionChart({ section }: { section: BreakdownSection })
   const hasSecondary = rows.some((r) => r.secondary !== null);
 
   return (
-    <section className="surface-card p-5" aria-label={section.title}>
+    <section className="surface-card" aria-label={section.title}>
       <h2 className="app-section-title">{section.title}</h2>
       {section.note && <p className="mt-0.5 text-xs text-slate-500">{section.note}</p>}
 
@@ -62,9 +62,9 @@ export default function SectionChart({ section }: { section: BreakdownSection })
                 </div>
                 {/* Hovering a bar lifts it out of the ladder, so a long list
                     stays readable while a single row is being looked at. */}
-                <div className="mt-1 h-2 overflow-hidden rounded-full" style={{ background: 'var(--chart-idle)' }}>
+                <div className="mt-1 h-2 overflow-hidden" style={{ background: 'var(--chart-idle)' }}>
                   <div
-                    className="h-2 rounded-full"
+                    className="h-2"
                     style={{
                       width: `${share}%`,
                       background: RAMP[index % RAMP.length],
@@ -74,7 +74,7 @@ export default function SectionChart({ section }: { section: BreakdownSection })
                   />
                   {hasSecondary && row.secondary !== null && row.value > 0 && (
                     <div
-                      className="-mt-2 h-2 rounded-full"
+                      className="-mt-2 h-2"
                       style={{
                         width: `${Math.round((row.secondary / max) * 100)}%`,
                         background: 'var(--chart-good)',

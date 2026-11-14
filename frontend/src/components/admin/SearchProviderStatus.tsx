@@ -33,11 +33,11 @@ export default function SearchProviderStatus({ refreshKey }: { refreshKey: unkno
     return () => { live = false; };
   }, [refreshKey]);
 
-  if (failed) return <p className="text-sm text-red-700 mb-3">Could not read the search provider's status.</p>;
+  if (failed) return <p className="ui-notice ui-notice--danger mb-3">Could not read the search provider's status.</p>;
   if (!health) return null;
   const state = STATE[health.state];
   return (
-    <div className="mb-4 rounded-lg border border-pale-sky/80 px-4 py-3 text-sm" data-testid="search-provider-status">
+    <div className="mb-4 border border-pale-sky/80 px-4 py-3 text-sm" data-testid="search-provider-status">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-deep-navy dark:text-[var(--text-primary)]">Monid (TinyFish)</span>
         <StatusBadge tone={state.tone}>{state.label}</StatusBadge>

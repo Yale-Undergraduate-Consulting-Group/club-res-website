@@ -66,7 +66,7 @@ export default function OutcomePie({ title, slices, empty, size = 116, showTitle
     <figure className="yucg-chart m-0 flex items-center gap-4">
       {total === 0 ? (
         <div
-          className="grid shrink-0 place-items-center rounded-full border-2 border-dashed text-[11px] text-slate-400"
+          className="grid shrink-0 place-items-center border-2 border-dashed text-[11px] text-slate-400"
           style={{ width: size, height: size, borderColor: 'var(--chart-idle)' }}
         >
           none yet
@@ -151,7 +151,7 @@ export default function OutcomePie({ title, slices, empty, size = 116, showTitle
                       className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs ${
                         on ? 'bg-pale-sky/40' : ''} ${slice.to ? 'hover:bg-pale-sky/40' : 'cursor-default'}`}
                     >
-                      <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: slice.colour }} />
+                      <span className="h-2.5 w-2.5 shrink-0" style={{ background: slice.colour }} />
                       <span className="font-semibold text-deep-navy">{slice.value}</span>
                       <span className="text-slate-700">{slice.label}</span>
                       <span className="ml-auto text-slate-400">

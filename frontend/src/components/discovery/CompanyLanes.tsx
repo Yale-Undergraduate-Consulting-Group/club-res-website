@@ -54,7 +54,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
   const hidden = lanes.length - shown.length;
 
   return (
-    <section className="surface-card rounded-2xl border border-pale-sky px-4 pb-3" aria-label="Company progress"
+    <section className="surface-card" aria-label="Company progress"
              data-testid="company-lanes">
       {/* Sticky against the surface, the same way the sheet's own header
           pins: scroll past this panel and its title stays put until the
@@ -99,7 +99,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
               // wherever the overflow landed, so a tap could land on a
               // completely different lane's button. Below `sm` the row wraps
               // to two lines and grows to fit instead.
-              className={`group flex cursor-pointer flex-wrap sm:flex-nowrap sm:h-[38px] items-center gap-x-2 gap-y-1 rounded-lg px-1 py-1.5 sm:py-0 -mx-1 ${
+              className={`group flex cursor-pointer flex-wrap sm:flex-nowrap sm:h-[38px] items-center gap-x-2 gap-y-1 px-1 py-1.5 sm:py-0 -mx-1 ${
                 isFocused ? 'bg-pale-sky/40' : 'hover:bg-pale-sky/15'}`}
             >
               {/* Purely decorative - the commit-graph metaphor is a desktop
@@ -136,7 +136,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                   own text. A fixed box keeps the column's left edge - and the
                   actions after it - in the same place on every row. */}
               <span className={`shrink-0 sm:w-44 truncate text-xs tabular-nums ${
-                lane.status.tone === 'paused' ? 'text-amber-800' : active ? 'text-deep-navy' : 'text-slate-500'}`}
+                lane.status.tone === 'paused' ? 'text-deep-navy' : active ? 'text-deep-navy' : 'text-slate-500'}`}
                     title={(lane.status.problem || (active && lane.run.message ? lane.run.message : lane.status.long)) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
                     data-testid="lane-state">
                 {lane.status.text}
@@ -167,11 +167,11 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                     >
                       ⋯
                     </summary>
-                    <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-pale-sky bg-white p-1 shadow-md">
+                    <div className="absolute right-0 z-20 mt-1 w-40 border border-pale-sky bg-white p-1">
                       <button
                         type="button"
                         onClick={() => onExport(runId)}
-                        className="block w-full rounded-md px-2 py-1 text-left text-xs text-deep-navy hover:bg-pale-sky/40"
+                        className="block w-full px-2 py-1 text-left text-xs text-deep-navy hover:bg-pale-sky/40"
                       >
                         Export .xlsx
                       </button>
@@ -181,7 +181,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                         <button
                           type="button"
                           onClick={() => onDelete(runId)}
-                          className="block w-full rounded-md px-2 py-1 text-left text-xs text-red-700 hover:bg-red-50"
+                          className="block w-full px-2 py-1 text-left text-xs text-deep-navy hover:bg-pale-sky/60"
                         >
                           Delete run
                         </button>

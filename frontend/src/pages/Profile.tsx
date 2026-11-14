@@ -216,7 +216,7 @@ export default function Profile() {
       {activeTab === 'profile' && (
         <div className="space-y-6">
           {assignedProjects.length > 0 && (
-            <div className="surface-card shadow-sm rounded-xl p-6">
+            <div className="surface-card">
               <h2 className="font-semibold text-deep-navy mb-4">Your Project Assignments</h2>
               <p className="text-sm text-slate-600 mb-4">Projects you&apos;re assigned to this semester (managed by admins).</p>
               <ul className="space-y-2">
@@ -229,7 +229,7 @@ export default function Profile() {
               </ul>
             </div>
           )}
-          <div className="surface-card shadow-sm rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy mb-4">Your Profile</h2>
             <p className="text-sm text-slate-600 mb-4">Build your profile so teammates can see your projects, experience, and how to connect.</p>
             <div className="space-y-4">
@@ -239,7 +239,7 @@ export default function Profile() {
                   value={projects}
                   onChange={(e) => setProjects(e.target.value)}
                   placeholder="e.g. Tech sector outreach, Healthcare initiative"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                 />
               </div>
               <div>
@@ -248,7 +248,7 @@ export default function Profile() {
                   value={experience}
                   onChange={(e) => setExperience(e.target.value)}
                   placeholder="e.g. 2 years consulting, finance background"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                   rows={3}
                 />
               </div>
@@ -258,7 +258,7 @@ export default function Profile() {
                   value={roleTitle}
                   onChange={(e) => setRoleTitle(e.target.value)}
                   placeholder="e.g. Analyst, Project Lead"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                 />
               </div>
               <div>
@@ -268,19 +268,19 @@ export default function Profile() {
                     value={linkedinUrl}
                     onChange={(e) => setLinkedinUrl(e.target.value)}
                     placeholder="LinkedIn URL"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                    className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                   />
                   <input
                     value={slackHandle}
                     onChange={(e) => setSlackHandle(e.target.value)}
                     placeholder="Slack handle (e.g. @username)"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                    className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                   />
                   <input
                     value={otherHandles}
                     onChange={(e) => setOtherHandles(e.target.value)}
                     placeholder="Other (Google Drive, Teams, etc.)"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                    className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                   />
                 </div>
               </div>
@@ -296,7 +296,7 @@ export default function Profile() {
 
       {activeTab === 'settings' && (
         <div className="space-y-8">
-          <div className="surface-card shadow-sm rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-4">Appearance</h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">Choose light or dark theme.</p>
             <AppSubnav
@@ -346,7 +346,7 @@ export default function Profile() {
                     savePreferences({ fontSize: v });
                     applyUserPreferences({ ...getStoredPreferences(), fontSize: v });
                   }}
-                  className="px-3 py-2 rounded-lg border border-pale-sky dark:border-slate-600 bg-white dark:bg-slate-700 text-deep-navy dark:text-[var(--text-primary)]"
+                  className="px-3 py-2 border border-pale-sky dark:border-slate-600 bg-white dark:bg-slate-700 text-deep-navy dark:text-[var(--text-primary)]"
                 >
                   <option value="small">Small</option>
                   <option value="medium">Medium</option>
@@ -384,7 +384,7 @@ export default function Profile() {
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Restore Original Appearance Settings.</p>
             </div>
           </div>
-          <div className="surface-card shadow-sm rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy mb-4">Notification Preferences</h2>
             <label className="flex items-center gap-2 mb-2">
               <input type="checkbox" checked={notifPrefs.admin_digest} onChange={(e) => setNotifPrefs((p) => ({ ...p, admin_digest: e.target.checked }))} />
@@ -396,7 +396,7 @@ export default function Profile() {
             </label>
             <button onClick={saveNotifPrefs} className="ui-button ui-button--primary mt-4">Save Preferences</button>
           </div>
-              <div className="surface-card shadow-sm rounded-xl p-6">
+              <div className="surface-card">
                 <h2 className="font-semibold text-deep-navy mb-4">Email sign-off</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="text-sm text-slate-600">Name
@@ -431,7 +431,7 @@ export default function Profile() {
                   </div>
                 </div>
               </div>
-              <div className="surface-card shadow-sm rounded-xl p-6">
+              <div className="surface-card">
                 <h2 className="font-semibold text-deep-navy mb-1">Send pacing</h2>
                 <p className="text-sm text-slate-600 mb-3">
                   The send loop claims at most this many first sends per day from your account. A
@@ -448,7 +448,7 @@ export default function Profile() {
                       min={1}
                       value={dailySendLimit}
                       onChange={(e) => setDailySendLimit(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                      className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                     />
                     <p className="text-xs text-slate-500 mt-1">
                       You can lower this but not raise it above the club ceiling.
@@ -465,7 +465,7 @@ export default function Profile() {
                       value={dailySendWarnAt}
                       onChange={(e) => setDailySendWarnAt(e.target.value)}
                       placeholder="No warning"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                      className="w-full px-3 py-2 border border-slate-300 text-slate-800"
                     />
                     <p className="text-xs text-slate-500 mt-1">
                       Releasing more first sends than this shows a warning.
@@ -476,7 +476,7 @@ export default function Profile() {
           <button onClick={saveSettings} className="ui-button ui-button--primary">{saved ? "Saved" : "Save settings"}</button>
           {isAdmin && (
             <>
-              <div className="surface-card shadow-sm rounded-xl p-6">
+              <div className="surface-card">
                 <h2 className="font-semibold text-deep-navy mb-4">Login Log</h2>
                 {loginLog.length === 0 ? <p className="text-slate-500 text-sm">No logins yet.</p> : (
                   <ul className="space-y-2 max-h-48 overflow-y-auto">
@@ -490,7 +490,7 @@ export default function Profile() {
                   </ul>
                 )}
               </div>
-              <div className="surface-card shadow-sm rounded-xl p-6">
+              <div className="surface-card">
                 <h2 className="font-semibold text-deep-navy mb-4">Email Attachments</h2>
                 <div className="mt-4 pt-4 border-t border-pale-sky">
                     <input type="file" id="att-upload" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif"
@@ -504,7 +504,7 @@ export default function Profile() {
                         } catch (err) {
       const errMessage = err instanceof Error ? err.message : 'Request failed'; alert(errMessage); } finally { setAttachmentUploading(false); e.target.value = ''; }
                       }} />
-                    <label htmlFor="att-upload" className={`inline-block px-4 py-2 rounded-lg border text-sm cursor-pointer ${attachmentUploading ? 'opacity-50' : ''}`}>+ Upload</label>
+                    <label htmlFor="att-upload" className={`inline-block px-4 py-2 border text-sm cursor-pointer ${attachmentUploading ? 'opacity-50' : ''}`}>+ Upload</label>
                     {attachmentLibrary.length > 0 && (
                       <ul className="mt-2 space-y-1">
                         {attachmentLibrary.map((a) => (
@@ -518,11 +518,11 @@ export default function Profile() {
                     )}
                 </div>
               </div>
-              <div className="surface-card shadow-sm rounded-xl p-6">
+              <div className="surface-card">
                 <h2 className="font-semibold text-deep-navy mb-4">Custom Email Formats</h2>
                 <div className="flex gap-2 mb-4">
-                  <input value={newFormatName} onChange={(e) => setNewFormatName(e.target.value)} placeholder="Name" className="flex-1 px-3 py-2 rounded-lg border" />
-                  <input value={newFormatPattern} onChange={(e) => setNewFormatPattern(e.target.value)} placeholder="Pattern" className="flex-1 px-3 py-2 rounded-lg border" />
+                  <input value={newFormatName} onChange={(e) => setNewFormatName(e.target.value)} placeholder="Name" className="flex-1 px-3 py-2 border" />
+                  <input value={newFormatPattern} onChange={(e) => setNewFormatPattern(e.target.value)} placeholder="Pattern" className="flex-1 px-3 py-2 border" />
                   <button onClick={addFormat} disabled={!newFormatName.trim() || !newFormatPattern.trim()} className="ui-button ui-button--primary">{formatAdded ? 'Added!' : 'Add'}</button>
                 </div>
                 <ul className="space-y-2">
@@ -540,7 +540,7 @@ export default function Profile() {
         </div>
       )}
 
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="ui-notice ui-notice--danger">{error}</p>}
     </div>
   );
 }
