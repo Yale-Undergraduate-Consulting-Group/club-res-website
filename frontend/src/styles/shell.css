@@ -143,7 +143,8 @@ select:-webkit-autofill:focus {
 
 /* Shared panels: white, a 1px hairline, square, no shadow, one padding
    (1.5rem; 1rem on phones) whatever p-* a page asks for. --flush is for the
-   few cards whose table or list runs edge to edge. */
+   few cards whose table or list runs edge to edge; --compact is for panels
+   whose header pins to the top edge (it bleeds out by the 1rem side padding). */
 .surface-card,
 html:not(.dark) .surface-card,
 .dark .surface-card {
@@ -163,6 +164,10 @@ html:not(.dark) .surface-card,
 .surface-card.surface-card--flush,
 html:not(.dark) .surface-card.surface-card--flush,
 .dark .surface-card.surface-card--flush { padding: 0; }
+
+.surface-card.surface-card--compact,
+html:not(.dark) .surface-card.surface-card--compact,
+.dark .surface-card.surface-card--compact { padding: 0 1rem 1rem; }
 
 /* Card heading: 16 / 700 navy. */
 .surface-card :is(h2, h3, .app-section-title) {
@@ -550,6 +555,7 @@ html:not(.dark) .surface-card.surface-card--flush,
 
   .app-tab-menu-item {
     flex: 0 0 auto;
+    margin-bottom: 0;
   }
 
   .app-subnav {
@@ -562,7 +568,6 @@ html:not(.dark) .surface-card.surface-card--flush,
    is full strength with a navy rule beneath (Outreach, Admin, Profile) ——— */
 .app-tab-menu {
   display: flex;
-  flex-wrap: wrap;
   gap: 0 1.75rem;
   border-bottom: 1px solid var(--border);
   background: transparent;

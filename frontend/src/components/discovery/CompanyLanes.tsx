@@ -54,7 +54,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
   const hidden = lanes.length - shown.length;
 
   return (
-    <section className="surface-card" aria-label="Company progress"
+    <section className="surface-card surface-card--compact" aria-label="Company progress"
              data-testid="company-lanes">
       {/* Sticky against the surface, the same way the sheet's own header
           pins: scroll past this panel and its title stays put until the

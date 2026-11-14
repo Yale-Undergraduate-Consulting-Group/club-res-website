@@ -589,11 +589,11 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   }, [chosen, findPeople]);
 
   return (
-    // 18.25rem is the shell around this grid at xl: header, main padding,
+    // 21.625rem is the shell around this grid at xl: header, main padding,
     // page header and subnav above; workspace and main padding below. The
     // grid fills the rest exactly so the page never grows a scrollbar of
     // its own beside the rail's and the surface's.
-    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 xl:h-[calc(100vh-18.25rem)]"
+    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 xl:h-[calc(100vh-21.625rem)]"
          data-section="campaign-pipeline">
       <div ref={rootRef}
            data-rail
@@ -870,7 +870,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
         />
 
         {chosen.length > 0 ? (
-          <section className="surface-card" aria-label="People" data-testid="sheet">
+          <section className="surface-card surface-card--compact" aria-label="People" data-testid="sheet">
             <RecipientPicker
               mode={PICKER_MODE[step]}
               companies={chosen}
