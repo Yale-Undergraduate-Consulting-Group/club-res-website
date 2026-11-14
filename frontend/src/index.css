@@ -1,6 +1,6 @@
-/* YUCG design system font: Lato everywhere. The installed copy is used when
-   present; Google Fonts serves it otherwise. */
-@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
+/* YUCG design system font: Lato everywhere, served from this site's own
+   bundle (src/main.tsx imports @fontsource/lato, OFL-1.1), so it never
+   depends on a third-party font host or on the reader having Lato installed. */
 
 @import "tailwindcss";
 
