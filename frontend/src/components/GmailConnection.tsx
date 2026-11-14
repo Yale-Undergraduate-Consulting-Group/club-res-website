@@ -20,7 +20,7 @@ export default function GmailConnection() {
       window.location.assign(result.redirect_url);
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to connect Gmail.'); setBusy(false); }
   };
-  return <section className="surface-card p-5 mb-6" aria-labelledby="gmail-heading">
+  return <section className="surface-card mb-6" aria-labelledby="gmail-heading">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 id="gmail-heading" className="app-section-title">Your Gmail account</h2>
       <StatusBadge tone={connected ? 'success' : 'neutral'}>{connected === null ? 'Checking connection' : connected ? 'Connected' : 'Not connected'}</StatusBadge>

@@ -205,7 +205,7 @@ export default function CampaignDetail() {
               const sequenceId = event.target.value ? Number(event.target.value) : null;
               void runAction(() => api.campaigns.update(campaignId, { sequence_id: sequenceId }));
             }}
-            className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-white px-3"
+            className="mt-1 min-h-11 w-full border border-[var(--border)] bg-white px-3"
           >
             <option value="">No follow-up sequence</option>
             {sequences.map((sequence) => <option key={sequence.id} value={sequence.id}>{sequence.name}</option>)}
@@ -234,7 +234,7 @@ export default function CampaignDetail() {
       />
 
       {canEdit && (
-        <details className="surface-card mt-6 rounded-xl p-4 sm:p-6" open={(campaign.contacts?.length || 0) === 0}>
+        <details className="surface-card mt-6" open={(campaign.contacts?.length || 0) === 0}>
           <summary className="cursor-pointer font-semibold text-deep-navy">Add recipients</summary>
           <div className="mt-4">
             <p className="mb-4 text-sm text-slate-600">Your latest drafts are attached automatically. Complete each email before sending.</p>
@@ -246,12 +246,12 @@ export default function CampaignDetail() {
                 setAddContactSearch(event.target.value);
                 setContactOffset(0);
               }}
-              className="mb-3 min-h-11 w-full rounded-lg border border-[var(--border)] px-3 text-sm"
+              className="mb-3 min-h-11 w-full border border-[var(--border)] px-3 text-sm"
               data-search-input
             />
             <div className="mb-4 max-h-80 space-y-1 overflow-y-auto">
               {contactsToAdd.map((contact) => (
-                <label key={contact.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 hover:bg-slate-50">
+                <label key={contact.id} className="flex min-h-11 cursor-pointer items-center gap-3 px-3 hover:bg-slate-50">
                   <input
                     type="checkbox"
                     checked={selectedIds.has(contact.id)}

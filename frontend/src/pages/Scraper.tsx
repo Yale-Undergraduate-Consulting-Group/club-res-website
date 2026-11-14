@@ -12,13 +12,13 @@ type ScraperTab = 'company' | 'import' | 'register';
 function aiVerdictClass(v?: string | null): string {
   switch (v) {
     case 'real':
-      return 'bg-emerald-100 text-emerald-800';
+      return 'ui-status--success';
     case 'suspicious':
-      return 'bg-amber-100 text-amber-800';
+      return 'ui-status--warning';
     case 'junk':
-      return 'bg-red-100 text-red-800';
+      return 'ui-status--danger';
     default:
-      return 'bg-pale-sky/50 text-slate-blue';
+      return '';
   }
 }
 
@@ -58,13 +58,13 @@ function inboxStatusLabel(status?: string | null): string {
 function inboxStatusClass(status?: string | null): string {
   switch (status) {
     case 'valid':
-      return 'bg-emerald-100 text-emerald-800';
+      return 'ui-status--success';
     case 'likely_valid':
-      return 'bg-sky-100 text-sky-800';
+      return 'ui-status--info';
     case 'invalid':
-      return 'bg-red-100 text-red-800';
+      return 'ui-status--danger';
     default:
-      return 'bg-pale-sky/50 text-slate-blue';
+      return '';
   }
 }
 
@@ -135,7 +135,7 @@ export default function Scraper() {
 
 
       {activeTab === 'import' && (
-      <div className="surface-card rounded-2xl border border-pale-sky overflow-hidden max-w-3xl">
+      <div className="surface-card surface-card--flush overflow-hidden max-w-3xl">
         <div className="px-5 py-4 border-b border-pale-sky">
           <h2 className="text-[15px] font-semibold text-deep-navy">Import a spreadsheet</h2>
         </div>
@@ -157,10 +157,10 @@ export default function Scraper() {
       )}
 
       {error && <p className="text-[#ff3b30] text-[13px] px-1 mt-4" role="alert">{error}</p>}
-      {infoMessage && <p className="text-emerald-600 text-[13px] px-1 mt-2">{infoMessage}</p>}
+      {infoMessage && <p className="text-deep-navy text-[13px] px-1 mt-2">{infoMessage}</p>}
 
       {contacts.length > 0 && (
-        <div className="mt-8 bg-white rounded-2xl overflow-hidden shadow-sm border border-pale-sky">
+        <div className="mt-8 bg-white overflow-hidden border border-pale-sky">
           <div className="px-5 py-4 border-b border-pale-sky flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-[15px] font-semibold text-deep-navy">Discovered ({contacts.length})</h2>
             {discoveryLog.length > 0 && (
@@ -193,16 +193,16 @@ export default function Scraper() {
                       <div>{c.contact_source || c.scrape_source || '—'}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${aiVerdictClass(c.ai_verdict)}`}>{aiVerdictLabel(c.ai_verdict)}</span>
+                      <span className={`ui-status ${aiVerdictClass(c.ai_verdict)}`}>{aiVerdictLabel(c.ai_verdict)}</span>
                     </td>
                     <td className="px-4 py-3">
-                      {c.ai_rejected ? <span className="text-[11px] text-red-700 font-medium">Not saved</span> : c.already_exists ? <span className="text-[11px] text-slate-600 font-medium">In database</span> : <span className="text-[11px] text-emerald-700 font-medium">New</span>}
+                      {c.ai_rejected ? <span className="text-[11px] text-deep-navy font-medium">Not saved</span> : c.already_exists ? <span className="text-[11px] text-slate-600 font-medium">In database</span> : <span className="text-[11px] text-deep-navy font-medium">New</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${inboxStatusClass(c.email_verification_status)}`}>{inboxStatusLabel(c.email_verification_status)}</span>
+                      <span className={`ui-status ${inboxStatusClass(c.email_verification_status)}`}>{inboxStatusLabel(c.email_verification_status)}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-md text-[12px] font-medium ${c.confidence === 'high' ? 'bg-pale-sky/60 text-steel-blue' : c.confidence === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-pale-sky/40 text-slate-blue'}`}>{c.confidence}</span>
+                      <span className={`px-2 py-0.5 text-[12px] font-medium ${c.confidence === 'high' ? 'bg-pale-sky/60 text-steel-blue' : c.confidence === 'medium' ? 'bg-pale-sky/60 text-deep-navy' : 'bg-pale-sky/40 text-slate-blue'}`}>{c.confidence}</span>
                     </td>
                   </tr>
                 ))}
@@ -214,7 +214,7 @@ export default function Scraper() {
               <p className="text-[12px] font-semibold text-deep-navy mb-2">AI audit log{scrapeRunId ? ` · run ${scrapeRunId.slice(0, 8)}…` : ''}</p>
               <ul className="space-y-2">
                 {discoveryLog.map((e, i) => (
-                  <li key={`${e.email}-${i}`} className="text-[12px] text-slate-700 border border-pale-sky/60 rounded-lg px-3 py-2 bg-white/80">
+                  <li key={`${e.email}-${i}`} className="text-[12px] text-slate-700 border border-pale-sky/60 px-3 py-2 bg-white/80">
                     <span className="font-medium text-deep-navy">{e.name || '—'}</span> <span className="text-steel-blue">{e.email}</span>
                     {e.ai_reason && <p className="mt-1 text-slate-600">{e.ai_reason}</p>}
                   </li>

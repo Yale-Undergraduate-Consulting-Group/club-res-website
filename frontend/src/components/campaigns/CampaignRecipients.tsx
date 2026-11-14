@@ -51,13 +51,13 @@ export default function CampaignRecipients({
       </Chip>)}
     </div>
     {actionError && <Notice tone="danger">{actionError}</Notice>}
-    <div className="surface-card rounded-xl overflow-hidden">
+    <div className="surface-card surface-card--flush overflow-hidden">
       <div className="p-4 sm:p-6 border-b border-pale-sky flex flex-wrap justify-between items-center gap-4">
         <div><h2 id="recipients-title" className="font-semibold text-deep-navy">Recipient activity</h2>
           <p className="text-xs text-slate-500 mt-1" aria-live="polite">Showing {visible.length} of {contacts.length} recipients. Activity counts can overlap.</p></div>
         <input type="search" value={search} onChange={e => setSearch(e.target.value)}
           aria-label="Search campaign recipients" placeholder="Search name, email, or company"
-          className="w-full sm:w-72 rounded-lg border border-pale-sky px-3 py-2 text-sm" />
+          className="w-full sm:w-72 border border-pale-sky px-3 py-2 text-sm" />
       </div>
       {visible.length === 0 ? <EmptyState title={contacts.length ? 'No matching recipients' : 'Build your recipient list'}
         body={contacts.length ? 'Try another activity filter or search.' : 'Add contacts below to prepare this campaign.'}
@@ -81,10 +81,10 @@ export default function CampaignRecipients({
                 {contact.email_subject && <p className="text-sm text-slate-600 mt-2 break-words">{contact.email_subject}</p>}
                 {contact.email_body && <details className="mt-2 text-sm text-slate-600">
                   <summary className="cursor-pointer font-medium text-steel-blue">Preview message</summary>
-                  <div className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-3" dangerouslySetInnerHTML={{ __html: sanitizeRichText(contact.email_body) }} />
+                  <div className="mt-2 whitespace-pre-wrap bg-slate-50 p-3" dangerouslySetInnerHTML={{ __html: sanitizeRichText(contact.email_body) }} />
                 </details>}
                 {contact.sent_at && <p className="text-xs text-slate-500 mt-1">Sent {trackingTime(contact.sent_at)}</p>}
-                {contact.last_error && <p className="mt-1 text-xs text-red-700 break-words">Last error: {contact.last_error}</p>}
+                {contact.last_error && <p className="mt-1 text-xs text-deep-navy break-words">Last error: {contact.last_error}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 {editable && onUpdate && <Button size="sm" variant="secondary" disabled={busy !== null}
@@ -108,14 +108,14 @@ export default function CampaignRecipients({
                 </Button>}
               </div>
             </div>
-            {editing === contact.id && <div className="mt-4 space-y-3 rounded-lg border border-pale-sky p-4">
+            {editing === contact.id && <div className="mt-4 space-y-3 border border-pale-sky p-4">
               <label className="block text-sm font-semibold text-deep-navy">Subject
                 <input value={editSubject} onChange={event => setEditSubject(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] px-3 font-normal" />
+                  className="mt-1 min-h-11 w-full border border-[var(--border)] px-3 font-normal" />
               </label>
               <label className="block text-sm font-semibold text-deep-navy">Plain-text message
                 <textarea value={editBody} onChange={event => setEditBody(event.target.value)} rows={8}
-                  className="mt-1 w-full rounded-lg border border-[var(--border)] p-3 font-normal" />
+                  className="mt-1 w-full border border-[var(--border)] p-3 font-normal" />
                 <span className="mt-1 block text-xs font-normal text-slate-500">Editing here replaces rich formatting with plain text and keeps paragraph breaks. Use Studio when formatting is needed.</span>
               </label>
               <div className="flex gap-2">

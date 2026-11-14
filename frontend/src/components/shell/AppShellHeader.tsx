@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { NAV_GROUPS, TOP_LEVEL_IDS, type NavItem } from '../../lib/navConfig';
 import AppNavLink from './AppNavLink';
 import { Button } from '../ui/Primitives';
+import GuideBubble from '../GuideBubble';
 
 type AppShellHeaderProps = {
   user: { email: string; name?: string; picture?: string };
@@ -63,6 +64,7 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
         </nav>
 
         <div className="app-shell-header-actions">
+          <GuideBubble />
           {user.picture && (
             <img
               src={user.picture}

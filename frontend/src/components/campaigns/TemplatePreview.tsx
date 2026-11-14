@@ -37,7 +37,7 @@ export default function TemplatePreview({ subject, body }: { subject: string; bo
       {failed && <Notice tone="danger">{failed}</Notice>}
       {result?.error && <Notice tone="danger">{result.error}</Notice>}
       {result && !result.error && (subject.trim() || body.trim()) && (
-        <div className="rounded-lg border border-pale-sky p-3 text-sm">
+        <div className="border border-pale-sky p-3 text-sm">
           <div className="text-xs uppercase tracking-wide text-slate-500">
             Preview for {result.recipient.name}, {result.recipient.title} at {result.recipient.company}
           </div>

@@ -158,7 +158,7 @@ export default function CompanyRegister() {
 
   return (
     <div className="space-y-5" data-section="company-register">
-      <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm space-y-3">
+      <div className="surface-card border border-[var(--border)] space-y-3">
         <h2 className="text-lg font-semibold text-deep-navy">Company register</h2>
         {summary && Array.isArray(summary.tiers) && (
           <p className="text-[13px] text-slate-500">
@@ -168,7 +168,7 @@ export default function CompanyRegister() {
         )}
       </div>
 
-      <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm space-y-4">
+      <div className="surface-card border border-[var(--border)] space-y-4">
         <div className="flex flex-wrap gap-2">
           {TIERS.map((option) => (
             <Chip key={option.id || 'all'} title={option.hint} selected={tier === option.id} onClick={() => setTier(option.id)}>
@@ -181,7 +181,7 @@ export default function CompanyRegister() {
             <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="register-q">Company or sector</label>
             <input
               id="register-q"
-              className="w-full rounded-lg border border-pale-sky px-3 py-2 text-sm"
+              className="w-full border border-pale-sky px-3 py-2 text-sm"
               value={q}
               onChange={(event) => setQ(event.target.value)}
               placeholder="health, robotics, Acme…"
@@ -191,7 +191,7 @@ export default function CompanyRegister() {
             <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="register-sector">Sector</label>
             <select
               id="register-sector"
-              className="w-full rounded-lg border border-pale-sky px-3 py-2 text-sm bg-white"
+              className="w-full border border-pale-sky px-3 py-2 text-sm bg-white"
               value={sector}
               onChange={(event) => setSector(event.target.value)}
             >
@@ -220,10 +220,10 @@ export default function CompanyRegister() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="ui-notice ui-notice--danger">{error}</p>}
 
       {picked.size > 0 && (
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-deep-navy bg-white px-4 py-3 shadow-lg">
+        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 border border-deep-navy bg-white px-4 py-3">
           <span className="text-sm font-semibold text-deep-navy">
             {picked.size} compan{picked.size === 1 ? 'y' : 'ies'} selected
           </span>
@@ -238,7 +238,7 @@ export default function CompanyRegister() {
         </div>
       )}
 
-      <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm">
+      <div className="surface-card border border-[var(--border)]">
         <div className="flex items-baseline justify-between mb-3">
           <h3 className="font-semibold text-deep-navy">{total.toLocaleString()} match{total === 1 ? '' : 'es'}</h3>
           {loading && <span className="text-xs text-slate-500">Loading…</span>}
@@ -270,12 +270,12 @@ export default function CompanyRegister() {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-deep-navy">{item.display_name}</span>
                         {item.kinds.map((kind) => (
-                          <span key={kind} className="rounded-full bg-pale-sky/60 px-2 py-0.5 text-[11px] font-medium text-deep-navy">
+                          <span key={kind} className="bg-pale-sky/60 px-2 py-0.5 text-[11px] font-medium text-deep-navy">
                             {kindLabel(kind)}
                           </span>
                         ))}
                         {item.claimed_by && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                          <span className="bg-pale-sky/60 px-2 py-0.5 text-[11px] font-medium text-deep-navy">
                             {item.claimed_by} is on this
                           </span>
                         )}
@@ -341,9 +341,9 @@ export default function CompanyRegister() {
                 {showLog[key] && (
                   <div className="mt-2 ml-7" data-testid="register-log">
                     {!(key in logs) && <p className="text-xs text-slate-500">Loading…</p>}
-                    {log === null && <p className="text-xs text-red-700">Could not load the records.</p>}
+                    {log === null && <p className="ui-notice ui-notice--danger">Could not load the records.</p>}
                     {log && (
-                      <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] text-xs text-slate-600">
+                      <ul className="divide-y divide-[var(--border)] border border-[var(--border)] text-xs text-slate-600">
                         {log.records.map((record) => {
                           const href = record.url ? publicSourceUrl(record.url) : null;
                           return (

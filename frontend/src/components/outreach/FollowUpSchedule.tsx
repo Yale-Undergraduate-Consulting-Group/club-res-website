@@ -35,7 +35,7 @@ export default function FollowUpSchedule() {
 
   return (
     <div className="space-y-5" data-section="follow-up-schedule">
-      <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm space-y-2">
+      <div className="surface-card border border-[var(--border)] space-y-2">
         <h2 className="text-lg font-semibold text-deep-navy">Follow-ups</h2>
         <p className="text-sm text-slate-600">
           Every follow-up queued across your campaigns. A step only sends while the person has
@@ -51,9 +51,9 @@ export default function FollowUpSchedule() {
         )}
       </div>
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="ui-notice ui-notice--danger">{error}</p>}
 
-      <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm">
+      <div className="surface-card border border-[var(--border)]">
         <h3 className="font-semibold text-deep-navy mb-3">Queued</h3>
         {loading ? (
           <p className="text-sm text-slate-500">Loading…</p>
@@ -74,8 +74,8 @@ export default function FollowUpSchedule() {
                     {[row.sequence_name, row.campaign_name, row.next_subject].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                  row.overdue ? 'bg-amber-100 text-amber-900' : 'bg-pale-sky/60 text-slate-700'}`}>
+                <span className={`shrink-0 px-2.5 py-1 text-xs font-medium ${
+                  row.overdue ? 'bg-pale-sky/60 text-deep-navy' : 'bg-pale-sky/60 text-slate-700'}`}>
                   {row.overdue ? 'due now' : `due ${row.due_on ?? 'once sent'}`}
                 </span>
               </li>
@@ -85,7 +85,7 @@ export default function FollowUpSchedule() {
       </div>
 
       {stopped.length > 0 && (
-        <div className="surface-card rounded-2xl border border-[var(--border)] p-5 sm:p-6 shadow-sm">
+        <div className="surface-card border border-[var(--border)]">
           <h3 className="font-semibold text-deep-navy mb-1">Stopped</h3>
           <p className="text-[13px] text-slate-500 mb-3">
             A reply is the reason you want. The others are worth reading: a paused campaign stops

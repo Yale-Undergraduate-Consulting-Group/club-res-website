@@ -49,13 +49,11 @@ function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast:
               key={t.id}
               className={`app-toast p-4 pr-10 relative overflow-hidden ${
                 t.type === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : t.type === 'success'
-                  ? 'bg-green-50 border-green-200 text-green-800'
-                  : 'bg-slate-50 border-slate-200 text-slate-800'
+                  ? 'bg-pale-sky/60 border-pale-sky text-deep-navy'
+                  : 'bg-slate-50 border-pale-sky text-deep-navy'
               }`}
             >
-              <p className="text-sm font-medium">{t.message}</p>
+              <p className="text-sm font-medium">{t.type === 'error' && <strong>Error: </strong>}{t.message}</p>
               <div
                 className="absolute bottom-0 left-0 h-1 bg-current opacity-20 transition-none"
                 style={{ width: `${progress}%` }}

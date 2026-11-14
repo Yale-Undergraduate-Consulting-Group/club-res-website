@@ -28,7 +28,7 @@ export default function ClubMetrics() {
 
   return (
     <div className="space-y-6" data-testid="club-metrics">
-      <section className="surface-card rounded-xl p-6 space-y-4">
+      <section className="surface-card space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold text-deep-navy">Semester targets</h2>
@@ -80,7 +80,7 @@ export default function ClubMetrics() {
       </section>
 
       {data && (
-        <section className="surface-card rounded-xl p-6 space-y-3" data-testid="approach-metrics">
+        <section className="surface-card space-y-3" data-testid="approach-metrics">
           <div>
             <h2 className="font-semibold text-deep-navy">What earns replies</h2>
             <p className="text-sm text-slate-600">
@@ -124,7 +124,7 @@ export default function ClubMetrics() {
       )}
 
       {data && (
-        <section className="surface-card rounded-xl p-6">
+        <section className="surface-card">
           <h2 className="mb-3 font-semibold text-deep-navy">By member, last {data.days} days</h2>
           {data.members.length === 0 ? <EmptyState title="No active members" /> : (
             <div className="overflow-x-auto">

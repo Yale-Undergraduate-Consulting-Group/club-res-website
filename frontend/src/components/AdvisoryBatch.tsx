@@ -168,9 +168,9 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
 
   const dot: Record<Status, string> = {
     waiting: 'bg-slate-300',
-    drafting: 'bg-sky-500 animate-pulse',
-    done: 'bg-emerald-600',
-    failed: 'bg-amber-600',
+    drafting: 'bg-steel-blue animate-pulse',
+    done: 'bg-steel-blue',
+    failed: 'bg-slate-500',
   };
   const label: Record<Status, string> = { waiting: 'not drafted', drafting: 'writing…', done: 'drafted', failed: 'failed' };
   const pct = writable.length ? Math.round((counts.done / writable.length) * 100) : 0;
@@ -180,7 +180,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
   // folded away and, opened, floats over the workspace instead of taking
   // height from it.
   return (
-    <section className="surface-card relative shrink-0 rounded-xl border border-pale-sky px-4 py-3 space-y-2" aria-label="Write to each person"
+    <section className="surface-card relative shrink-0 space-y-2" aria-label="Write to each person"
              data-testid="advisory-batch">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1 basis-80">
@@ -190,7 +190,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {counts.done > 0 && !running && (saved ? (
-            <span className="text-sm text-emerald-900">
+            <span className="text-sm text-deep-navy">
               Campaign #{saved} saved, nothing sent.{' '}
               <Link className="font-semibold underline" to={`/campaigns/${saved}`}>Review and release it</Link>
             </span>
@@ -201,7 +201,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
                 onChange={(e) => setCampaignName(e.target.value)}
                 placeholder={`Advisory ${new Date().toLocaleDateString()}`}
                 aria-label="Campaign name"
-                className="w-44 rounded-lg border border-pale-sky px-3 py-1.5 text-sm text-deep-navy"
+                className="w-44 border border-pale-sky px-3 py-1.5 text-sm text-deep-navy"
               />
               <button type="button" disabled={saving} onClick={() => void saveCampaign()} className="ui-button ui-button--secondary ui-button--sm">
                 {saving ? 'Saving…' : `Save the ${counts.done} drafted as a campaign`}
@@ -242,14 +242,14 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
             {listOpen ? 'Hide the people' : `Show the ${people.length} people`}
           </button>
           {skipped.length > 0 && (
-            <span className="text-amber-900" data-testid="skipped-note">
+            <span className="text-deep-navy" data-testid="skipped-note">
               {skipped.length} skipped: the name is not a person&apos;s
             </span>
           )}
           {(running || counts.done > 0 || counts.failed > 0) && (
             <>
-              <span className="h-1.5 w-40 overflow-hidden rounded-full bg-pale-sky/70" aria-hidden="true">
-                <span className="block h-full bg-emerald-600 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+              <span className="h-1.5 w-40 overflow-hidden bg-pale-sky/70" aria-hidden="true">
+                <span className="block h-full bg-steel-blue transition-[width] duration-300" style={{ width: `${pct}%` }} />
               </span>
               <span role="status">
                 {counts.done} drafted{counts.failed ? ` · ${counts.failed} failed` : ''}
@@ -260,7 +260,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
       )}
 
       {listOpen && (
-        <ul className="absolute inset-x-0 top-full z-30 mt-1 grid max-h-72 grid-cols-1 gap-1 overflow-y-auto rounded-xl border border-pale-sky bg-white p-2 shadow-lg sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="absolute inset-x-0 top-full z-30 mt-1 grid max-h-72 grid-cols-1 gap-1 overflow-y-auto border border-pale-sky bg-white p-2 sm:grid-cols-2 xl:grid-cols-3">
           {people.map((p) => {
             const st = status[p.id] || 'waiting';
             const person = looksLikePerson(p);
@@ -269,10 +269,10 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
                 <button
                   type="button"
                   onClick={() => onOpen(p)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-pale-sky/25"
+                  className="flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-pale-sky/25"
                   title={person ? reason[p.id] || `${label[st]} - open ${p.name || p.email}` : 'Skipped: this name looks like page text, not a person'}
                 >
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${person ? dot[st] : 'bg-transparent ring-1 ring-amber-600'}`}
+                  <span className={`h-2 w-2 shrink-0 ${person ? dot[st] : 'bg-transparent ring-1 ring-deep-navy'}`}
                         aria-label={person ? label[st] : 'skipped'} role="img" />
                   <span className="min-w-0 flex-1 truncate text-sm text-deep-navy">
                     {p.name || p.email}
@@ -285,7 +285,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
         </ul>
       )}
 
-      {note && <p className="text-xs text-amber-900" role="alert">{note}</p>}
+      {note && <p className="text-xs text-deep-navy" role="alert">{note}</p>}
       {aiDown && <AiUnavailableNotice contactIds={writable.map((p) => p.id)} label="Advisory outreach" />}
     </section>
   );
