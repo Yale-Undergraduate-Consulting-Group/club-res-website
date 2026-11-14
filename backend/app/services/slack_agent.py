@@ -90,14 +90,6 @@ def _link(label: str, path: str) -> str:
     return f"<{app_url()}{path}|{label}>"
 
 
-HELP = (
-    "*YUCG assistant.* Mention me, send me a direct message, or use `/yucg`.\n"
-    "Ask about contacts and companies you can see, your drafts and campaigns, "
-    "or documents in your projects. Existing shortcuts still work:\n"
-    "• _how are we doing at A24?_\n"
-    "• _what's queued?_ · _follow-ups?_ · _who should I write to next?_\n"
-    "I can only read club data you can already see in the website. I never send mail or make changes."
-)
 
 
 async def _company(member: dict, name: str) -> dict:
@@ -561,7 +553,8 @@ async def handle_message(text: str, member: dict, context: SlackContext | None =
     route, argument = parse_intent(text)
     handler = ROUTES.get(route)
     if handler is None:
-        return _ephemeral(HELP)
+        from app.services.slack_commands import help_text
+        return _ephemeral(help_text(member))
     return await handler(member, argument)
 
 
@@ -646,18 +639,23 @@ async def answer_event(event: dict) -> bool:
         is_dm=not mention and event.get("channel_type") == "im",
     )
     member = await member_for_slack_user(slack_user)
+    from app.services import slack_commands
+
+    subcommand = slack_commands.parse_subcommand(text)
+    if subcommand:
+        reply, request_id = await slack_commands.answer(*subcommand, member, slack_user)
+        posted = await post_reply(channel, reply, reply_thread, slack_user if mention else None)
+        if request_id:
+            await slack_commands.deliver_request(request_id)
+        return posted
     if not member:
         return await post_reply(
-            channel,
-            "I do not know which club account this is. Open YUCG Outreach → Profile → "
-            "Integrations and press *Connect Slack*, then ask me again.",
-            reply_thread,
-            slack_user if mention else None,
+            channel, slack_commands.NOT_LINKED, reply_thread, slack_user if mention else None,
         )
     answer = await handle_message(text, member, context)
     return await post_reply(
         channel,
-        str(answer.get("text") or HELP),
+        str(answer.get("text") or slack_commands.help_text(member)),
         reply_thread,
         slack_user if mention else None,
     )

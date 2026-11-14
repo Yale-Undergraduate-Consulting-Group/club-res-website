@@ -567,6 +567,16 @@ async def _baseline_schema():
                 event_id TEXT PRIMARY KEY,
                 created_at REAL NOT NULL
             );
+            -- `/yucg requests <idea>`: kept even when no admin could be reached.
+            CREATE TABLE IF NOT EXISTS slack_feature_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                slack_user_id TEXT,
+                text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_slack_feature_requests_user
+                ON slack_feature_requests(user_id, created_at);
         """)
         await db.commit()
         # Thread memory for the Slack assistant: only the member's question and

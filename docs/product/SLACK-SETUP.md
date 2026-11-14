@@ -77,6 +77,31 @@ The backend also needs its normal Bedrock model configuration and AI budget
 settings. Busy, exhausted-budget, and unavailable-model errors are shown as
 short Slack messages rather than provider details.
 
+#### Subcommands
+
+`/yucg help`, `onboard`, `link`, `unlink`, `usage` and `requests <idea>` are
+answered from the database, never the model, and always privately. The same
+words work alone in a DM or right after an @mention. Only `requests` takes text
+after it, so "link me to A24's contacts" still goes to the assistant.
+`stats` is an alias for `usage`.
+
+- `help`, `onboard` and `link` also answer a Slack user who has not connected
+  an account, so a new member's first `/yucg` points them to
+  Profile → Integrations. The other three need a linked account.
+- `onboard` shows the member's own Getting Started checklist (Slack, Gmail,
+  sign-off) from `member_readiness`.
+- `unlink` deletes the member's `user_slack_tokens` row, as the website's
+  Disconnect does. The workspace token is the newest install, so if the last
+  linked member unlinks, DM and mention replies stop until someone links again.
+- `usage` counts the member's `bedrock_reserved` usage events this month and
+  the club's share of `AI_MONTHLY_BUDGET_USD`. Admins (role `admin`) also see
+  dollars and the top ten members.
+- `requests <idea>` stores the idea in `slack_feature_requests` (five per
+  member per day, 1,000 characters, `@channel`-style pings removed) and DMs
+  every active admin who has linked Slack.
+
+No new Slack scope or slash command is needed.
+
 #### Choosing the model
 
 Start a message with `opus:` (most capable), `sonnet:`, or `haiku:` (fastest) to
