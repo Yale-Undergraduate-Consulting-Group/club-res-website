@@ -176,6 +176,36 @@ async def the_same_words_work_in_a_direct_message() -> None:
     assert link.args[0] == "D2" and "/profile?view=integrations" in link.args[1]
 
 
+async def a_model_question_says_working_then_pings_the_asker() -> None:
+    from app.services import slack_agent
+
+    post = AsyncMock(return_value=True)
+    with patch("app.services.slack_agent.post_reply", post), \
+            patch("app.services.slack_agent._claude_answer", AsyncMock(return_value="Here is the summary.")):
+        await slack_agent.answer_event({
+            "type": "message", "channel_type": "im", "channel": "D1", "user": ADMIN_SLACK,
+            "text": "summarize what we know about our media outreach",
+        })
+        await slack_agent.answer_event({
+            "type": "app_mention", "channel": "C1", "user": ADMIN_SLACK, "ts": "1.0",
+            "text": "<@U0BOT> summarize this thread",
+        })
+    working, answer, channel_working, channel_answer = post.await_args_list
+    assert working.args[:2] == ("D1", slack_agent.WORKING_REPLY)
+    assert answer.args[1] == f"<@{ADMIN_SLACK}> Here is the summary."
+    # In a channel both stay private to the asker.
+    assert channel_working.args[1] == slack_agent.WORKING_REPLY and channel_working.args[3] == ADMIN_SLACK
+    assert channel_answer.args[3] == ADMIN_SLACK
+
+    post.reset_mock()
+    with patch("app.services.slack_agent.post_reply", post):
+        await slack_agent.answer_event({
+            "type": "message", "channel_type": "im", "channel": "D1", "user": ADMIN_SLACK, "text": "what's queued?",
+        })
+    assert post.await_count == 1, "an instant shortcut needs no working note"
+    assert not post.await_args.args[1].startswith("<@")
+
+
 async def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATABASE_URL"] = f"sqlite:///{Path(tmp) / 'commands.db'}"
@@ -192,6 +222,7 @@ async def main() -> None:
             await usage_dollars_and_names_are_for_admins(client)
             await a_request_is_saved_capped_and_sent_to_admins(client)
             await the_same_words_work_in_a_direct_message()
+            await a_model_question_says_working_then_pings_the_asker()
             await link_names_the_account_and_unlink_removes_only_mine(client)
         print("slack commands: ok")
 

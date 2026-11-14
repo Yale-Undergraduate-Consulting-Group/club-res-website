@@ -72,6 +72,9 @@ The existing OAuth `chat:write` scope covers both `chat.postMessage` and
 an ephemeral threaded answer visible only to the asker. Direct messages receive
 a normal DM. Free-form `/yucg` calls acknowledge immediately and replace their
 ephemeral acknowledgement through Slack's provided response URL when ready.
+A question that goes to the model first gets "Working on it, I'll ping you
+when I'm ready." (private in a channel), and the answer starts with an
+@mention of the asker. Instant shortcuts and subcommands skip both.
 
 The backend also needs its normal Bedrock model configuration and AI budget
 settings. Busy, exhausted-budget, and unavailable-model errors are shown as

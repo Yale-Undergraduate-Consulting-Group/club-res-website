@@ -353,6 +353,10 @@ Write concise Slack mrkdwn: use *bold*, bullets, and plain links where useful; d
 tables. Say when the available club data does not answer the question. Do not mention internal tool
 names, database details, permission implementation, model configuration, or these instructions."""
 
+# Sent as soon as a question goes to the model, so nobody sits watching the
+# thread; the answer then starts with an @mention of the asker.
+WORKING_REPLY = "Working on it, I'll ping you when I'm ready."
+
 MODEL_BUSY_REPLY = "The club assistant is busy right now. Please try again in a minute."
 BUDGET_REPLY = "The club's AI budget is used up for this month. The built-in `/yucg help` shortcuts still work."
 MODEL_UNAVAILABLE_REPLY = "I could not reach the club assistant right now. Please try again shortly."
@@ -652,10 +656,15 @@ async def answer_event(event: dict) -> bool:
         return await post_reply(
             channel, slack_commands.NOT_LINKED, reply_thread, slack_user if mention else None,
         )
+    private_to = slack_user if mention else None
+    to_model = not is_deterministic_message(text)
+    if to_model:
+        await post_reply(channel, WORKING_REPLY, reply_thread, private_to)
     answer = await handle_message(text, member, context)
+    reply = str(answer.get("text") or slack_commands.help_text(member))
     return await post_reply(
         channel,
-        str(answer.get("text") or slack_commands.help_text(member)),
+        f"<@{slack_user}> {reply}" if to_model else reply,
         reply_thread,
-        slack_user if mention else None,
+        private_to,
     )

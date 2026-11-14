@@ -16,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.services.slack_agent import (
-    MODEL_UNAVAILABLE_REPLY, already_handled, answer_event, handle_message,
+    MODEL_UNAVAILABLE_REPLY, WORKING_REPLY, already_handled, answer_event, handle_message,
     is_deterministic_message, member_for_slack_user, verify_slack_signature,
 )
 from app.services import slack_commands
@@ -84,7 +84,7 @@ async def slack_command(request: Request, background: BackgroundTasks):
             payload = {
                 "response_type": "ephemeral",
                 "replace_original": True,
-                "text": str(answer.get("text") or MODEL_UNAVAILABLE_REPLY),
+                "text": f"<@{slack_user}> " + str(answer.get("text") or MODEL_UNAVAILABLE_REPLY),
             }
             async with httpx.AsyncClient(timeout=10.0) as client:
                 await client.post(response_url, json=payload)
@@ -94,7 +94,7 @@ async def slack_command(request: Request, background: BackgroundTasks):
     background.add_task(answer_command)
     return JSONResponse({
         "response_type": "ephemeral",
-        "text": "Looking that up…",
+        "text": WORKING_REPLY,
     })
 
 
