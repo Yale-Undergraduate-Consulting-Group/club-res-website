@@ -218,21 +218,22 @@ def _people_sql(viewer: dict, q: str | None, company: str | None) -> tuple[str, 
             SELECT lower(c.email) AS email, 0 AS pri, c.id AS rid,
                    COALESCE(c.name, '') AS name, COALESCE(c.title, '') AS title,
                    COALESCE(c.company, '') AS company, COALESCE(c.company_domain, '') AS domain,
-                   COALESCE(c.contact_source, '') AS source, COALESCE(c.created_at, '') AS found_at
+                   COALESCE(c.contact_source, '') AS source, COALESCE(c.created_at, '') AS found_at,
+                   NULL AS run_id
             FROM contacts c
             WHERE c.email LIKE ? {contact_scope}
             UNION ALL
             SELECT lower(p.email), 1, p.id,
                    trim(COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')),
                    COALESCE(p.title, ''), COALESCE(NULLIF(p.company, ''), r.company_name, ''),
-                   COALESCE(r.company_domain, ''), COALESCE(p.contact_source, ''), COALESCE(p.created_at, '')
+                   COALESCE(r.company_domain, ''), COALESCE(p.contact_source, ''), COALESCE(p.created_at, ''), p.run_id
             FROM yucgoutreach_prospects p
             JOIN yucgoutreach_discovery_runs r ON r.id = p.run_id
             WHERE p.email LIKE ?
               AND (r.user_id = ? OR r.origin = 'builder' OR {_SHARED_MEMBER_RUN})
         ),
         ranked AS (
-            SELECT email, pri, rid, found_at,
+            SELECT email, pri, rid, found_at, run_id,
                    ROW_NUMBER() OVER (PARTITION BY email ORDER BY pri, rid DESC) AS rn,
                    name, MAX(NULLIF(name, '')) OVER w AS any_name,
                    title, MAX(NULLIF(title, '')) OVER w AS any_title,
@@ -244,6 +245,7 @@ def _people_sql(viewer: dict, q: str | None, company: str | None) -> tuple[str, 
         ),
         directory AS (
             SELECT email, found_at, pri = 0 AS on_file, CASE WHEN pri = 0 THEN rid END AS contact_id,
+                   CASE WHEN pri = 1 THEN run_id END AS run_id, CASE WHEN pri = 1 THEN rid END AS prospect_id,
                    COALESCE(NULLIF(name, ''), any_name, '') AS name,
                    COALESCE(NULLIF(title, ''), any_title, '') AS title,
                    COALESCE(NULLIF(company, ''), any_company, '') AS company,
