@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { NAV_GROUPS, TOP_LEVEL_IDS, type NavItem } from '../../lib/navConfig';
+import { HEADER_LAYOUT, type NavItem } from '../../lib/navConfig';
 import AppNavLink from './AppNavLink';
 import { Button } from '../ui/Primitives';
 import GuideBubble from '../GuideBubble';
@@ -24,26 +24,24 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
     document.addEventListener('pointerdown', closeOutside);
     return () => document.removeEventListener('pointerdown', closeOutside);
   }, []);
-  const groups = NAV_GROUPS;
-  const primary = TOP_LEVEL_IDS.map(id => navItems.find(item => item.id === id)).filter(
-    (item): item is NavItem => !!item,
-  );
   return (
     <header className="app-shell-header app-top-nav sticky top-0 z-50">
       <div className="app-shell-header-inner">
         <div className="app-shell-brand">
           <img src="/yucg-logo.png" alt="YUCG" className="app-shell-logo" decoding="async" />
           <div className="min-w-0">
-            <div className="app-shell-title">YUCG Outreach</div>
+            <div className="app-shell-title">YUCG Resources</div>
             <div className="app-shell-subtitle hidden xl:block">Yale Undergraduate Consulting Group</div>
           </div>
         </div>
 
         <nav className="app-nav-menu app-shell-desktop-nav" aria-label="Main navigation">
-          {primary.map((item) => (
-            <AppNavLink key={item.id} item={item} variant="desktop" />
-          ))}
-          {groups.map((group, index) => {
+          {HEADER_LAYOUT.map((entry, index) => {
+            if (typeof entry === 'string') {
+              const item = navItems.find(candidate => candidate.id === entry);
+              return item ? <AppNavLink key={item.id} item={item} variant="desktop" /> : null;
+            }
+            const group = entry;
             const items = navItems.filter(item => group.ids.includes(item.id));
             // A member who may not use an app gets no empty dropdown for it.
             if (items.length === 0) return null;

@@ -15,21 +15,23 @@ export const NAV_ITEMS: NavItem[] = navOf(MODULES).filter((item) => !item.adminO
 export const ADMIN_NAV_ITEMS: NavItem[] = navOf(MODULES).filter((item) => item.adminOnly);
 
 /**
- * Header layout. Every destination is reachable from TOP_LEVEL_IDS plus the
- * NAV_GROUPS dropdowns - Home does not need to mirror this list with its
- * own tile grid. Home instead surfaces live work state (needs attention,
- * pipeline snapshot, leaderboard) that links into these same destinations.
+ * Header layout, left to right: Home (the portal hub), then each app - a lone
+ * entry, or a dropdown for an app with several pages. Every destination is
+ * reachable from here; the hub adds a card per app, not a second menu.
  *
- * Both shells read this: desktop renders TOP_LEVEL_IDS then NAV_GROUPS, mobile
- * renders MOBILE_PRIMARY_IDS with the drawer covering the rest.
+ * Both shells read this: desktop renders HEADER_LAYOUT (admin follows it),
+ * mobile renders MOBILE_PRIMARY_IDS with the drawer covering the rest.
  */
-export const TOP_LEVEL_IDS: NavItemId[] = ['dashboard', 'scraper'];
+export type NavGroup = { label: string; ids: NavItemId[] };
 
-export const NAV_GROUPS: { label: string; ids: NavItemId[] }[] = [
-  { label: 'Outreach', ids: ['studio', 'outreach', 'directory'] },
+export const HEADER_LAYOUT: (NavItemId | NavGroup)[] = [
+  'home',
+  { label: 'Outreach', ids: ['campaigns', 'scraper', 'studio', 'outreach', 'directory'] },
+  'surveys',
+  'sentiment',
 ];
 
-export const MOBILE_PRIMARY_IDS: NavItemId[] = ['dashboard', 'scraper', 'studio'];
+export const MOBILE_PRIMARY_IDS: NavItemId[] = ['home', 'campaigns', 'surveys', 'sentiment'];
 
 /** The menu for this member: the apps they may use, and admin pages for admins. */
 export function getNavItems(isAdmin: boolean, apps?: string[]): NavItem[] {

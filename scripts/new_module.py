@@ -19,6 +19,7 @@ access checks. Nothing is written when the id, its URL or a file is taken.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -55,7 +56,7 @@ def plan(root: Path, app_id: str, title: str, purpose: str) -> dict[Path, str]:
     taken = [str(p.relative_to(root)) for p in new_files if p.exists()]
     if taken:
         raise SystemExit("Already exists: " + ", ".join(taken))
-    fill = {"id": app_id, "title": title, "purpose": purpose, "pascal": pascal, "camel": camel}
+    fill = {"id": app_id, "title": title, "purpose": purpose, "pascal": pascal, "camel": camel, "purpose_js": json.dumps(purpose)}
     out = {path: template.format(**fill) for path, template in new_files.items()}
 
     registry = backend / "modules" / "__init__.py"
@@ -77,8 +78,8 @@ def plan(root: Path, app_id: str, title: str, purpose: str) -> dict[Path, str]:
     out[modules] = text
 
     nav = frontend / "lib" / "navConfig.ts"
-    out[nav] = insert(nav.read_text(), r"^(export const TOP_LEVEL_IDS: NavItemId\[\] = \[[^\]]*)\];$",
-                      rf"\1, '{app_id}'];", "TOP_LEVEL_IDS in lib/navConfig.ts")
+    out[nav] = insert(nav.read_text(), r"^(export const HEADER_LAYOUT: [^\n]*= \[\n(?:  [^\n]*\n)*)\];$",
+                      rf"\1  '{app_id}',\n];", "HEADER_LAYOUT in lib/navConfig.ts")
 
     docs = root / "docs" / "PLATFORM.md"
     out[docs] = insert(docs.read_text(), r"^(\| `projects` \|.*\|\n(?:\|.*\|\n)*)",
@@ -315,6 +316,7 @@ export default function {pascal}() {{
 APP_MODULE = """const {camel}: AppModule = {{
   id: '{id}',
   title: '{title}',
+  description: {purpose_js},
   routes: [{{ path: '{id}', element: <{pascal} /> }}],
   nav: [{{ id: '{id}', to: '/{id}', label: '{title}', shortLabel: '{title}' }}],
 }};

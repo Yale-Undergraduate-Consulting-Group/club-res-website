@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, getBackendOriginForOAuth } from '../api';
 import { Button } from '../components/ui/Primitives';
+import { MODULES } from '../modules';
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
@@ -42,8 +43,16 @@ export default function LoginPage() {
             decoding="async"
           />
         </div>
-        <h1 className="text-2xl font-bold text-center text-deep-navy mb-2">YUCG Outreach</h1>
-        <p className="text-center text-slate-600 text-sm mb-8">Yale Undergraduate Consulting Group</p>
+        <h1 className="text-2xl font-bold text-center text-deep-navy mb-2">YUCG Resources</h1>
+        <p className="text-center text-slate-600 text-sm mb-4">Yale Undergraduate Consulting Group</p>
+        <p className="text-center text-slate-700 text-sm mb-3">The club's tools, behind one sign-in:</p>
+        <ul className="mb-8 space-y-1 text-sm text-slate-700">
+          {MODULES.filter((module) => module.description).map((module) => (
+            <li key={module.id}>
+              <span className="font-semibold text-deep-navy">{module.title}</span>: {module.description}
+            </li>
+          ))}
+        </ul>
 
         {error && (
           <div className="mb-4 ui-notice ui-notice--danger">

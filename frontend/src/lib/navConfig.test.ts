@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { MODULES } from '../modules';
-import { ADMIN_NAV_ITEMS, MOBILE_PRIMARY_IDS, NAV_GROUPS, NAV_ITEMS, TOP_LEVEL_IDS, getNavItems, isNavItemActive } from './navConfig';
+import { ADMIN_NAV_ITEMS, HEADER_LAYOUT, MOBILE_PRIMARY_IDS, NAV_ITEMS, getNavItems, isNavItemActive } from './navConfig';
 
 describe('navigation', () => {
   it('reaches every member destination from the desktop header', () => {
-    const headerIds = [...TOP_LEVEL_IDS, ...NAV_GROUPS.flatMap((group) => group.ids)];
+    const headerIds = HEADER_LAYOUT.flatMap((entry) => (typeof entry === 'string' ? [entry] : entry.ids));
     expect(headerIds.toSorted()).toEqual(NAV_ITEMS.map((item) => item.id).toSorted());
     expect(MOBILE_PRIMARY_IDS.every((id) => headerIds.includes(id))).toBe(true);
+  });
+
+  it('gives every app on the hub a home page it serves', () => {
+    const paths = MODULES.flatMap((m) => m.routes.map((r) => ('index' in r ? '/' : `/${r.path}`)));
+    for (const module of MODULES.filter((m) => m.description)) expect(paths).toContain(module.nav[0].to);
   });
 
   it('shows Admin only to administrators', () => {

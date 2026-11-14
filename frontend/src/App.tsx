@@ -108,7 +108,7 @@ function AppLoading({ label }: { label: string }) {
     <div className="app-auth-loading" role="status" aria-live="polite">
       <div className="text-center max-w-md px-6">
         <div className="animate-spin w-10 h-10 border-2 border-white border-t-transparent mx-auto mb-4" />
-        <p className="text-white font-bold uppercase tracking-wide">YUCG Outreach</p>
+        <p className="text-white font-bold uppercase tracking-wide">YUCG Resources</p>
         <p className="text-white/80 text-sm mt-2">{label}</p>
       </div>
     </div>

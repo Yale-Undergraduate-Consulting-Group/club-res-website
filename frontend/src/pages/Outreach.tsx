@@ -141,7 +141,7 @@ export default function Outreach() {
   const [queueSource, setQueueSource] = useState<OutreachSource | null>(null);
   const [campaignContacts, setCampaignContacts] = useState<Contact[]>([]);
   const [contactSearch, setContactSearch] = useState('');
-  // Read from the URL so a chart slice on Home can open exactly its rows
+  // Read from the URL so a chart slice on Overview can open exactly its rows
   // instead of dropping the member on an unfiltered table to find them again.
   const [searchParams, setSearchParams] = useSearchParams();
   const contactPipelineFilter = searchParams.get('status') || '';
@@ -648,7 +648,7 @@ export default function Outreach() {
             <div className="surface-card max-h-[500px] overflow-y-auto space-y-4 w-full">
               <h3 className="font-semibold text-deep-navy">Outreach work lists</h3>
               <p className="text-sm text-slate-600">
-                Organize contacts into shared or personal worklists. Prepare messages in Drafts, then track sending from Home.
+                Organize contacts into shared or personal worklists. Prepare messages in Drafts, then track sending from Overview.
               </p>
               <div className="flex gap-2 flex-wrap">
                 <input

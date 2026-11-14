@@ -518,6 +518,11 @@ html:not(.dark) .surface-card.surface-card--compact,
   overflow: hidden;
 }
 
+.app-shell-drawer-brand {
+  padding: 1rem 1rem 0;
+  background: var(--bg-secondary);
+}
+
 .app-shell-drawer-header {
   display: flex;
   align-items: center;

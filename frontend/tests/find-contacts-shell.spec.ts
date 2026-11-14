@@ -125,6 +125,6 @@ test('the guide explains the page instead of a chatbot driving it', async ({ pag
   await expect(guide).toContainText('Nothing leaves until you release the campaign');
 
   // It points at the next thing rather than ending the trail.
-  await guide.getByRole('link', { name: /Next: Home/ }).click();
-  await expect(page).toHaveURL(/^http:\/\/[^/]+\/$/);
+  await guide.getByRole('link', { name: /Next: Overview/ }).click();
+  await expect(page).toHaveURL(/\/campaigns$/);
 });

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Outreach, Profile, Scraper } from './pages';
+import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Hub, Outreach, Profile, Scraper, Surveys, Sentiment } from './pages';
 
 /**
  * Apps on the platform, as the browser sees them: the pages each one serves
@@ -25,7 +25,10 @@ export type AppNavItem = {
 export type AppModule = {
   id: string;
   title: string;
+  /** One line for the portal hub card; platform pages without a card omit it. */
+  description?: string;
   routes: AppRoute[];
+  /** The first entry is the app's home: where the hub card leads. */
   nav: AppNavItem[];
 };
 
@@ -33,13 +36,13 @@ const core: AppModule = {
   id: 'core',
   title: 'Platform',
   routes: [
-    { index: true, element: <Dashboard /> },
+    { index: true, element: <Hub /> },
     { path: 'admin', element: <Admin /> },
     { path: 'profile', element: <Profile /> },
     { path: 'settings', element: <Navigate to="/profile?tab=settings" replace /> },
   ],
   nav: [
-    { id: 'dashboard', to: '/', label: 'Home', shortLabel: 'Home' },
+    { id: 'home', to: '/', label: 'Home', shortLabel: 'Home' },
     { id: 'admin', to: '/admin', label: 'Admin', shortLabel: 'Admin', adminOnly: true },
   ],
 };
@@ -47,28 +50,44 @@ const core: AppModule = {
 const outreach: AppModule = {
   id: 'outreach',
   title: 'Outreach',
+  description: 'Find contacts at companies, draft each of them a personal email, and follow what comes back.',
   routes: [
     { path: 'scraper', element: <Scraper /> },
     { path: 'studio', element: <EmailStudio /> },
-    // The campaign list is disabled: Home shows a member's own campaigns now,
-    // so a stray link or bookmark lands there instead of an empty shell - the
-    // same courtesy /settings already gets.
-    { path: 'campaigns', element: <Navigate to="/" replace /> },
+    // Outreach's own home: a member's campaigns, what needs attention, the leaderboard.
+    { path: 'campaigns', element: <Dashboard /> },
     { path: 'campaigns/:id', element: <CampaignDetail /> },
     { path: 'analytics', element: <Analytics /> },
     { path: 'outreach', element: <Outreach /> },
     { path: 'directory', element: <Directory /> },
   ],
   nav: [
+    { id: 'campaigns', to: '/campaigns', label: 'Overview', shortLabel: 'Outreach' },
+    { id: 'scraper', to: '/scraper', label: 'Find contacts', shortLabel: 'Contacts' },
     { id: 'studio', to: '/studio', label: 'Drafts', shortLabel: 'Drafts' },
     { id: 'outreach', to: '/outreach', label: 'Pipeline', shortLabel: 'Pipeline' },
     { id: 'directory', to: '/directory', label: 'Directory', shortLabel: 'Directory' },
-    { id: 'scraper', to: '/scraper', label: 'Find contacts', shortLabel: 'Contacts' },
   ],
 };
 
+const surveys: AppModule = {
+  id: 'surveys',
+  title: 'Survey builder',
+  description: 'Turn project background and hypotheses into a survey draft, then create it in Qualtrics.',
+  routes: [{ path: 'surveys', element: <Surveys /> }],
+  nav: [{ id: 'surveys', to: '/surveys', label: 'Survey builder', shortLabel: 'Surveys' }],
+};
+
+const sentiment: AppModule = {
+  id: 'sentiment',
+  title: 'Market sentiment',
+  description: 'Sentiment from interview transcripts, Reddit and Google reviews.',
+  routes: [{ path: 'sentiment', element: <Sentiment /> }],
+  nav: [{ id: 'sentiment', to: '/sentiment', label: 'Market sentiment', shortLabel: 'Sentiment' }],
+};
+
 /** Every app, core first. */
-export const MODULES: AppModule[] = [core, outreach];
+export const MODULES: AppModule[] = [core, outreach, surveys, sentiment];
 
 /**
  * The apps this member may use, as the server reported them on sign-in.

@@ -58,15 +58,59 @@ change in behaviour.
 | UI kit and styles | `frontend/src/components/ui/Primitives.tsx`; styles in `frontend/src/styles/` (below) |
 | App shell and navigation | `frontend/src/components/shell/`, `frontend/src/lib/navConfig.ts` |
 
+## Portal
+
+The site is "YUCG Resources". Sign-in (`LoginPage`) lists the apps; Home (`/`,
+`pages/Hub.tsx`, core) is a card per app the member may use, built from the
+manifests' `description` and linking to the app's first menu entry, plus an
+admin link for admins. Each app has its own home page: Outreach's is Overview
+at `/campaigns`. An app that wants a hub card sets `description` in its
+`AppModule`; the header (`HEADER_LAYOUT` in `lib/navConfig.ts`) lists Home,
+then each app.
+
 ## Apps today
 
 | App | Server prefixes | Pages | Jobs |
 |---|---|---|---|
-| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home, Profile, Admin | — |
-| `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Find contacts, Drafts, Pipeline, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
+| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home (the hub), Profile, Admin | — |
+| `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Overview (`/campaigns`), Find contacts, Drafts, Pipeline, Directory, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
 | `projects` | `/api/projects` | (inside Admin) | — |
+| `surveys` | `/api/surveys` | Survey builder | — |
+| `sentiment` | `/api/sentiment` | Market sentiment (Interviews, Reddit, Google reviews) | stale-run reaper (fails runs left `running` by a restart) |
 
 `/api/health` and `/api/ai/models` belong to the server itself.
+
+### Market sentiment (`sentiment`)
+
+Each analysis is a queued run in `sentiment_runs`, owned by the member who
+started it (other members get 404 on read, CSV and delete). The model is
+`app/services/llm.py` only, in batches on the ranking model, charged to the
+member (`purpose='sentiment'`); a run is capped at 1,500 scored items and a
+member at two active runs. Uploaded transcripts are reduced to their sentences
+when the request is made and that text is cleared when the run ends. Optional
+settings, each turning one tab on (without them the tab says so and the API
+answers 503):
+
+| Setting | Turns on |
+|---|---|
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Reddit tab (official API, app-only OAuth) |
+| `SERPAPI_KEY` | Google reviews tab (SerpAPI, paid per search) |
+
+### Survey builder (`surveys`)
+
+From the `yucg-survey-agent` prototype. Drafting runs on
+the club model through `llm.py`, charged to the member. The past-survey
+library and Create in Qualtrics use the club's one Qualtrics OAuth client
+(`QUALTRICS_CLIENT_ID`, `QUALTRICS_CLIENT_SECRET`; optional): drafts land in
+that account, and `survey_library` holds outlines (question wording and
+choices, no responses) of every survey it can see. Those outlines can carry
+client wording and are readable by everyone with the app, so before the
+first refresh an admin lists confidential surveys in `SURVEY_LIBRARY_SKIP`
+or restricts the app; a listed survey is never downloaded and is hidden at
+once if already copied. A refresh replaces the library: surveys no longer
+visible to the client leave it. Dev runs without the client by decision
+(no client surveys copied into dev, no drafts created from dev); the page
+says Qualtrics is not configured. Conversations are not stored.
 
 ## Steps
 
