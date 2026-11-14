@@ -139,7 +139,7 @@ export default function Analytics() {
               const content = (
                 <>
                   <span className="min-w-0">
-                    <span className="block truncate font-semibold">{campaign.name}</span>
+                    <span className="block truncate font-semibold" title={campaign.name}>{campaign.name}</span>
                     <span className="block text-xs text-slate-500">
                       {campaign.sent_count ?? 0} sent · {campaign.pending_count ?? 0} queued · {campaign.failed_count ?? 0} failed
                     </span>

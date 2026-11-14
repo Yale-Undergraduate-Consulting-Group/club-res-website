@@ -274,7 +274,7 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
                 >
                   <span className={`h-2 w-2 shrink-0 ${person ? dot[st] : 'bg-transparent ring-1 ring-deep-navy'}`}
                         aria-label={person ? label[st] : 'skipped'} role="img" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-deep-navy">
+                  <span className="min-w-0 flex-1 truncate text-sm text-deep-navy" title={`${p.name || p.email}${p.title ? ` · ${p.title}` : ''}`}>
                     {p.name || p.email}
                     <span className="text-xs text-slate-500">{p.title ? ` · ${p.title}` : ''}</span>
                   </span>

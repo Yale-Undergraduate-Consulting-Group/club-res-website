@@ -262,8 +262,8 @@ export default function CampaignDetail() {
                       return next;
                     })}
                   />
-                  <span className="min-w-0 flex-1 truncate text-slate-800">{contact.name || contact.email}</span>
-                  <span className="hidden truncate text-sm text-slate-500 sm:block">{contact.company}</span>
+                  <span className="min-w-0 flex-1 truncate text-slate-800" title={contact.name || contact.email}>{contact.name || contact.email}</span>
+                  <span className="hidden truncate text-sm text-slate-500 sm:block" title={contact.company ?? undefined}>{contact.company}</span>
                 </label>
               ))}
               {!contactLoading && contactsToAdd.length === 0 && <p className="py-6 text-center text-sm text-slate-500">No available contacts on this page.</p>}

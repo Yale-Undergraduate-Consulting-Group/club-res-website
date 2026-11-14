@@ -291,7 +291,66 @@ def test_roster_email_core() -> None:
     asyncio.run(_core())
 
 
+async def _register_officers() -> None:
+    from app.services.register_names import derive
+
+    await init_db()
+    db = await get_db()
+    try:
+        d = derive("Harbor Robotics Inc", "US")
+        cur = await db.execute(
+            """INSERT INTO company_register (source, source_key, tier, country, company_name, company_domain,
+                                             display_name, entity_key)
+               VALUES ('sec_form_d', 'hr1', 'us_private', 'US', 'Harbor Robotics Inc', 'harborrobotics.com', ?, ?)""",
+            (d.display_name, d.entity_key),
+        )
+        rid = cur.lastrowid
+        for name, rel, level in (
+            ("Dana Whitfield", "Chief Executive Officer", "executive"),
+            ("Priya Raman", "Chief Financial Officer", "executive"),
+            ("Tomas Brandt", "Director", "board"),
+        ):
+            await db.execute(
+                "INSERT INTO company_register_people (register_id, full_name, relationship, person_level, source_url)"
+                " VALUES (?, ?, ?, ?, 'https://sec.example/hr1')",
+                (rid, name, rel, level),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+    for company, domain in (("Harbor Robotics", "harborrobotics.com"), ("Harbor Robotics, Inc.", ""), ("Unrelated Name", "harborrobotics.com")):
+        rows = await RE.register_officer_contacts(company, domain)
+        by = {r["name"]: r for r in rows}
+        assert set(by) == {"Dana Whitfield", "Priya Raman", "Tomas Brandt"}, (company, rows)
+        assert all(r["contact_source"] == "roster_register" for r in rows)
+        assert by["Priya Raman"]["title"] == "Chief Financial Officer"
+        assert by["Priya Raman"]["source_url"] == "https://sec.example/hr1"
+        if domain:
+            assert by["Dana Whitfield"]["email"] == "dana.whitfield@harborrobotics.com", by
+            assert by["Dana Whitfield"]["company_domain"] == "harborrobotics.com"
+        else:
+            assert all(r["email"] == "" for r in rows), "no domain, no address"
+
+    assert await RE.register_officer_contacts("Nowhere Holdings Corp", "nowhere-example.com") == []
+
+    # Same person on the roster: the SEC row wins; a plain cache row yields to the filing.
+    reg = await RE.register_officer_contacts("Harbor Robotics", "harborrobotics.com")
+    sec = {"name": "Dana Whitfield", "email": "", "contact_source": "roster_sec", "_roster_norm": RE.norm_key("Dana Whitfield")}
+    cache = {"name": "Priya Raman", "email": "", "contact_source": "roster_cache", "_roster_norm": RE.norm_key("Priya Raman")}
+    merged = {r["name"]: r for r in RE.merge_register_officers([sec, cache], reg)}
+    assert len(merged) == 3
+    assert merged["Dana Whitfield"]["contact_source"] == "roster_sec"
+    assert merged["Priya Raman"]["contact_source"] == "roster_register"
+    assert merged["Tomas Brandt"]["contact_source"] == "roster_register"
+
+
+def test_register_officers() -> None:
+    asyncio.run(_register_officers())
+
+
 if __name__ == "__main__":
     test_row_email_contract()
     test_roster_email_core()
+    test_register_officers()
     print("ok")
