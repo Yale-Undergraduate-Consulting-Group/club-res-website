@@ -141,7 +141,9 @@ select:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--text-primary);
 }
 
-/* Shared panels: white, a 1px hairline, square, no shadow (sections 7 and 9). */
+/* Shared panels: white, a 1px hairline, square, no shadow, one padding
+   (1.5rem; 1rem on phones) whatever p-* a page asks for. --flush is for the
+   few cards whose table or list runs edge to edge. */
 .surface-card,
 html:not(.dark) .surface-card,
 .dark .surface-card {
@@ -149,12 +151,31 @@ html:not(.dark) .surface-card,
   border: 1px solid var(--border);
   border-radius: 0;
   box-shadow: none;
+  padding: 1rem;
+}
+
+@media (min-width: 640px) {
+  .surface-card,
+  html:not(.dark) .surface-card,
+  .dark .surface-card { padding: 1.5rem; }
+}
+
+.surface-card.surface-card--flush,
+html:not(.dark) .surface-card.surface-card--flush,
+.dark .surface-card.surface-card--flush { padding: 0; }
+
+/* Card heading: 16 / 700 navy. */
+.surface-card :is(h2, h3, .app-section-title) {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
 }
 
 /* ——— Top navigation (yucg-header + yucg-nav) ———
-   White bar, hairline underneath; text-only bold navy links with no pills or
-   underlines. The current page is full strength, the rest sit at 74%. The
-   spec says 62%, but that is only 3.8:1 on white; 74% clears 4.5:1. */
+   White bar, hairline underneath, aligned to the page column. Text-only bold
+   links 40px tall: slate-600 at rest, navy with a 2px navy bar under the
+   current page. No pills, no fills. */
 .app-top-nav {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
@@ -170,6 +191,9 @@ html:not(.dark) .surface-card,
 
 .app-shell-desktop-nav {
   display: none;
+  flex: 1;
+  justify-content: flex-start;
+  margin-left: 1.5rem;
 }
 
 @media (min-width: 1024px) {
@@ -182,23 +206,27 @@ html:not(.dark) .surface-card,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.45rem 0.75rem;
+  box-sizing: border-box;
+  height: var(--control-height);
+  padding: 0 0.75rem;
   font-size: 0.9375rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-muted);
   background: transparent;
+  border-bottom: 2px solid transparent;
   text-decoration: none;
-  opacity: 0.74;
-  transition: opacity 0.15s ease;
+  transition: color 0.15s ease;
   white-space: nowrap;
 }
 
-.app-nav-link:hover,
+.app-nav-link:hover {
+  color: var(--text-primary);
+}
+
 .app-nav-link--active,
 .app-nav-link.active {
-  opacity: 1;
-  background: transparent;
-  color: var(--accent);
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
 }
 
 .app-avatar {
@@ -215,7 +243,7 @@ html:not(.dark) .surface-card,
 }
 
 .app-shell-header-inner {
-  max-width: 1920px;
+  max-width: calc(var(--page-max) + 3rem);
   margin: 0 auto;
   padding: 0.5rem 1rem;
   display: flex;
@@ -424,19 +452,18 @@ html:not(.dark) .surface-card,
   justify-content: center;
   padding: 0.625rem 0.75rem;
   text-decoration: none;
-  color: var(--accent);
+  color: var(--text-muted);
   background: transparent;
   border-top: 2px solid transparent;
-  opacity: 0.74;
-  transition: opacity 0.15s ease;
+  transition: color 0.15s ease;
 }
 
-.app-mobile-nav-item:hover,
-.app-mobile-nav-item--active {
-  opacity: 1;
+.app-mobile-nav-item:hover {
+  color: var(--text-primary);
 }
 
 .app-mobile-nav-item--active {
+  color: var(--text-primary);
   border-top-color: var(--accent);
 }
 
@@ -479,7 +506,7 @@ html:not(.dark) .surface-card,
   bottom: 0;
   width: min(100%, 20rem);
   background: var(--bg-card);
-  border-left: 3px solid var(--deep-navy);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -547,26 +574,26 @@ html:not(.dark) .surface-card,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--control-height);
-  padding: 0.5rem 0;
+  box-sizing: border-box;
+  height: var(--control-height);
+  padding: 0;
   margin-bottom: -1px;
   font-size: 0.9375rem;
   font-weight: 700;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--accent);
-  opacity: 0.74;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .app-tab-menu-item:hover {
-  opacity: 1;
+  color: var(--text-primary);
 }
 
 .app-tab-menu-item--active {
-  opacity: 1;
+  color: var(--text-primary);
   border-bottom-color: var(--accent);
 }
 
@@ -643,6 +670,12 @@ html:not(.dark) .surface-card,
 
 .app-sidebar-link:hover {
   background: var(--surface-subtle);
+}
+
+.app-sidebar-link--active {
+  font-weight: 700;
+  box-shadow: none;
+  border-left: 2px solid var(--accent);
 }
 
 .app-sidebar-badge {
@@ -1507,8 +1540,10 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 .app-nav-group { position: relative; }
 .app-nav-group summary { cursor: pointer; list-style: none; height: 100%; }
 .app-nav-group summary::-webkit-details-marker { display: none; }
-.app-nav-group-panel { position: absolute; top: calc(100% + 0.5rem); left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--accent); }
-.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0.75rem 1rem; }
+.app-nav-group-panel { position: absolute; top: 100%; left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--border); }
+.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0 1rem; }
+.app-nav-group-panel .app-nav-link:hover,
+.app-nav-group-panel .app-nav-link--active { background: var(--surface-subtle); }
 .app-nav-group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 @media (min-width: 768px) {
