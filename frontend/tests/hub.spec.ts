@@ -7,6 +7,9 @@ async function mock(page: Page, user: Record<string, unknown>) {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/auth/me') return route.fulfill({ json: { authenticated: true, user } });
+    if (path === '/api/surveys/library') {
+      return route.fulfill({ json: { qualtrics: false, surveys: 0, questions: 0, names: [], synced_at: null, syncing: false, last_sync: null } });
+    }
     await route.fulfill({ json: [] });
   });
 }
