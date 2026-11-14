@@ -63,22 +63,23 @@ function backlogLine(summary: DirectorySummary): string {
   return parts.join(' · ');
 }
 
-function PersonRow({ person, selected, onToggle }: { person: DirectoryPerson; selected: boolean; onToggle: (contactId: number) => void }) {
+/** Someone can be queued when they are ready and either a contacts row stands behind them or a readable search run can import them. */
+const canQueue = (person: DirectoryPerson) =>
+  person.ready && (person.contact_id !== null || (person.run_id !== null && person.prospect_id !== null));
+
+function PersonRow({ person, selected, onToggle }: { person: DirectoryPerson; selected: boolean; onToggle: (person: DirectoryPerson) => void }) {
   const proof = PROOF[person.proof];
-  const queueable = person.ready && person.contact_id !== null;
   return (
     <tr className="border-b border-[var(--border)] align-top">
       <td className="py-2 pr-2">
-        {queueable ? (
+        {canQueue(person) && (
           <input
             type="checkbox"
             aria-label={`Select ${person.name || person.email}`}
             checked={selected}
-            onChange={() => onToggle(person.contact_id!)}
+            onChange={() => onToggle(person)}
           />
-        ) : !person.on_file ? (
-          <span className="text-xs text-slate-500">Import first</span>
-        ) : null}
+        )}
       </td>
       <td className="py-2 pr-4 font-medium">{person.name || '—'}</td>
       <td className="py-2 pr-4">{person.title || '—'}</td>
@@ -103,15 +104,17 @@ export default function Directory() {
   const [retry, setRetry] = useState(0);
   const [summary, setSummary] = useState<DirectorySummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [queueing, setQueueing] = useState(false);
+  const [selected, setSelected] = useState<Map<string, DirectoryPerson>>(new Map());
+  const [queueIds, setQueueIds] = useState<number[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
   const filter: DirectoryFilter = useMemo(() => ({ ...CHIPS.find((c) => c.key === chip)!.filter, q }), [chip, q]);
 
   // Only a changed search resets the page and the ticks; otherwise the first
   // debounce after load would wipe a selection made in its first 250 ms.
   useEffect(() => {
     if (search === q) return;
-    const timer = window.setTimeout(() => { setQ(search); setOffset(0); setSelected(new Set()); }, 250);
+    const timer = window.setTimeout(() => { setQ(search); setOffset(0); setSelected(new Map()); }, 250);
     return () => window.clearTimeout(timer);
   }, [search, q]);
 
@@ -129,28 +132,58 @@ export default function Directory() {
       });
     return () => controller.abort();
   }, [filter, offset, requestKey]);
-
-  const choose = (key: ChipKey) => { setChip(key); setOffset(0); setSelected(new Set()); };
-  const toggle = (id: number) => setSelected((current) => {
-    const next = new Set(current);
-    if (!next.delete(id)) next.add(id);
+  const choose = (key: ChipKey) => { setChip(key); setOffset(0); setSelected(new Map()); };
+  const toggle = (person: DirectoryPerson) => setSelected((current) => {
+    const next = new Map(current);
+    if (!next.delete(person.email)) next.set(person.email, person);
     return next;
   });
   const togglePage = () => setSelected((current) => {
-    const next = new Set(current);
-    const all = queueable.every((person) => next.has(person.contact_id!));
+    const next = new Map(current);
+    const all = queueable.every((person) => next.has(person.email));
     for (const person of queueable) {
-      if (all) next.delete(person.contact_id!);
-      else next.add(person.contact_id!);
+      if (all) next.delete(person.email);
+      else next.set(person.email, person);
     }
     return next;
   });
+
+  // People found by a search are brought on file first (one import per run, the
+  // server applying the run's own visibility), then everyone goes to the queue panel.
+  const queueSelected = async () => {
+    setAddError('');
+    setAdding(true);
+    try {
+      const people = [...selected.values()];
+      const ids = people.flatMap((person) => (person.contact_id !== null ? [person.contact_id] : []));
+      const byRun = new Map<number, number[]>();
+      for (const person of people) {
+        if (person.contact_id === null) byRun.set(person.run_id!, [...(byRun.get(person.run_id!) ?? []), person.prospect_id!]);
+      }
+      let left = 0;
+      for (const [runId, prospectIds] of byRun) {
+        const outcomes = await api.yucgoutreach.importContacts(runId, prospectIds);
+        for (const outcome of outcomes.results) {
+          if (outcome.contact_id !== null) ids.push(outcome.contact_id);
+          else left += 1;
+        }
+      }
+      setRetry((n) => n + 1);
+      if (left > 0) setAddError(`${left} ${left === 1 ? 'person' : 'people'} could not be added to your contacts and ${left === 1 ? 'was' : 'were'} left out.`);
+      if (ids.length > 0) setQueueIds(ids);
+      setSelected(new Map());
+    } catch (failure) {
+      setAddError(failure instanceof Error ? failure.message : 'Could not add these people to your contacts.');
+    } finally {
+      setAdding(false);
+    }
+  };
   const loading = settled?.key !== requestKey;
   const error = loading ? '' : settled?.error ?? '';
   const page = settled?.page ?? null;
   const items = page?.items ?? [];
-  // Someone can be queued when a contacts row stands behind them and nobody has written to them.
-  const queueable = items.filter((person) => person.ready && person.contact_id !== null);
+  const queueable = items.filter(canQueue);
+  const adds = [...selected.values()].filter((person) => person.contact_id === null).length;
   const total = page?.total ?? 0;
 
   return (
@@ -198,17 +231,18 @@ export default function Directory() {
         <Notice tone="info">This filter covers the newest people only. Narrow the search to see the rest.</Notice>
       )}
 
+      {addError && <Notice tone="danger">{addError}</Notice>}
       {selected.size > 0 && (
         <Notice tone="info">
-          <span>{selected.size} selected. </span>
-          <Button size="sm" onClick={() => setQueueing(true)}>Queue outreach</Button>{' '}
-          <Button size="sm" variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+          <span>{selected.size} selected{adds > 0 ? `, ${adds} from searches that will be added to your contacts first` : ''}. </span>
+          <Button size="sm" disabled={adding} onClick={queueSelected}>{adding ? 'Adding…' : 'Queue outreach'}</Button>{' '}
+          <Button size="sm" variant="secondary" disabled={adding} onClick={() => setSelected(new Map())}>Clear</Button>
         </Notice>
       )}
       {items.some((person) => !person.on_file) && (
         <p className="text-xs text-[var(--text-secondary)]">
-          People marked “Import first” were found by a search and are not in your contacts yet. Add them from the
-          search results in Find people, then they can be queued here. Only people ready to contact can be selected.
+          People from “Find people” searches are not in your contacts yet; ticking one adds them when you queue outreach.
+          Only people ready to contact can be selected.
         </p>
       )}
       {loading && !error ? (
@@ -229,7 +263,7 @@ export default function Directory() {
                       type="checkbox"
                       aria-label="Select everyone on this page who can be queued"
                       disabled={queueable.length === 0}
-                      checked={queueable.length > 0 && queueable.every((p) => selected.has(p.contact_id!))}
+                      checked={queueable.length > 0 && queueable.every((p) => selected.has(p.email))}
                       onChange={togglePage}
                     />
                   </th>
@@ -246,7 +280,7 @@ export default function Directory() {
                   <PersonRow
                     key={person.email}
                     person={person}
-                    selected={person.contact_id !== null && selected.has(person.contact_id)}
+                    selected={selected.has(person.email)}
                     onToggle={toggle}
                   />
                 ))}
@@ -262,7 +296,7 @@ export default function Directory() {
           </div>
         </section>
       ) : null}
-      {queueing && <QueueOutreach source={{ label: 'Directory selection', contactIds: [...selected] }} onClose={() => setQueueing(false)} />}
+      {queueIds && <QueueOutreach source={{ label: 'Directory selection', contactIds: queueIds }} onClose={() => setQueueIds(null)} />}
     </div>
   );
 }
