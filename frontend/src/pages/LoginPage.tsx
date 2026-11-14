@@ -33,7 +33,7 @@ export default function LoginPage() {
 
   return (
     <div className="app-auth-shell">
-      <div className="surface-card p-6 sm:p-8 w-full max-w-md">
+      <div className="surface-card w-full max-w-md">
         <div className="flex justify-center mb-6">
           <img
             src="/yucg-logo.png"
@@ -46,7 +46,7 @@ export default function LoginPage() {
         <p className="text-center text-slate-600 text-sm mb-8">Yale Undergraduate Consulting Group</p>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+          <div className="mb-4 ui-notice ui-notice--danger">
             {error === 'invalid_callback' &&
               'Your sign-in session expired. Start again; if the problem continues, contact a club administrator.'}
             {error === 'token_exchange_failed' && 'Authentication failed. Please try again.'}
@@ -69,7 +69,7 @@ export default function LoginPage() {
           <div className="mb-6 space-y-3">
             <p className="text-sm text-slate-700">Enter the 6-digit code from your authenticator app.</p>
             {twoFaError && (
-              <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{twoFaError}</div>
+              <div className="ui-notice ui-notice--danger">{twoFaError}</div>
             )}
             <input
               inputMode="numeric"
@@ -77,7 +77,7 @@ export default function LoginPage() {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="123456"
-              className="w-full px-3 py-2 rounded-lg border border-pale-sky text-center tracking-widest"
+              className="w-full px-3 py-2 border border-pale-sky text-center tracking-widest"
             />
             <Button className="w-full" disabled={busy || code.trim().length < 6} onClick={submit2fa}>
               {busy ? 'Checking…' : 'Continue'}
@@ -95,13 +95,13 @@ export default function LoginPage() {
           Sign in with Google
         </Button>
 
-        {/* Dev servers only. import.meta.env.DEV is false in every built
-            bundle, so this button cannot exist in the deployed app, and the
-            endpoint behind it 404s unless DEV_LOGIN_EMAIL is set on a
-            backend answering a loopback host. Google will only redirect to
-            the registered production callback, so without this the app
-            cannot be reviewed locally at all. */}
-        {import.meta.env.DEV && (
+        {/* Local review only: a dev server, or the dev box reached through its
+            SSM tunnel at localhost. The endpoint behind it 404s unless
+            DEV_LOGIN_EMAIL is set and the request's own host is loopback, so
+            the public site (its CloudFront address, no setting) cannot sign
+            anyone in this way. Google will only redirect to the registered
+            production callback, so without this dev cannot be reviewed. */}
+        {(import.meta.env.DEV || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) && (
           <Button
             variant="secondary"
             className="mt-3 w-full"

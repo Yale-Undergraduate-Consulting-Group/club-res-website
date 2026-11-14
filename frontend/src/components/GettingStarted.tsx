@@ -28,7 +28,7 @@ export default function GettingStarted() {
   const done = STEPS.length - missing.length;
 
   return (
-    <section className="surface-card p-5" aria-labelledby="getting-started-title" data-testid="getting-started">
+    <section className="surface-card" aria-labelledby="getting-started-title" data-testid="getting-started">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 id="getting-started-title" className="app-section-title">Getting started</h2>
         <StatusBadge tone={facts.ready_to_send ? 'success' : 'warning'}>

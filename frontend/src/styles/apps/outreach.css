@@ -5,23 +5,23 @@
 .email-studio-body {
   background-color: #ffffff;
   color: var(--text-primary);
-  font-family: 'Lato', system-ui, sans-serif;
+  font-family: var(--yucg-font);
 }
 .dark .email-studio-input,
 .dark .email-studio-body {
-  background-color: #334155;
+  background-color: transparent;
   color: var(--text-primary);
 }
 
 /* Email Studio: attachments + editor blocks white in light mode */
 .email-studio-block {
   background-color: #ffffff;
-  border-color: #e2e8f0;
+  border-color: var(--border);
   border-width: 1px;
 }
 .dark .email-studio-block {
-  background-color: rgba(51, 65, 85, 0.3);
-  border-color: #475569;
+  background-color: var(--info-soft);
+  border-color: var(--border);
 }
 
 /* Email Studio: generator header white in light mode (no gray) */
@@ -37,36 +37,34 @@
   background-color: var(--bg-card);
 }
 
-/* Email Studio page: Lato everywhere (native <select> often defaults to system font) */
+/* Email Studio page: the page serif everywhere (native <select> often defaults to the system font) */
 .email-studio,
 .email-studio input,
 .email-studio select,
 .email-studio textarea,
-.email-studio button {
-  font-family: 'Lato', system-ui, sans-serif;
-}
+.email-studio button,
 .email-studio option {
-  font-family: 'Lato', system-ui, sans-serif;
+  font-family: var(--yucg-font);
 }
 
 /*
  * Email Studio — Gmail preview: explicit colors so .dark .bg-slate-* hacks don't flatten contrast.
  */
 .email-studio-gmail-rail {
-  background-color: #cbd5e1; /* slate-300: clearly grey vs white card */
+  background-color: var(--pale-sky);
 }
 .dark .email-studio-gmail-rail {
-  background-color: #3f4f63; /* between slate-700–800, lighter than page #0f172a */
+  background-color: var(--surface-subtle);
 }
 .email-studio-gmail-card {
   background-color: #ffffff;
-  border: 1px solid #94a3b8;
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-control);
+  box-shadow: none;
 }
 .dark .email-studio-gmail-card {
   background-color: #f8fafc;
-  border-color: #64748b;
-  box-shadow: var(--shadow-lg);
+  border-color: var(--border-control);
+  box-shadow: none;
 }
 .email-studio-gmail-body {
   background-color: #ffffff;
@@ -75,12 +73,12 @@
   background-color: #f8fafc;
 }
 .email-studio-gmail-toolbar {
-  background-color: #e2e8f0; /* slate-200 */
-  border-bottom: 1px solid #cbd5e1;
+  background-color: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
 }
 .dark .email-studio-gmail-toolbar {
-  background-color: #4b556a;
-  border-bottom-color: #64748b;
+  background-color: var(--surface-subtle);
+  border-bottom-color: var(--border);
 }
 .email-studio-gmail-toolbar button,
 .email-studio-gmail-toolbar span {
@@ -420,20 +418,23 @@
 .research-brief-select { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
 .research-brief-select select { min-height: var(--control-height, 2.5rem); }
 
+/* yucg-tabs: text tabs; the active one is full strength with a navy rule. */
 .research-queue-tab {
   min-height: var(--control-height, 2.5rem);
   padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border);
-  background: var(--surface-subtle);
-  color: var(--ink);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--accent);
   font-weight: 700;
+  opacity: 0.74;
 }
 
+.research-queue-tab:hover { opacity: 1; }
+
 .research-queue-tab[aria-selected="true"] {
-  background: var(--surface);
-  color: var(--accent);
-  border-bottom-color: transparent;
-  box-shadow: inset 0 -2px 0 var(--accent);
+  opacity: 1;
+  border-bottom-color: var(--accent);
 }
 
 .research-queue-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -488,7 +489,7 @@
 .research-evidence p { margin: 0; color: var(--ink-muted); }
 .research-evidence blockquote { margin: 0.25rem 0 0; padding: 0.5rem; border-left: 3px solid var(--border); background: var(--surface-subtle); color: var(--ink); }
 .research-sources li { display: grid; gap: 0.25rem; }
-.research-error { color: var(--danger, #b42318); }
+.research-error { color: var(--navy-1000, #002060); font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) {
   .research-workspace * { transition: none !important; animation: none !important; }

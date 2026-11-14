@@ -40,7 +40,7 @@ export default function SlackIntegration() {
   // Same shape as the Gmail card beside it: title and status on one row, the
   // explanation under it, then the action only when there is one to take.
   return (
-    <section className="surface-card p-5 mb-6" aria-labelledby="slack-heading">
+    <section className="surface-card mb-6" aria-labelledby="slack-heading">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="slack-heading" className="app-section-title">Club Slack workspace</h2>
         <StatusBadge tone={status?.connected ? 'success' : 'neutral'}>

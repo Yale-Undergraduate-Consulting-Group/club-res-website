@@ -33,7 +33,7 @@ async function mockAll(page: Page) {
 // Every real action button is one of the two canonical heights. Chips, tab
 // strips, toolbar icons and multi-line list rows have their own systems and
 // are excluded by not carrying `ui-button`.
-test('canonical buttons render at exactly one of the two system sizes', async ({ page }) => {
+test('canonical buttons render at the one control height', async ({ page }) => {
   await mockAll(page);
   await page.goto('/');
   // Only rendered buttons have a size: the header's Log out is hidden on phones,
@@ -53,13 +53,13 @@ test('canonical buttons render at exactly one of the two system sizes', async ({
   );
 
   for (const button of measured) {
-    // 36px is --sm, 44px is the default. A button that stretches to a taller
-    // flex row is allowed; a button with its own invented padding is not.
-    expect([36, 44], `"${button.text}" height`).toContain(
-      button.height > 44 ? 44 : button.height,
+    // One control height (--control-height, 40px). A button that stretches to
+    // a taller flex row is allowed; a button with its own invented padding is not.
+    expect([40], `"${button.text}" height`).toContain(
+      button.height > 40 ? 40 : button.height,
     );
     expect(button.font, `"${button.text}" font`).toBe('Lato');
-    expect(button.radius, `"${button.text}" radius`).toBe('8px');
+    expect(button.radius, `"${button.text}" radius`).toBe('0px');
   }
 });
 

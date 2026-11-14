@@ -1,115 +1,432 @@
 /* Design tokens: the dark variant, Tailwind theme, colour and radius
    variables for both themes, and the page's base type. Every app uses these;
-   change a token here rather than restating a colour in an app's styles. */
+   change a token here rather than restating a colour in an app's styles.
+
+   This file applies the YUCG Deck System v1.2.0 (design.md sections 2, 3, 5,
+   8.1; tokens/tokens.css): Lato, navy-900 text, canvas #ECECEC ground, one
+   blue-600 emphasis, no shadows, gradients or rounded corners. Departures for
+   a working web app are marked "Web exception". */
 
 /* Only treat as dark when <html class="dark"> — not OS prefers-color-scheme (fixes grey tabs/cards in app light mode). */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-deep-navy: #1a2f5a;
-  --color-mid-navy: #1e3a6e;
-  --color-slate-blue: #3d5c82;
-  --color-steel-blue: #5b7fa6;
-  --color-light-steel: #8aaabf;
-  --color-pale-sky: #c8dced;
+  --color-deep-navy: #00346b;
+  --color-mid-navy: #1164a3;
+  --color-slate-blue: #44546a;
+  --color-steel-blue: #4c6c9c;
+  --color-light-steel: #adbaca;
+  --color-pale-sky: #dfe6ef;
+
+  /* Type: Lato everywhere (installed locally; Google Fonts as fallback). */
+  --font-sans: "Lato", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Lato", "Helvetica Neue", Arial, sans-serif;
+  --font-chart: "Lato", "Helvetica Neue", Arial, sans-serif;
+
+  /* Square corners and no elevation everywhere (sections 7 and 9). */
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
+  --inset-shadow-2xs: 0 0 #0000;
+  --inset-shadow-xs: 0 0 #0000;
+  --inset-shadow-sm: 0 0 #0000;
+  --drop-shadow-xs: 0 0 #0000;
+  --drop-shadow-sm: 0 0 #0000;
+  --drop-shadow-md: 0 0 #0000;
+  --drop-shadow-lg: 0 0 #0000;
+  --drop-shadow-xl: 0 0 #0000;
+  --drop-shadow-2xl: 0 0 #0000;
+
+  /* Palette: pages use Tailwind colour utilities directly (bg-sky-100,
+     text-emerald-700 ...). Re-pointing the ramps here is what keeps those
+     pages on-system without editing every file.
+       neutrals -> the spec's ink / gray / rule
+       blues, greens, teals, violets -> navy ramp (no accent hues; success is
+         carried by its words, not by green)
+       red -> a muted brick: the one semantic hue kept (errors, bounces)
+       amber, yellow, orange -> a muted ochre: warnings only */
+  --color-slate-50: #e7e8eb;
+  --color-slate-100: #dfe6ef;
+  --color-slate-200: #d6dce5;
+  --color-slate-300: #adbaca;
+  --color-slate-400: #8497b0;
+  --color-slate-500: #44546a;
+  --color-slate-600: #44546a;
+  --color-slate-700: #364d6e;
+  --color-slate-800: #00346b;
+  --color-slate-900: #00346b;
+  --color-slate-950: #052457;
+  --color-gray-50: #e7e8eb;
+  --color-gray-100: #dfe6ef;
+  --color-gray-200: #d6dce5;
+  --color-gray-300: #adbaca;
+  --color-gray-400: #8497b0;
+  --color-gray-500: #44546a;
+  --color-gray-600: #44546a;
+  --color-gray-700: #364d6e;
+  --color-gray-800: #00346b;
+  --color-gray-900: #00346b;
+  --color-gray-950: #052457;
+  --color-zinc-50: #e7e8eb;
+  --color-zinc-100: #dfe6ef;
+  --color-zinc-200: #d6dce5;
+  --color-zinc-300: #adbaca;
+  --color-zinc-400: #8497b0;
+  --color-zinc-500: #44546a;
+  --color-zinc-600: #44546a;
+  --color-zinc-700: #364d6e;
+  --color-zinc-800: #00346b;
+  --color-zinc-900: #00346b;
+  --color-zinc-950: #052457;
+  --color-neutral-50: #e7e8eb;
+  --color-neutral-100: #dfe6ef;
+  --color-neutral-200: #d6dce5;
+  --color-neutral-300: #adbaca;
+  --color-neutral-400: #8497b0;
+  --color-neutral-500: #44546a;
+  --color-neutral-600: #44546a;
+  --color-neutral-700: #364d6e;
+  --color-neutral-800: #00346b;
+  --color-neutral-900: #00346b;
+  --color-neutral-950: #052457;
+  --color-sky-50: #dfe6ef;
+  --color-sky-100: #dfe6ef;
+  --color-sky-200: #c3d0e1;
+  --color-sky-300: #adbaca;
+  --color-sky-400: #8497b0;
+  --color-sky-500: #4c6c9c;
+  --color-sky-600: #1164a3;
+  --color-sky-700: #0d4b7a;
+  --color-sky-800: #00346b;
+  --color-sky-900: #052457;
+  --color-sky-950: #002060;
+  --color-blue-50: #dfe6ef;
+  --color-blue-100: #dfe6ef;
+  --color-blue-200: #c3d0e1;
+  --color-blue-300: #adbaca;
+  --color-blue-400: #8497b0;
+  --color-blue-500: #4c6c9c;
+  --color-blue-600: #1164a3;
+  --color-blue-700: #0d4b7a;
+  --color-blue-800: #00346b;
+  --color-blue-900: #052457;
+  --color-blue-950: #002060;
+  --color-indigo-50: #dfe6ef;
+  --color-indigo-100: #dfe6ef;
+  --color-indigo-200: #c3d0e1;
+  --color-indigo-300: #adbaca;
+  --color-indigo-400: #8497b0;
+  --color-indigo-500: #4c6c9c;
+  --color-indigo-600: #1164a3;
+  --color-indigo-700: #0d4b7a;
+  --color-indigo-800: #00346b;
+  --color-indigo-900: #052457;
+  --color-indigo-950: #002060;
+  --color-cyan-50: #dfe6ef;
+  --color-cyan-100: #dfe6ef;
+  --color-cyan-200: #c3d0e1;
+  --color-cyan-300: #adbaca;
+  --color-cyan-400: #8497b0;
+  --color-cyan-500: #4c6c9c;
+  --color-cyan-600: #1164a3;
+  --color-cyan-700: #0d4b7a;
+  --color-cyan-800: #00346b;
+  --color-cyan-900: #052457;
+  --color-cyan-950: #002060;
+  --color-teal-50: #dfe6ef;
+  --color-teal-100: #dfe6ef;
+  --color-teal-200: #c3d0e1;
+  --color-teal-300: #adbaca;
+  --color-teal-400: #8497b0;
+  --color-teal-500: #4c6c9c;
+  --color-teal-600: #1164a3;
+  --color-teal-700: #0d4b7a;
+  --color-teal-800: #00346b;
+  --color-teal-900: #052457;
+  --color-teal-950: #002060;
+  --color-emerald-50: #dfe6ef;
+  --color-emerald-100: #dfe6ef;
+  --color-emerald-200: #c3d0e1;
+  --color-emerald-300: #adbaca;
+  --color-emerald-400: #8497b0;
+  --color-emerald-500: #4c6c9c;
+  --color-emerald-600: #1164a3;
+  --color-emerald-700: #0d4b7a;
+  --color-emerald-800: #00346b;
+  --color-emerald-900: #052457;
+  --color-emerald-950: #002060;
+  --color-green-50: #dfe6ef;
+  --color-green-100: #dfe6ef;
+  --color-green-200: #c3d0e1;
+  --color-green-300: #adbaca;
+  --color-green-400: #8497b0;
+  --color-green-500: #4c6c9c;
+  --color-green-600: #1164a3;
+  --color-green-700: #0d4b7a;
+  --color-green-800: #00346b;
+  --color-green-900: #052457;
+  --color-green-950: #002060;
+  --color-violet-50: #dfe6ef;
+  --color-violet-100: #dfe6ef;
+  --color-violet-200: #c3d0e1;
+  --color-violet-300: #adbaca;
+  --color-violet-400: #8497b0;
+  --color-violet-500: #4c6c9c;
+  --color-violet-600: #1164a3;
+  --color-violet-700: #0d4b7a;
+  --color-violet-800: #00346b;
+  --color-violet-900: #052457;
+  --color-violet-950: #002060;
+  --color-purple-50: #dfe6ef;
+  --color-purple-100: #dfe6ef;
+  --color-purple-200: #c3d0e1;
+  --color-purple-300: #adbaca;
+  --color-purple-400: #8497b0;
+  --color-purple-500: #4c6c9c;
+  --color-purple-600: #1164a3;
+  --color-purple-700: #0d4b7a;
+  --color-purple-800: #00346b;
+  --color-purple-900: #052457;
+  --color-purple-950: #002060;
+  --color-red-50: #e7e8eb;
+  --color-red-100: #dfe6ef;
+  --color-red-200: #c3d0e1;
+  --color-red-300: #adbaca;
+  --color-red-400: #8497b0;
+  --color-red-500: #4c6c9c;
+  --color-red-600: #364d6e;
+  --color-red-700: #002060;
+  --color-red-800: #052457;
+  --color-red-900: #052457;
+  --color-red-950: #002060;
+  --color-rose-50: #e7e8eb;
+  --color-rose-100: #dfe6ef;
+  --color-rose-200: #c3d0e1;
+  --color-rose-300: #adbaca;
+  --color-rose-400: #8497b0;
+  --color-rose-500: #4c6c9c;
+  --color-rose-600: #364d6e;
+  --color-rose-700: #002060;
+  --color-rose-800: #052457;
+  --color-rose-900: #052457;
+  --color-rose-950: #002060;
+  --color-amber-50: #e7e8eb;
+  --color-amber-100: #e7e8eb;
+  --color-amber-200: #cbcdd4;
+  --color-amber-300: #cbcdd4;
+  --color-amber-400: #adbaca;
+  --color-amber-500: #8497b0;
+  --color-amber-600: #4c6c9c;
+  --color-amber-700: #44546a;
+  --color-amber-800: #364d6e;
+  --color-amber-900: #00346b;
+  --color-amber-950: #052457;
+  --color-yellow-50: #e7e8eb;
+  --color-yellow-100: #e7e8eb;
+  --color-yellow-200: #cbcdd4;
+  --color-yellow-300: #cbcdd4;
+  --color-yellow-400: #adbaca;
+  --color-yellow-500: #8497b0;
+  --color-yellow-600: #4c6c9c;
+  --color-yellow-700: #44546a;
+  --color-yellow-800: #364d6e;
+  --color-yellow-900: #00346b;
+  --color-yellow-950: #052457;
+  --color-orange-50: #e7e8eb;
+  --color-orange-100: #e7e8eb;
+  --color-orange-200: #cbcdd4;
+  --color-orange-300: #cbcdd4;
+  --color-orange-400: #adbaca;
+  --color-orange-500: #8497b0;
+  --color-orange-600: #4c6c9c;
+  --color-orange-700: #44546a;
+  --color-orange-800: #364d6e;
+  --color-orange-900: #00346b;
+  --color-orange-950: #052457;
 }
 
 :root {
-  /* Canonical product tokens. Legacy aliases below remain during component migration. */
-  --canvas: #f5f7fa;
+  /* Deck tokens (tokens/tokens.css), verbatim names. */
+  --navy-900: #00346b;
+  --navy-950: #052457;
+  --navy-1000: #002060;
+  --blue-600: #1164a3;
+  --teal-800: #0d4b7a;
+  --slate-600: #44546a;
+  --slate-700: #364d6e;
+  --steel-600: #4c6c9c;
+  --steel-400: #8497b0;
+  --steel-300: #adbaca;
+  --mist-300: #c3d0e1;
+  --mist-200: #d6dce5;
+  --mist-100: #dfe6ef;
+  --canvas: #ececec;
+  --gray-300: #d4d4d4;
+  --gray-350: #cbcdd4;
+  --gray-100: #e7e8eb;
+  --white: #ffffff;
+  --yucg-font: "Lato", "Calibri", "Segoe UI", system-ui, sans-serif;
+  --yucg-font-chart: var(--yucg-font);
+  /* Names the shell and kit used under the previous fork. */
+  --yucg-navy: var(--navy-900);
+  --yucg-navy-06: var(--mist-200);
+
+  /* Product tokens, by role (deck section 2). */
   --surface: #ffffff;
-  --surface-subtle: #eef2f6;
+  --surface-subtle: var(--mist-100);
   --surface-raised: #ffffff;
-  --ink: #102442;
-  --ink-muted: #52647a;
-  --focus: #286dc0;
-  --danger: #b42318;
-  --danger-soft: #fff1f0;
-  --success-soft: #ecfdf3;
-  --warning-soft: #fffaeb;
-  --info-soft: #eff8ff;
-  --radius-control: 0.5rem;
-  --radius-panel: 0.5rem;
-  --control-height: 2.75rem;
-  --control-height-sm: 2.25rem;
-  --yale-blue: #00356b;
-  --yale-blue-light: #286dc0;
-  --yale-blue-dark: #002244;
-  --deep-navy: #1a2f5a;
-  --mid-navy: #1e3a6e;
-  --slate-blue: #3d5c82;
-  --steel-blue: #42658a;
-  --light-steel: #8aaabf;
-  --pale-sky: #c8dced;
+  --ink: var(--navy-900);
+  --ink-muted: var(--slate-600);
+  --heading: var(--navy-900);
+  --focus: var(--blue-600);
+  --info-soft: var(--mist-200);
+  --success-soft: var(--mist-200);
+  --warning-soft: var(--gray-350);
+  /* Web exception: the deck bans red, but a blocking error or a destructive
+     action must not look like anything else. One muted error colour, used
+     only for form errors, failed sends and delete; always with words. */
+  --danger: #9e3a31;
+  --danger-soft: #f5e1df;
+  --radius-control: 0;
+  --radius-panel: 0;
+  /* One control height: buttons, chips, inputs and selects share a line. */
+  --control-height: 2.5rem;
+  --control-height-sm: 2.5rem;
+  --yale-blue: var(--navy-900);
+  --yale-blue-light: var(--blue-600);
+  --yale-blue-dark: var(--navy-950);
+  --deep-navy: var(--navy-900);
+  --mid-navy: var(--blue-600);
+  --slate-blue: var(--slate-600);
+  --steel-blue: var(--steel-600);
+  --light-steel: var(--steel-300);
+  --pale-sky: var(--mist-100);
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
-  --accent: var(--yale-blue);
-  --accent-hover: var(--yale-blue-dark);
-  --border: #cbd5df;
-  /* Chart ramp: the club's own blue ladder, dark to pale, so a chart reads as
-     part of the product rather than a stock palette dropped in. Danger stays
-     the product's danger red because a bounce is the one bad outcome. */
-  /* Blues and greys only, separated by lightness rather than hue so adjacent
-     slices stay legible without leaving the club's palette. */
-  --chart-1: #00356b;
-  --chart-2: #2f5585;
-  --chart-3: #5b7fa6;
-  --chart-4: #8aaabf;
-  --chart-5: #a9b8c6;
-  --chart-6: #c8dced;
-  /* A reply is the outcome that matters, so it takes the strongest blue; a
-     bounce is inert grey; queued is barely there. */
-  --chart-good: #00356b;
-  --chart-bad: #5a6675;
-  --chart-idle: #d7dee7;
-  --success: #16794b;
-  --warning: #9a5b00;
-  /* Primary CTAs: same hue family as headings and links (--accent from :root or user prefs) */
+  --accent: var(--navy-900);
+  --accent-hover: var(--navy-950);
+  /* Web exception: control edges. The deck has no form controls and bans
+     outlines; a field still needs a visible edge, and steel-400 is the
+     lightest deck fill that reaches 3:1 on white. */
+  --border: var(--mist-300);
+  --border-control: var(--steel-400);
+  /* Chart palette (deck section 2.4): navy, blue, teal, steel, mist; no
+     red or green. */
+  --chart-1: var(--navy-900);
+  --chart-2: var(--blue-600);
+  --chart-3: var(--teal-800);
+  --chart-4: var(--steel-600);
+  --chart-5: var(--mist-300);
+  --chart-6: var(--steel-300);
+  --chart-7: var(--slate-600);
+  --chart-8: var(--mist-100);
+  --chart-focus: var(--navy-900);
+  --chart-context: var(--steel-300);
+  --chart-text: var(--navy-900);
+  --chart-grid: var(--mist-300);
+  /* A reply is the outcome that matters, so it takes the strongest navy; a
+     bounce is slate; queued is barely there. */
+  --chart-good: var(--navy-900);
+  --chart-bad: var(--slate-600);
+  --chart-idle: var(--mist-100);
+  --success: var(--navy-900);
+  --warning: var(--slate-600);
+  /* Primary action: a navy-900 bar with white text. */
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
   --btn-primary-text: #ffffff;
-  /* Elevation: bright highlight + pale-sky tint — no heavy black drop shadow */
-  --shadow-sm: 0 1px 2px rgba(255, 255, 255, 0.92), 0 2px 8px rgba(200, 220, 237, 0.42);
-  --shadow-md: 0 2px 4px rgba(255, 255, 255, 0.88), 0 6px 16px rgba(200, 220, 237, 0.36);
-  --shadow-lg: 0 4px 8px rgba(255, 255, 255, 0.82), 0 10px 28px rgba(200, 220, 237, 0.32);
-  --shadow-xl: 0 8px 16px rgba(255, 255, 255, 0.78), 0 14px 40px rgba(200, 220, 237, 0.28);
-  --shadow-2xl: 0 12px 24px rgba(255, 255, 255, 0.72), 0 22px 56px rgba(200, 220, 237, 0.22);
+  /* No elevation anywhere. */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
+  /* Photo filter: navy-950 at 60% (deck section 11.1), the only treatment. */
+  --yucg-tint: rgba(5, 36, 87, 0.6);
+  --yucg-tint-strong: rgba(5, 36, 87, 0.6);
 }
 
-/* Dark mode (YUCG palette adapted) */
+/* Dark mode. Web exception: the deck is light only. Navy-1000 / navy-950
+   surfaces keep the toggle working; the emphasis flips to sky-200 so it
+   stays readable. Not polished. */
 .dark {
-  --canvas: #0f172a;
-  --surface: #1e293b;
-  --surface-subtle: #273449;
-  --surface-raised: #243247;
-  --ink: #f1f5f9;
-  --ink-muted: #cbd5e1;
-  --focus: #8ab4e6;
-  --danger: #fda29b;
-  --danger-soft: #4a1d22;
-  --success-soft: #123a2d;
-  --warning-soft: #493616;
-  --info-soft: #173455;
+  --canvas: #001a4d;
+  --surface: var(--navy-950);
+  --surface-subtle: #0b2f66;
+  --surface-raised: #0b2f66;
+  --ink: #e7ecf3;
+  --ink-muted: #aebdd2;
+  --heading: #ffffff;
+  --focus: #aed6ff;
+  --danger: #f0a49c;
+  --danger-soft: #3a1d20;
+  --info-soft: #0b2f66;
+  --success-soft: #0b2f66;
+  --warning-soft: #0b2f66;
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
-  --accent: #5b7fa6;
-  --accent-hover: #8aaabf;
-  --border: #334155;
+  /* !important: the accent preference is written inline on <html> and would
+     otherwise paint navy on navy in dark mode. */
+  --accent: #aed6ff !important;
+  --accent-hover: #ffffff !important;
+  --border: #1f4a85;
+  --border-control: #4c6c9c;
+  --chart-1: #aed6ff;
+  --chart-2: #8497b0;
+  --chart-3: #4c6c9c;
+  --chart-4: #c3d0e1;
+  --chart-5: #1164a3;
+  --chart-6: #adbaca;
+  --chart-7: #dfe6ef;
+  --chart-8: #0b2f66;
+  --chart-focus: #aed6ff;
+  --chart-context: #4c6c9c;
+  --chart-text: #e7ecf3;
+  --chart-grid: #1f4a85;
+  --chart-good: #aed6ff;
+  --chart-bad: #8497b0;
+  --chart-idle: #0b2f66;
+  --success: #aed6ff;
+  --warning: #aebdd2;
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
-  --btn-primary-text: #ffffff;
-  /* Dark: soft white rim + airy lift (not black blobs) */
-  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 2px 10px rgba(255, 255, 255, 0.05);
-  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 4px 16px rgba(255, 255, 255, 0.06);
-  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.11), 0 8px 28px rgba(255, 255, 255, 0.07);
-  --shadow-xl: 0 0 0 1px rgba(255, 255, 255, 0.13), 0 12px 36px rgba(255, 255, 255, 0.08);
-  --shadow-2xl: 0 0 0 1px rgba(255, 255, 255, 0.15), 0 20px 50px rgba(255, 255, 255, 0.09);
+  --btn-primary-text: var(--navy-950);
+  --yucg-tint: rgba(5, 36, 87, 0.75);
+  --yucg-tint-strong: rgba(5, 36, 87, 0.75);
+}
+
+/* Section 7: corners are square everywhere, whatever a page's utility class
+   asks for. Unlayered, so it outranks Tailwind's layered rounded-* classes
+   (including rounded-full); the theme radius vars above cover the rest. */
+*,
+*::before,
+*::after {
+  border-radius: 0;
+}
+
+/* Section 3: no uppercase transforms anywhere. */
+*,
+*::before,
+*::after {
+  text-transform: none !important;
 }
 
 .dark body {
@@ -117,36 +434,44 @@
   color: var(--text-primary);
 }
 
-/* Dark: field text matches --text-primary (same as rest of UI) */
-.dark input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
-.dark select,
-.dark textarea {
-  background-color: #334155;
-  color: var(--text-primary);
-  caret-color: var(--text-primary);
-  border-color: #475569;
-}
-
 .dark .bg-white { background-color: var(--bg-card); }
-.dark .bg-slate-50 { background-color: #334155; }
-.dark .bg-pale-sky\/50 { background-color: rgba(91, 127, 166, 0.2); }
-.dark .bg-pale-sky\/20 { background-color: rgba(91, 127, 166, 0.15); }
-.dark .bg-pale-sky\/30 { background-color: rgba(91, 127, 166, 0.2); }
+.dark .bg-slate-50 { background-color: var(--surface-subtle); }
+.dark .bg-pale-sky\/50 { background-color: rgba(169, 191, 220, 0.12); }
+.dark .bg-pale-sky\/20 { background-color: rgba(169, 191, 220, 0.08); }
+.dark .bg-pale-sky\/30 { background-color: rgba(169, 191, 220, 0.1); }
 .dark .border-pale-sky,
 .dark .border-slate-200,
-.dark .border-slate-300 { border-color: #475569; }
+.dark .border-slate-300 { border-color: var(--border); }
 .dark .text-deep-navy { color: var(--text-primary); }
-.dark nav.border-b { border-color: #334155; }
-.dark .hover\:bg-slate-50:hover { background-color: #334155; }
-.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(91, 127, 166, 0.2); }
-.dark .bg-red-50 { background-color: rgba(185, 28, 28, 0.15); }
-.dark .bg-green-50 { background-color: rgba(5, 150, 105, 0.15); }
-.dark .bg-amber-50 { background-color: rgba(180, 83, 9, 0.15); }
-.dark .bg-slate-50 { background-color: #334155; }
-.dark code { background-color: #475569; color: #e2e8f0; }
+.dark nav.border-b { border-color: var(--border); }
+.dark .hover\:bg-slate-50:hover { background-color: var(--surface-subtle); }
+.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(169, 191, 220, 0.1); }
+.dark .bg-red-50 { background-color: rgba(240, 164, 156, 0.12); }
+.dark .bg-green-50 { background-color: var(--info-soft); }
+.dark .bg-amber-50 { background-color: rgba(224, 192, 112, 0.12); }
+.dark code { background-color: var(--surface-subtle); color: var(--text-primary); }
+/* The logo is navy on transparent; in dark mode it is drawn white. */
+.dark img[src*="yucg-logo"] { filter: brightness(0) invert(1); }
 
-html {
-  font-family: 'Lato', system-ui, sans-serif;
+/* Deck section 5: Lato throughout. Titles 32/400, panel headings 16/700, body
+   14/400. In the base layer so a page's own text-* utilities still win. */
+@layer base {
+  html {
+    font-family: var(--yucg-font);
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body { font-size: 0.9375rem; }
+
+  h1 { font-size: 2rem; font-weight: 400; }
+  h2, h3, h4 { font-size: 1.0625rem; font-weight: 700; }
+
+  h1, h2, h3, h4 {
+    font-family: var(--yucg-font);
+    color: var(--heading);
+    line-height: 1.3;
+  }
 }
 
 /* Form controls and tables do not inherit the page font by default, which is
@@ -157,4 +482,12 @@ select,
 textarea,
 table {
   font-family: inherit;
+}
+
+/* Checkboxes, radios and sliders are navy (section 11.5). */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress {
+  accent-color: var(--accent);
 }

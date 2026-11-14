@@ -8,7 +8,7 @@ const KEY_COMPACT = 'yucg_compact';
 const KEY_FONT_SIZE = 'yucg_font_size';
 const KEY_REDUCE_MOTION = 'yucg_reduce_motion';
 
-const DEFAULT_ACCENT = '#1a2f5a';
+const DEFAULT_ACCENT = '#1c366a';
 
 function lightenHex(hex: string, pct: number): string {
   const num = parseInt(hex.slice(1), 16);

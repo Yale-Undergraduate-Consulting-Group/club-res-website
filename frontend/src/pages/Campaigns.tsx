@@ -85,7 +85,7 @@ export default function Campaigns() {
 
       {error && <Notice tone="danger" className="mb-5">{error}</Notice>}
 
-      <section className="surface-card rounded-xl p-5 mb-6">
+      <section className="surface-card mb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex-1 text-sm font-semibold text-deep-navy">
             New campaign
@@ -98,7 +98,7 @@ export default function Campaigns() {
                 if (event.key === 'Enter') void createCampaign();
               }}
               placeholder="Campaign name"
-              className="mt-1 min-h-11 w-full rounded-lg border border-[var(--border)] bg-white px-3 text-slate-800"
+              className="mt-1 min-h-11 w-full border border-[var(--border)] bg-white px-3 text-slate-800"
             />
           </label>
           <Button onClick={createCampaign} disabled={loading || !newName.trim()}>
@@ -125,7 +125,7 @@ export default function Campaigns() {
             const total = campaign.contact_count ?? 0;
             const progress = total ? Math.round((sent / total) * 100) : 0;
             return (
-              <article key={campaign.id} className="surface-card rounded-xl p-4">
+              <article key={campaign.id} className="surface-card">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <button disabled={!canManageCampaign(campaign, user.id)} className="min-w-0 flex-1 text-left disabled:cursor-default" onClick={() => navigate(`/campaigns/${campaign.id}`)}>
                     <div className="flex flex-wrap items-center gap-2">
@@ -138,7 +138,7 @@ export default function Campaigns() {
                       {(campaign.failed_count ?? 0) > 0 ? ` · ${campaign.failed_count} failed` : ''}
                     </p>
                     <div
-                      className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200"
+                      className="mt-3 h-1.5 overflow-hidden bg-slate-200"
                       role="progressbar"
                       aria-valuenow={progress}
                       aria-valuemin={0}

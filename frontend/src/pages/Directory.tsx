@@ -202,7 +202,7 @@ export default function Directory() {
         {summary ? backlogLine(summary) : summaryError ? 'Verification status is unavailable right now.' : 'Loading verification status…'}
       </p>
 
-      <section className="surface-card space-y-3 p-4" aria-label="Search and filters">
+      <section className="surface-card space-y-3" aria-label="Search and filters">
         <label className="block text-sm font-medium">
           Search name, title, company or email
           <input
@@ -253,7 +253,7 @@ export default function Directory() {
           body={q || chip !== 'all' ? 'Try a different search or filter.' : 'No one is on file yet. Find people to start the directory.'}
         />
       ) : !error ? (
-        <section className="surface-card p-4" aria-label="People">
+        <section className="surface-card" aria-label="People">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>

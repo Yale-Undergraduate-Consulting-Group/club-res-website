@@ -100,7 +100,7 @@ export default function RoleSuggestionBubbles({
       {data && data.equivalents.length > 0 && (
         <ul className="space-y-1.5">
           {data.equivalents.map((eq) => (
-            <li key={eq.asked} className="rounded-lg border border-pale-sky/70 bg-pale-sky/20 px-3 py-2 text-xs text-deep-navy">
+            <li key={eq.asked} className="border border-pale-sky/70 bg-pale-sky/20 px-3 py-2 text-xs text-deep-navy">
               <span className="font-medium">{eq.asked}</span>
               {eq.at_company.length > 0 ? (
                 <>
