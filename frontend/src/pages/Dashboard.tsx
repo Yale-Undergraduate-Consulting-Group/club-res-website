@@ -119,17 +119,17 @@ export default function Dashboard() {
         <div className="space-y-6 min-w-0">
           <GettingStarted />
           {needsAttention.length > 0 && (
-            <section className="surface-card p-5" aria-label="Needs your attention">
+            <section className="surface-card" aria-label="Needs your attention">
               <h2 className="app-section-title mb-3">Needs your attention</h2>
               <ul className="space-y-1">
                 {needsAttention.map((c) => (
                   <li key={c.id}>
                     <Link
                       to={`/campaigns/${c.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-pale-sky/30"
+                      className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-pale-sky/30"
                     >
-                      <span className="font-medium text-deep-navy truncate">{c.name}</span>
-                      <span className="text-xs font-semibold text-red-700 whitespace-nowrap">
+                      <span className="font-medium text-deep-navy truncate" title={c.name}>{c.name}</span>
+                      <span className="text-xs font-semibold text-deep-navy whitespace-nowrap">
                         {c.status === 'needs_attention' ? `${c.failed_count || 0} failed` : 'Paused'}
                       </span>
                     </Link>
@@ -140,7 +140,7 @@ export default function Dashboard() {
           )}
 
           {user.role === 'admin' && orphanedCampaigns.length > 0 && (
-            <section className="surface-card p-5" aria-label="Needs ownership review">
+            <section className="surface-card" aria-label="Needs ownership review">
               <h2 className="app-section-title mb-1">Needs ownership review</h2>
               <p className="text-sm text-slate-600 mb-3">
                 These campaigns have no account on record. They cannot send until one is confirmed.
@@ -161,7 +161,7 @@ export default function Dashboard() {
               attention above. Creating one still only happens through
               Drafts/Find people; an empty campaign with nobody in it was
               never a page worth keeping. */}
-          <section className="surface-card p-5" aria-labelledby="my-campaigns-title">
+          <section className="surface-card" aria-labelledby="my-campaigns-title">
             <h2 id="my-campaigns-title" className="app-section-title mb-3">Your campaigns</h2>
             {myCampaigns.length === 0 ? (
               <p className="text-sm text-slate-500">
@@ -173,10 +173,10 @@ export default function Dashboard() {
                   <li key={c.id}>
                     <Link
                       to={`/campaigns/${c.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-pale-sky/30"
+                      className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-pale-sky/30"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="font-medium text-deep-navy truncate">{c.name}</span>
+                        <span className="font-medium text-deep-navy truncate" title={c.name}>{c.name}</span>
                         <span className="block text-xs text-slate-500">
                           {c.contact_count ?? 0} recipients · {c.sent_count ?? 0} sent
                         </span>
@@ -190,24 +190,24 @@ export default function Dashboard() {
           </section>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="surface-card p-4">
+            <div className="surface-card">
               <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sending</div>
               <div className="mt-1 text-2xl font-bold text-deep-navy">{data.active_campaigns}</div>
               <div className="text-xs text-slate-500">active · {data.emails_in_queue} queued</div>
             </div>
-            <Link to="/outreach" className="surface-card p-4 block hover:bg-pale-sky/10">
+            <Link to="/outreach" className="surface-card block hover:bg-pale-sky/10">
               <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Follow-ups due</div>
               <div className="mt-1 text-2xl font-bold text-deep-navy">{dueFollowUps}</div>
               <div className="text-xs text-slate-500">in the pipeline</div>
             </Link>
-            <Link to="/analytics" className="surface-card p-4 block hover:bg-pale-sky/10">
+            <Link to="/analytics" className="surface-card block hover:bg-pale-sky/10">
               <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Reply rate</div>
               <div className="mt-1 text-2xl font-bold text-deep-navy">{data.reply_rate}%</div>
               <div className="text-xs text-slate-500">{data.total_sent} sent</div>
             </Link>
           </div>
 
-          <section className="surface-card p-5" aria-label="Results">
+          <section className="surface-card" aria-label="Results">
             <div className="flex items-center justify-between gap-2 mb-1">
               <h2 className="app-section-title">Results</h2>
               <Link to="/analytics" className="text-xs font-semibold text-steel-blue hover:underline">
@@ -246,9 +246,9 @@ export default function Dashboard() {
                             <span>{s.sector}</span>
                             <span className="font-semibold text-deep-navy">{s.count}</span>
                           </div>
-                          <div className="mt-0.5 h-1.5 rounded-full bg-pale-sky/60">
+                          <div className="mt-0.5 h-1.5 bg-pale-sky/60">
                             <div
-                              className="h-1.5 rounded-full bg-steel-blue"
+                              className="h-1.5 bg-steel-blue"
                               style={{ width: `${Math.round((s.count / data.my_sectors[0].count) * 100)}%` }}
                             />
                           </div>
@@ -266,9 +266,9 @@ export default function Dashboard() {
                           <span>{s.sector}</span>
                           <span className="font-semibold text-deep-navy">{s.count}</span>
                         </div>
-                        <div className="mt-0.5 h-1.5 rounded-full bg-pale-sky/60">
+                        <div className="mt-0.5 h-1.5 bg-pale-sky/60">
                           <div
-                            className="h-1.5 rounded-full bg-deep-navy/60"
+                            className="h-1.5 bg-deep-navy/60"
                             style={{ width: `${Math.round((s.count / data.club_sectors[0].count) * 100)}%` }}
                           />
                         </div>
@@ -280,7 +280,7 @@ export default function Dashboard() {
             )}
           </section>
 
-          <section className="surface-card p-5" aria-label="Pipeline">
+          <section className="surface-card" aria-label="Pipeline">
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className="app-section-title">Pipeline</h2>
               <Link to="/outreach" className="text-xs font-semibold text-steel-blue">
@@ -295,7 +295,7 @@ export default function Dashboard() {
                   <Link
                     key={p.pipeline_status}
                     to="/outreach"
-                    className="rounded-lg bg-pale-sky/30 px-3 py-2 hover:bg-pale-sky/50 min-w-[5.5rem]"
+                    className="bg-pale-sky/30 px-3 py-2 hover:bg-pale-sky/50 min-w-[5.5rem]"
                     title={`${p.count} of ${pipelineTotal} contacts (${Math.round((p.count / pipelineTotal) * 100)}%) are ${p.pipeline_status}`}
                   >
                     <span className="block text-xs text-slate-600 capitalize">{p.pipeline_status}</span>
@@ -306,7 +306,7 @@ export default function Dashboard() {
             )}
           </section>
 
-          <section className="surface-card p-6" aria-label="Leaderboard">
+          <section className="surface-card" aria-label="Leaderboard">
             {board.length === 0 ? (
               <p className="text-sm text-slate-500">No sends recorded yet.</p>
             ) : (
@@ -314,15 +314,15 @@ export default function Dashboard() {
                 {board.map((row, i) => (
                   <li
                     key={row.user_id}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2 ${
+                    className={`flex items-center gap-3 px-3 py-2 ${
                       row.user_id === user?.id ? 'bg-pale-sky/40' : ''
                     }`}
                   >
                     <span className="w-5 text-sm font-semibold text-slate-500">{i + 1}</span>
                     {row.picture && (
-                      <img src={row.picture} alt="" className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />
+                      <img src={row.picture} alt="" className="w-7 h-7" referrerPolicy="no-referrer" />
                     )}
-                    <span className="flex-1 text-sm font-medium text-deep-navy truncate">
+                    <span className="flex-1 text-sm font-medium text-deep-navy truncate" title={row.name || 'Member'}>
                       {row.name || 'Member'}
                       {row.user_id === user?.id ? ' (you)' : ''}
                     </span>
@@ -340,7 +340,7 @@ export default function Dashboard() {
         <div className="space-y-6 min-w-0">
           <GmailConnection />
           <SlackIntegration />
-          <section className="surface-card p-5" aria-labelledby="my-companies-title">
+          <section className="surface-card" aria-labelledby="my-companies-title">
             <div className="mb-1">
               <h2 id="my-companies-title" className="app-section-title">
                 Companies you've reached

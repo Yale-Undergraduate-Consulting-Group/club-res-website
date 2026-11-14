@@ -1,9 +1,15 @@
-"""Text generation: Claude on Bedrock US inference profiles, chosen by use.
+"""Text generation: Claude, chosen by use.
 
-Every use names a tier, and each tier lists models best-first. A model the
-account cannot call yet (AWS gates new models per account) is skipped for a
-while, so the site always runs the newest model the account may use and moves
-up on its own once AWS enables a newer one.
+Every use names a tier, and each tier lists Bedrock models best-first. A model
+the account cannot call yet (AWS gates new models per account) is skipped for
+a while, so the site always runs the newest model the account may use and
+moves up on its own once AWS enables a newer one.
+
+While ANTHROPIC_API_KEY is set (and not past ANTHROPIC_API_KEY_EXPIRES) every
+call goes to Anthropic's own API instead, in the same Converse request and
+response shape, so no caller changes: Haiku for the fast tier, Sonnet for
+writing and for the deep tier. Removing or expiring the key returns the site
+to Bedrock; replacing the key and its expiry date switches to a new key.
 """
 from __future__ import annotations
 
@@ -12,6 +18,7 @@ import os
 import re
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 #: Tier -> models, best first. US geo inference profiles: Converse will not take
@@ -33,6 +40,24 @@ PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
     "us.anthropic.claude-sonnet-4-6": (3.00, 15.00),
     "us.anthropic.claude-opus-5-5": (4.00, 20.00),
     "us.anthropic.claude-opus-4-6-v1": (5.00, 25.00),
+    # Anthropic's own API, no geo premium. ponytail: priced as the Bedrock list
+    # price of the same model; the key's own spending limit is the hard stop.
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+}
+#: Tier -> model on Anthropic's own API. Sonnet stands in for the deep tier, so
+#: a member choosing the most capable model gets Sonnet while this key is used.
+ANTHROPIC_MODELS: dict[str, str] = {
+    "fast": "claude-haiku-5-5",
+    "write": "claude-sonnet-5-5",
+    "deep": "claude-sonnet-5-5",
+}
+#: These models reason before answering unless told not to, which spends the
+#: output allowance on hidden thinking (a 40-token Sonnet reply came back
+#: empty). Each model names "off" its own way.
+ANTHROPIC_THINKING_OFF: dict[str, dict[str, str]] = {
+    "claude-haiku-5-5": {"type": "disabled"},
+    "claude-sonnet-5-5": {"type": "between_tools"},
 }
 GEO_PREMIUM = 1.10
 #: An unpriced model is charged as the most expensive one, so adding a model
@@ -77,8 +102,26 @@ def validate_model(model_id: str | None) -> str:
     return mid
 
 
+def anthropic_key() -> str | None:
+    """The Anthropic API key while it is configured and not past its expiry
+    date (ANTHROPIC_API_KEY_EXPIRES, YYYY-MM-DD, the last UTC day it is used).
+    An unreadable date disables the key rather than running it unbounded."""
+    key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    if not key:
+        return None
+    expires = (os.getenv("ANTHROPIC_API_KEY_EXPIRES") or "").strip()
+    if expires:
+        try:
+            last_day = datetime.strptime(expires, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+        if datetime.now(timezone.utc).date() > last_day:
+            return None
+    return key
+
+
 def llm_provider() -> str:
-    return "bedrock"
+    return "anthropic" if anthropic_key() else "bedrock"
 
 
 def default_model_id() -> str:
@@ -128,12 +171,17 @@ def model_chain(model_id: str) -> tuple[str, ...]:
 
 
 def list_models() -> dict[str, Any]:
+    if llm_provider() == "anthropic":
+        # The deep tier runs on Sonnet here, so offering "Opus" would mislead.
+        models = [m for m in BEDROCK_ANTHROPIC if m["tier"] != "opus"]
+        label = "Claude (Anthropic API)"
+    else:
+        models = [m for m in BEDROCK_ANTHROPIC if m['id'] in allowed_bedrock_models()]
+        label = "Claude on Bedrock"
     return {
         "provider": llm_provider(),
         "default": default_model_id(),
-        "groups": [
-            {"id": "anthropic", "label": "Claude on Bedrock", "models": [m for m in BEDROCK_ANTHROPIC if m['id'] in allowed_bedrock_models()]},
-        ],
+        "groups": [{"id": "anthropic", "label": label, "models": models}],
     }
 
 
@@ -203,6 +251,8 @@ def refused_everywhere(model_id: str | None) -> bool:
     """Every model that could stand in for ``model_id`` was refused for this
     account within GATED_RETRY_SEC. Callers with their own retries (contact
     review) stop at once instead of repeating calls that cannot succeed."""
+    if anthropic_key():
+        return False
     chain = model_chain(validate_model(model_id))
     now = time.monotonic()
     with _gated_lock:
@@ -228,9 +278,10 @@ def converse(
     max_tokens: int = 2048,
     on_model: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """One Bedrock Converse call, charged to the club budget, on the best usable model.
+    """One Converse-shaped call, charged to the club budget, on the best usable model.
 
     Returns the raw Converse response; ``tools`` takes Converse toolSpec entries.
+    With an Anthropic key configured the call goes to Anthropic's own API.
     """
     import boto3
 
@@ -254,6 +305,12 @@ def converse(
     if not _inference_slots.acquire(timeout=SLOT_WAIT_SEC):
         raise HTTPException(429, 'Draft generation is busy; please retry shortly')
     try:
+        key = anthropic_key()
+        if key:
+            return _anthropic_converse(
+                key, requested, messages, system=system, tools=tools, max_tokens=max_tokens,
+                user_id=user_id, purpose=purpose, characters=characters, on_model=on_model,
+            )
         client = boto3.client("bedrock-runtime", region_name=region, config=runtime_config)
         for mid in _usable(model_chain(requested)):
             reservation_id = reserve_bedrock_invocation(
@@ -279,3 +336,121 @@ def converse(
         raise HTTPException(503, _UNAVAILABLE)
     finally:
         _inference_slots.release()
+
+
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+
+
+def _tier_of(model_id: str) -> str:
+    for tier, chain in TIERS.items():
+        if model_id in chain:
+            return tier
+    return "write"
+
+
+def _to_anthropic_block(block: dict[str, Any]) -> dict[str, Any]:
+    if "anthropic" in block:
+        # A reasoning block the API returned mid tool loop goes back unchanged.
+        return block["anthropic"]
+    if "text" in block:
+        return {"type": "text", "text": block["text"]}
+    if "toolUse" in block:
+        use = block["toolUse"]
+        return {"type": "tool_use", "id": use["toolUseId"], "name": use["name"], "input": use.get("input") or {}}
+    if "toolResult" in block:
+        result = block["toolResult"]
+        parts = []
+        for item in result.get("content") or []:
+            if "text" in item:
+                parts.append({"type": "text", "text": item["text"]})
+            elif "json" in item:
+                parts.append({"type": "text", "text": json.dumps(item["json"], default=str)})
+        out: dict[str, Any] = {"type": "tool_result", "tool_use_id": result["toolUseId"], "content": parts}
+        if result.get("status") == "error":
+            out["is_error"] = True
+        return out
+    raise ValueError(f"Unsupported content block: {sorted(block)}")
+
+
+def _from_anthropic(data: dict[str, Any]) -> dict[str, Any]:
+    """Anthropic's Messages response in the Converse shape every caller reads."""
+    content: list[dict[str, Any]] = []
+    for block in data.get("content") or []:
+        if block.get("type") == "text":
+            content.append({"text": block.get("text") or ""})
+        elif block.get("type") == "tool_use":
+            content.append({"toolUse": {"toolUseId": block["id"], "name": block["name"], "input": block.get("input") or {}}})
+        elif block.get("type") in {"thinking", "redacted_thinking"}:
+            # Kept opaque so a tool loop can hand it back; response_text skips it.
+            content.append({"anthropic": block})
+    usage = data.get("usage") or {}
+    return {
+        "output": {"message": {"role": "assistant", "content": content}},
+        "stopReason": data.get("stop_reason") or "end_turn",
+        "usage": {"inputTokens": usage.get("input_tokens"), "outputTokens": usage.get("output_tokens")},
+    }
+
+
+def _anthropic_converse(
+    key: str,
+    requested: str,
+    messages: list[dict[str, Any]],
+    *,
+    system: str | None,
+    tools: list[dict[str, Any]] | None,
+    max_tokens: int,
+    user_id: int | None,
+    purpose: str,
+    characters: int,
+    on_model: Callable[[str], None] | None,
+) -> dict[str, Any]:
+    import httpx
+    from fastapi import HTTPException
+
+    from app.services.generation_policy import (
+        complete_bedrock_invocation, release_bedrock_invocation, reserve_bedrock_invocation,
+    )
+    model = ANTHROPIC_MODELS[_tier_of(requested)]
+    body: dict[str, Any] = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "thinking": ANTHROPIC_THINKING_OFF[model],
+        "messages": [
+            {"role": m["role"], "content": [_to_anthropic_block(b) for b in m.get("content") or []]}
+            for m in messages
+        ],
+    }
+    if system:
+        body["system"] = system
+    if tools:
+        body["tools"] = [
+            {"name": t["toolSpec"]["name"], "description": t["toolSpec"].get("description", ""),
+             "input_schema": (t["toolSpec"].get("inputSchema") or {}).get("json") or {"type": "object"}}
+            for t in tools
+        ]
+    reservation_id = reserve_bedrock_invocation(
+        model, user_id=user_id, purpose=purpose,
+        estimated_input_tokens=max(1, characters // 4), max_output_tokens=max_tokens,
+    )
+    try:
+        response = httpx.post(
+            ANTHROPIC_URL, json=body, timeout=httpx.Timeout(60.0, connect=5.0),
+            headers={"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION},
+        )
+    except httpx.HTTPError as exc:
+        # Uncertain outcome: keep the reservation so spend is never undercounted.
+        raise HTTPException(503, _UNAVAILABLE) from exc
+    if response.status_code != 200:
+        # A refused request (bad or spent key, rate limit, invalid input) is
+        # answered before any inference, so nothing was spent.
+        if response.status_code < 500:
+            release_bedrock_invocation(reservation_id)
+        if response.status_code == 429:
+            raise HTTPException(429, 'Draft generation is busy; please retry shortly')
+        raise HTTPException(503, _UNAVAILABLE)
+    result = _from_anthropic(response.json())
+    complete_bedrock_invocation(reservation_id, result["usage"]["inputTokens"], result["usage"]["outputTokens"])
+    if on_model:
+        on_model(model)
+    return result

@@ -106,6 +106,7 @@ const SOURCE_LABEL: Record<string, string> = {
   web_discovery: 'Web search',
   domain_scrape: 'Company website',
   roster_sec: 'SEC filing',
+  roster_register: 'Company filing',
   roster_cache: 'SEC filing',
   linkedin_inferred: 'LinkedIn, address guessed',
   inferred: 'Address guessed from a pattern',
@@ -113,7 +114,7 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 /** How far a source can be trusted to name the right person, best first. */
 const SOURCE_RANK: Record<string, number> = {
-  roster_sec: 5, roster_cache: 4, domain_scrape: 4, web_discovery: 3, linkedin_inferred: 2,
+  roster_sec: 5, roster_register: 5, roster_cache: 4, domain_scrape: 4, web_discovery: 3, linkedin_inferred: 2,
 };
 
 export type PersonSource = { label: string; link: { href: string; text: string } | null; rank: number };

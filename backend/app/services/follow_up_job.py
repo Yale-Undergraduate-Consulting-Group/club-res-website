@@ -5,14 +5,16 @@ bound original sender and durable step claims.
 
 A follow-up goes to a contact who was already mailed, so a campaign that is held for unsent rows
 (`needs_attention`) or still releasing keeps following up; only a paused campaign stops. A sequence
-stops for a contact who replied (an opt-out is a reply: `replied_at` is set) or whose address bounced.
+stops for a contact who replied (an opt-out is a reply: `replied_at` is set) or whose address bounced,
+and for any company where a reply came in or a member booked a meeting (a contact on the Pipeline
+board at `meeting` or `closed`); moving that contact back resumes it.
 An automatic reply (out of office) pushes the next step back two business days from that reply
 rather than sending into the absence. A due step waits for the next run unless the recipient's local
 time is inside the send window, and it counts against the sender's own daily limit.
 """
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
-from app.services.send_gating import company_reply, replied_companies
+from app.services.send_gating import BOOKED_STATUSES, company_conversations, company_stop
 
 AUTO_REPLY_DEFER_BUSINESS_DAYS = 2
 # A paused campaign stops its follow-ups; the gate's hold concerns unsent rows only.
@@ -91,7 +93,7 @@ async def run_follow_up_sequences() -> dict:
             # Campaign contacts: initial send done, sequence not finished, no reply or bounce yet
             cursor = await db.execute(
                 """SELECT cc.id, cc.contact_id, cc.sequence_step_sent, cc.last_sequence_sent_at, cc.sent_by_user_id,
-                          c.company, c.company_domain, c.email
+                          c.company, c.company_domain, c.email, c.pipeline_status
                    FROM campaign_contacts cc
                    JOIN contacts c ON c.id = cc.contact_id
                    WHERE cc.campaign_id = ? AND cc.status = 'sent'
@@ -100,14 +102,17 @@ async def run_follow_up_sequences() -> dict:
                 (cid,),
             )
             contacts = await cursor.fetchall()
-            replied = await replied_companies(db)
+            conversations = await company_conversations(db)
 
             for cc in contacts:
                 if cc["sent_by_user_id"] != sender_user_id:
                     errors.append({"campaign_contact_id": cc["id"], "error": "Original sender does not match campaign"})
                     continue
-                # Someone at this company answered a member: nobody follows up there any more.
-                if company_reply(replied, cc["company"], cc["company_domain"], cc["email"]):
+                # Someone at this company answered a member or booked a meeting, or this
+                # contact did: nobody follows up there any more.
+                if cc["pipeline_status"] in BOOKED_STATUSES or company_stop(
+                    conversations, cc["company"], cc["company_domain"], cc["email"]
+                ):
                     continue
                 step_idx = cc["sequence_step_sent"]
                 step = await (await db.execute(
@@ -165,10 +170,15 @@ async def run_follow_up_sequences() -> dict:
                     AND camp.status IN ({marks}) AND camp.sequence_id=? AND u.is_active=1""",
                     (cc["id"], step_idx, sender_user_id, sender_user_id, sender_user_id, *FOLLOW_UP_CAMPAIGN_STATES, seq_id),
                 )).fetchone()
-                if current and company_reply(
-                    await replied_companies(db), cc["company"], cc["company_domain"], cc["email"]
-                ):
-                    current = None
+                if current:
+                    booked = await (await db.execute(
+                        "SELECT 1 FROM contacts WHERE id=? AND pipeline_status IN ('meeting','closed')",
+                        (cc["contact_id"],),
+                    )).fetchone()
+                    if booked or company_stop(
+                        await company_conversations(db), cc["company"], cc["company_domain"], cc["email"]
+                    ):
+                        current = None
                 if not current:
                     await db.commit()
                     continue

@@ -70,6 +70,7 @@ describe('the sheet order', () => {
 describe('where someone came from', () => {
   it('names the source and links only a real page', () => {
     expect(sourceOf(who({ contact_source: 'roster_sec' })).label).toBe('SEC filing');
+    expect(sourceOf(who({ contact_source: 'roster_register' })).label).toBe('Company filing');
     expect(sourceOf(who({ contact_source: 'web_discovery', linkedin_url: 'https://www.linkedin.com/in/jean' })).link)
       .toEqual({ href: 'https://www.linkedin.com/in/jean', text: 'LinkedIn profile' });
     expect(sourceOf(who({ contact_source: 'domain_scrape', source_url: 'javascript:alert(1)' })).link).toBeNull();

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { NAV_GROUPS, TOP_LEVEL_IDS, type NavItem } from '../../lib/navConfig';
 import AppNavLink from './AppNavLink';
 import { Button } from '../ui/Primitives';
+import GuideBubble from '../GuideBubble';
 
 type AppShellHeaderProps = {
   user: { email: string; name?: string; picture?: string };
@@ -63,6 +64,7 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
         </nav>
 
         <div className="app-shell-header-actions">
+          <GuideBubble />
           {user.picture && (
             <img
               src={user.picture}
@@ -74,7 +76,7 @@ export default function AppShellHeader({ user, navItems, onLogout }: AppShellHea
               }}
             />
           )}
-          <NavLink to="/profile" className="app-shell-profile-link app-shell-header-profile">
+          <NavLink to="/profile" className="app-shell-profile-link app-shell-header-profile" title={user.name || user.email}>
             {user.name || user.email?.split('@')[0] || 'User'}
           </NavLink>
           <Button variant="secondary" size="sm" onClick={onLogout} className="app-shell-header-logout">

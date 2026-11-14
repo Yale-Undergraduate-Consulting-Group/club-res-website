@@ -258,7 +258,7 @@ export default function Admin() {
       />}
 
 
-      {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+      {error && <p className="ui-notice ui-notice--danger mb-4">{error}</p>}
 
       {activeTab === 'metrics' && <ClubMetrics />}
       {activeTab === 'apps' && <AppAccess />}
@@ -266,7 +266,7 @@ export default function Admin() {
       {activeTab === 'users' && (
         <div className="space-y-6">
           <Invitations />
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
               <div>
                 <h2 className="font-semibold text-deep-navy">Members</h2>
@@ -357,7 +357,7 @@ export default function Admin() {
 
       {activeTab === 'projects' && (
         <div className="space-y-6">
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy mb-4">Create Project</h2>
             <p className="text-sm text-slate-600 mb-4">Add semester + client projects (e.g. Spring 2026 - Project Lego). Assign team members to each project.</p>
             <div className="flex flex-wrap gap-2 mb-2">
@@ -365,19 +365,19 @@ export default function Admin() {
                 value={projectForm.name}
                 onChange={(e) => setProjectForm((p) => ({ ...p, name: e.target.value }))}
                 placeholder="Project name (e.g. Project Lego)"
-                className="px-3 py-2 rounded-lg border border-pale-sky"
+                className="px-3 py-2 border border-pale-sky"
               />
               <input
                 value={projectForm.semester}
                 onChange={(e) => setProjectForm((p) => ({ ...p, semester: e.target.value }))}
                 placeholder="Semester (e.g. Spring 2026)"
-                className="px-3 py-2 rounded-lg border border-pale-sky"
+                className="px-3 py-2 border border-pale-sky"
               />
               <input
                 value={projectForm.description}
                 onChange={(e) => setProjectForm((p) => ({ ...p, description: e.target.value }))}
                 placeholder="Description (optional)"
-                className="px-3 py-2 rounded-lg border border-pale-sky flex-1 min-w-[200px]"
+                className="px-3 py-2 border border-pale-sky flex-1 min-w-[200px]"
               />
             </div>
             <div className="flex flex-wrap items-end gap-2 mb-4">
@@ -387,7 +387,7 @@ export default function Admin() {
                   value={projectForm.client_name}
                   onChange={(e) => setProjectForm((p) => ({ ...p, client_name: e.target.value }))}
                   placeholder="e.g. Google — leave blank if under NDA"
-                  className="px-3 py-2 rounded-lg border border-pale-sky min-w-[220px]"
+                  className="px-3 py-2 border border-pale-sky min-w-[220px]"
                 />
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-700 px-3 py-2">
@@ -422,7 +422,7 @@ export default function Admin() {
               </button>
             </div>
           </div>
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy mb-4">Projects & Assignments</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -432,11 +432,11 @@ export default function Admin() {
                     <li key={p.id}>
                       <button
                         onClick={() => selectProject(p)}
-                        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-lg text-sm ${
+                        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 text-sm ${
                           selectedProject?.id === p.id ? 'bg-pale-sky/50 font-medium' : 'hover:bg-pale-sky/20'
                         }`}
                       >
-                        <span className="truncate">{p.semester ? `${p.semester} — ` : ''}{p.name}</span>
+                        <span className="truncate" title={`${p.semester ? `${p.semester} — ` : ''}${p.name}`}>{p.semester ? `${p.semester} — ` : ''}{p.name}</span>
                         <StatusBadge tone={p.discussable ? 'success' : 'neutral'}>
                           {p.discussable ? 'Discussable' : 'Under NDA'}
                         </StatusBadge>
@@ -452,7 +452,7 @@ export default function Admin() {
                     <p className="text-sm font-medium text-slate-700 mb-2">
                       Assigned to {selectedProject.semester ? `${selectedProject.semester} — ` : ''}{selectedProject.name}:
                     </p>
-                    <div className="mb-4 p-3 rounded-lg border border-pale-sky bg-pale-sky/10 space-y-2">
+                    <div className="mb-4 p-3 border border-pale-sky bg-pale-sky/10 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium text-slate-700">Citation tagging</span>
                         <StatusBadge tone={selectedProject.discussable ? 'success' : 'neutral'}>
@@ -463,7 +463,7 @@ export default function Admin() {
                         value={editProjectForm.client_name}
                         onChange={(e) => setEditProjectForm((p) => ({ ...p, client_name: e.target.value }))}
                         placeholder="Real client name (leave blank if under NDA)"
-                        className="w-full px-3 py-2 rounded-lg border border-pale-sky text-sm"
+                        className="w-full px-3 py-2 border border-pale-sky text-sm"
                       />
                       <label className="flex items-center gap-2 text-sm text-slate-700">
                         <input
@@ -520,13 +520,13 @@ export default function Admin() {
           </div>
           {assignUserModal && (
             <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setAssignUserModal(null)}>
-              <div className="surface-card rounded-xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="surface-card max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
                 <h3 className="font-semibold text-deep-navy mb-4">Assign to {assignUserModal.projectName}</h3>
                 <input
                   value={assignRole}
                   onChange={(e) => setAssignRole(e.target.value)}
                   placeholder="Role (e.g. Lead, Analyst)"
-                  className="w-full px-3 py-2 rounded-lg border border-pale-sky mb-4"
+                  className="w-full px-3 py-2 border border-pale-sky mb-4"
                 />
                 <div className="max-h-48 overflow-y-auto space-y-1 mb-4">
                   {users.filter((u) => !projectAssignments.some((a) => a.id === u.id)).map((u) => (
@@ -559,7 +559,7 @@ export default function Admin() {
       )}
 
       {activeTab === 'audit' && (
-        <div className="surface-card rounded-xl p-6">
+        <div className="surface-card">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
             <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">Audit Log</h2>
             <button
@@ -586,7 +586,7 @@ export default function Admin() {
 
       {activeTab === 'apikeys' && (
         <div className="space-y-6">
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy mb-4">Create API Key</h2>
             <p className="text-sm text-slate-600 mb-4">For integrations (SharePoint, Zapier, etc.). Store securely.</p>
             <div className="flex gap-2 mb-4">
@@ -594,20 +594,20 @@ export default function Admin() {
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
                 placeholder="Key name (e.g. SharePoint)"
-                className="flex-1 px-3 py-2 rounded-lg border border-pale-sky"
+                className="flex-1 px-3 py-2 border border-pale-sky"
               />
               <button onClick={handleCreateKey} className="ui-button ui-button--primary">
                 Create
               </button>
             </div>
             {newKeyResult && (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-sm font-medium text-amber-800">Copy this key now. It won&apos;t be shown again:</p>
+              <div className="p-4 bg-pale-sky/60 border border-pale-sky">
+                <p className="text-sm font-medium text-deep-navy">Copy this key now. It won&apos;t be shown again:</p>
                 <code className="block mt-2 p-2 bg-white rounded text-sm break-all">{newKeyResult}</code>
               </div>
             )}
           </div>
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy mb-4">Your API Keys</h2>
             <ul className="space-y-2">
               {apiKeys.map((k) => (
@@ -637,11 +637,11 @@ export default function Admin() {
       )}
 
       {activeTab === '2fa' && (
-        <div className="surface-card rounded-xl p-6">
+        <div className="surface-card">
           <h2 className="font-semibold text-deep-navy mb-4">Two-Factor Authentication</h2>
           <p className="text-sm text-slate-600 mb-4">When enabled, Google sign-in asks for this code before a session cookie is issued.</p>
           {twoFactorStatus === 'enabled' && (
-            <p className="text-sm text-green-600 font-medium mb-4">✓ 2FA is enabled for your account.</p>
+            <p className="text-sm text-deep-navy font-medium mb-4">✓ 2FA is enabled for your account.</p>
           )}
           <div className="space-y-4">
             {(twoFactorStatus === 'not_setup' || twoFactorStatus === 'pending' || twoFactorStatus === null) && (
@@ -652,11 +652,11 @@ export default function Admin() {
               </div>
             )}
             {qrDataUrl && twoFactorSetup && (
-              <div className="p-4 bg-slate-50 rounded-lg border border-pale-sky">
+              <div className="p-4 bg-slate-50 border border-pale-sky">
                 <p className="text-sm font-medium text-slate-700 mb-3">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):</p>
-                <img src={qrDataUrl} alt="2FA QR Code" className="w-64 h-64 mx-auto block rounded-lg border border-slate-200" />
+                <img src={qrDataUrl} alt="2FA QR Code" className="w-64 h-64 mx-auto block border border-slate-200" />
                 {qrExpiresAt != null && qrCountdown > 0 && (
-                  <p className="text-xs text-amber-600 mt-2">
+                  <p className="text-xs text-deep-navy mt-2">
                     Expires in {qrCountdown}s. Regenerate above if it expires.
                   </p>
                 )}
@@ -669,7 +669,7 @@ export default function Admin() {
                 value={twoFactorCode}
                 onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="6-digit code"
-                className="w-32 px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-32 px-3 py-2 border border-pale-sky"
                 maxLength={6}
               />
               {(twoFactorStatus === 'pending' || twoFactorStatus === null) && (
@@ -693,7 +693,7 @@ export default function Admin() {
       )}
 
       {activeTab === 'catalog' && (
-        <div className="surface-card rounded-xl p-6 space-y-4">
+        <div className="surface-card space-y-4">
           <h2 className="font-semibold text-deep-navy">Object catalog</h2>
           <p className="text-sm text-slate-600">
             Bucket: {catalog?.bucket || 'not set (local files only)'}
@@ -727,7 +727,7 @@ export default function Admin() {
       {activeTab === 'operations' && (
         <div className="space-y-8 max-w-6xl">
           <ContactMaintenance />
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-4">Operations Intelligence</h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
               Ask questions about club activity and the reference material below.
@@ -735,13 +735,13 @@ export default function Admin() {
             <div className="flex flex-wrap gap-4 items-center mb-6">
               <label className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Days</span>
-                <select value={opsDays} onChange={(e) => setOpsDays(Number(e.target.value))} className="px-2 py-1.5 rounded-lg border border-pale-sky bg-white dark:bg-slate-700 dark:border-slate-600">
+                <select value={opsDays} onChange={(e) => setOpsDays(Number(e.target.value))} className="px-2 py-1.5 border border-pale-sky bg-white dark:bg-slate-700 dark:border-slate-600">
                   {[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </label>
               <label className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Heatmap by</span>
-                <select value={opsGroupBy} onChange={(e) => setOpsGroupBy(e.target.value as 'hour' | 'day_of_week')} className="px-2 py-1.5 rounded-lg border border-pale-sky bg-white dark:bg-slate-700 dark:border-slate-600">
+                <select value={opsGroupBy} onChange={(e) => setOpsGroupBy(e.target.value as 'hour' | 'day_of_week')} className="px-2 py-1.5 border border-pale-sky bg-white dark:bg-slate-700 dark:border-slate-600">
                   <option value="hour">Hour Of Day</option>
                   <option value="day_of_week">Day Of Week</option>
                 </select>
@@ -871,7 +871,7 @@ export default function Admin() {
             )}
 
             <h3 className="text-sm font-semibold text-deep-navy dark:text-[var(--text-primary)] mt-6 mb-2">Recent events (raw data)</h3>
-            <div className="max-h-48 overflow-y-auto border border-pale-sky rounded-lg">
+            <div className="max-h-48 overflow-y-auto border border-pale-sky">
               <table className="w-full text-sm">
                 <thead className="bg-pale-sky/30 sticky top-0">
                   <tr><th className="text-left p-2">Time</th><th className="text-left p-2">User</th><th className="text-left p-2">Event</th><th className="text-left p-2">Resource</th></tr>
@@ -891,14 +891,14 @@ export default function Admin() {
             {opsEvents.length === 0 && <p className="text-sm text-slate-500 mt-2">No events in this period.</p>}
           </div>
 
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-2">Assistant knowledge</h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">The shared Assistant uses the same private document register as Projects. Access is checked for every retrieval, and Amazon Bedrock receives only the short source excerpts needed for an answer.</p>
           </div>
 
           <CatalogBuilderCard />
 
-          <div className="surface-card rounded-xl p-6">
+          <div className="surface-card">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">Discovery search (TinyFish / Firecrawl)</h2>
               <button
@@ -927,7 +927,7 @@ export default function Admin() {
               of guessing why a company search found nothing.
             </p>
             <SearchProviderStatus refreshKey={firecrawlStatus} />
-            {firecrawlError && <p className="text-sm text-red-700 mb-3">{firecrawlError}</p>}
+            {firecrawlError && <p className="ui-notice ui-notice--danger mb-3">{firecrawlError}</p>}
             {firecrawlStatus && (
               <div className="space-y-4 text-sm">
                 {(['tinyfish', 'firecrawl'] as const).map((backend) => {
@@ -937,7 +937,7 @@ export default function Admin() {
                     <div key={backend}>
                       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{label}</h3>
                       {!status.configured ? (
-                        <p className="text-xs text-slate-500 rounded-lg border border-pale-sky/80 px-4 py-3">
+                        <p className="text-xs text-slate-500 border border-pale-sky/80 px-4 py-3">
                           Not configured{backend === 'tinyfish' ? ' (MONID_API_KEY is not set)' : ' (FIRECRAWL_URL is not set)'}.
                         </p>
                       ) : (
@@ -946,7 +946,7 @@ export default function Admin() {
                             const result = status[probe];
                             if (!result) return null;
                             return (
-                              <div key={probe} className={`rounded-lg border px-4 py-3 ${result.ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                              <div key={probe} className={`border px-4 py-3 ${result.ok ? 'border-pale-sky bg-pale-sky/60' : 'border-pale-sky bg-pale-sky/60'}`}>
                                 <div className="font-medium text-deep-navy mb-1 capitalize">{probe}: {result.ok ? 'Working' : 'Failing'}</div>
                                 <p className="text-xs text-slate-600">
                                   {result.duration_s != null && `${result.duration_s}s`}
@@ -954,7 +954,7 @@ export default function Admin() {
                                   {result.result_count != null && ` · ${result.result_count} results for a universal test query`}
                                 </p>
                                 {(result.error || result.note) && (
-                                  <p className="text-xs text-red-700 mt-1">{result.error || result.note}</p>
+                                  <p className="ui-notice ui-notice--danger mt-1">{result.error || result.note}</p>
                                 )}
                               </div>
                             );
@@ -968,10 +968,10 @@ export default function Admin() {
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">What the pipeline gets right now</h3>
                   <p className="text-xs text-slate-500 mb-2">{firecrawlStatus.effective.note}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className={`rounded-lg border px-4 py-3 ${firecrawlStatus.effective.fetch.ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    <div className={`border px-4 py-3 ${firecrawlStatus.effective.fetch.ok ? 'border-pale-sky bg-pale-sky/60' : 'border-pale-sky bg-pale-sky/60'}`}>
                       <div className="font-medium text-deep-navy">Fetch: {firecrawlStatus.effective.fetch.ok ? 'Working' : 'Failing'}</div>
                     </div>
-                    <div className={`rounded-lg border px-4 py-3 ${firecrawlStatus.effective.search.ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    <div className={`border px-4 py-3 ${firecrawlStatus.effective.search.ok ? 'border-pale-sky bg-pale-sky/60' : 'border-pale-sky bg-pale-sky/60'}`}>
                       <div className="font-medium text-deep-navy">Search: {firecrawlStatus.effective.search.ok ? 'Working' : 'Failing'}</div>
                     </div>
                   </div>

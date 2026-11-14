@@ -6,17 +6,21 @@ import os
 import httpx
 
 
-def post_week_event(text: str) -> bool:
-    # A pasted SLACK_BOT_TOKEN only lasts while the app has token rotation
-    # off; with rotation on, connect Slack from Profile and the digest path
-    # (app/services/slack_tokens.py) keeps a refreshed workspace token.
-    token = (os.getenv("SLACK_BOT_TOKEN") or "").strip()
+async def post_week_event(text: str) -> bool:
+    # The refreshed install token (app/services/slack_tokens.py) outlives a
+    # pasted SLACK_BOT_TOKEN, which dies after 12 hours with token rotation on;
+    # workspace_access_token falls back to that variable.
+    from app.services.slack_tokens import workspace_access_token
+
     channel = (os.getenv("SLACK_DIGEST_CHANNEL_ID") or "").strip()
-    if not token or not channel or not text.strip():
+    if not channel or not text.strip():
         return False
     try:
-        with httpx.Client(timeout=12.0) as client:
-            r = client.post(
+        token = await workspace_access_token()
+        if not token:
+            return False
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            r = await client.post(
                 "https://slack.com/api/chat.postMessage",
                 headers={"Authorization": f"Bearer {token}"},
                 json={"channel": channel, "text": text.strip()},

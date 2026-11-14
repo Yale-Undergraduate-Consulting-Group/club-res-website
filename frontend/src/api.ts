@@ -248,6 +248,9 @@ export type DirectoryPerson = {
   ready: boolean;
   /** The contacts row behind this person; null for a prospect not yet imported. */
   contact_id: number | null;
+  /** For a person found only by a search: the run and prospect row that import brings on file; null otherwise. */
+  run_id: number | null;
+  prospect_id: number | null;
 };
 export type DirectoryPage = { items: DirectoryPerson[]; total: number; limit: number; offset: number; capped: boolean };
 export type DirectoryFilter = { q?: string; proof?: DirectoryProof; reach?: DirectoryReachState; ready?: boolean };

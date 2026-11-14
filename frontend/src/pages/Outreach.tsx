@@ -32,11 +32,11 @@ function ContactCard({ c, selectedContact, selectedIds, onSelect, onToggleSelect
       draggable={draggable}
       onDragStart={(e) => { e.dataTransfer.setData('contactId', String(c.id)); e.dataTransfer.setData('currentStatus', c.pipeline_status || 'cold'); }}
       onClick={() => onSelect(c)}
-      className={`p-3 rounded-lg cursor-pointer border transition-colors ${
+      className={`p-3 cursor-pointer border transition-colors ${
         selectedContact?.id === c.id
           ? 'border-[var(--btn-primary-bg)] bg-[var(--btn-primary-bg)]/5 ring-1 ring-[var(--btn-primary-bg)]'
           : 'border-pale-sky hover:border-[var(--btn-primary-hover)] hover:bg-pale-sky/10'
-      } ${selectedIds.has(c.id) ? 'ring-2 ring-amber-500' : ''}`}
+      } ${selectedIds.has(c.id) ? 'ring-2 ring-deep-navy' : ''}`}
     >
       <div className="flex items-center gap-2">
         <input
@@ -48,10 +48,10 @@ function ContactCard({ c, selectedContact, selectedIds, onSelect, onToggleSelect
           className="rounded shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-slate-800 truncate text-sm">{c.name || c.email}</div>
-          <div className="text-xs text-slate-500 truncate mt-0.5">{c.company || c.email}</div>
+          <div className="font-medium text-slate-800 truncate text-sm" title={c.name || c.email}>{c.name || c.email}</div>
+          <div className="text-xs text-slate-500 truncate mt-0.5" title={c.company || c.email}>{c.company || c.email}</div>
           {c.last_sent_at && (
-            <div className="text-[11px] text-slate-400 truncate mt-0.5">
+            <div className="text-[11px] text-slate-400 truncate mt-0.5" title={`Last send${c.last_campaign_name ? `: ${c.last_campaign_name}` : ''} · ${String(c.last_sent_at).slice(0, 10)}`}>
               Last send{c.last_campaign_name ? `: ${c.last_campaign_name}` : ''} · {String(c.last_sent_at).slice(0, 10)}
             </div>
           )}
@@ -89,14 +89,14 @@ function CompanyFolder({ company, contacts, outcome, selectedContact, selectedId
 }) {
   const [expanded, setExpanded] = useState(true);
   return (
-    <div className="rounded-lg border border-pale-sky overflow-hidden">
+    <div className="border border-pale-sky overflow-hidden">
       <button
         onClick={() => setExpanded((e) => !e)}
         className="w-full px-3 py-2 flex items-center justify-between bg-pale-sky/20 hover:bg-pale-sky/30 text-left text-sm font-medium text-deep-navy"
       >
         <span className="min-w-0 flex-1">
-          <span className="truncate block">{company}</span>
-          <span className={`block text-xs font-normal ${outcome?.bounced_count ? 'text-red-700' : 'text-slate-500'}`}>
+          <span className="truncate block" title={company}>{company}</span>
+          <span className={`block text-xs font-normal ${outcome?.bounced_count ? 'text-deep-navy' : 'text-slate-500'}`}>
             {outcomeLine(outcome)}
           </span>
         </span>
@@ -474,14 +474,14 @@ export default function Outreach() {
                   placeholder="Search name, email, company... (press /)"
                   value={contactSearch}
                   onChange={(e) => setContactSearch(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-pale-sky text-sm w-56 max-w-full"
+                  className="px-3 py-2 border border-pale-sky text-sm w-56 max-w-full"
                   aria-label="Search contacts"
                   data-search-input
                 />
                 <select
                   value={contactPipelineFilter}
                   onChange={(e) => setContactPipelineFilter(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-pale-sky text-sm bg-white"
+                  className="px-3 py-2 border border-pale-sky text-sm bg-white"
                   aria-label="Filter by pipeline status"
                 >
                   <option value="">All Statuses</option>
@@ -523,7 +523,7 @@ export default function Outreach() {
                 <select
                   value={mobileStatus}
                   onChange={(event) => setMobileStatus(event.target.value)}
-                  className="min-h-11 flex-1 rounded-lg border border-[var(--border)] bg-white px-3"
+                  className="min-h-11 flex-1 border border-[var(--border)] bg-white px-3"
                 >
                   {PIPELINE_STATUSES.map((status) => (
                     <option key={status} value={status}>{status}</option>
@@ -532,21 +532,17 @@ export default function Outreach() {
               </label>
               {inboxSyncBanner && (
                 <p
-                  className={`text-sm rounded-lg px-3 py-2 border ${
-                    inboxSyncBanner.type === 'ok'
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-100'
-                      : 'bg-amber-50 border-amber-200 text-amber-950 dark:bg-amber-950/50 dark:border-amber-800 dark:text-amber-100'
-                  }`}
+                  className={`ui-notice ${inboxSyncBanner.type === 'ok' ? '' : 'ui-notice--warning'}`}
                 >
                   {inboxSyncBanner.text}
                 </p>
               )}
               {selectedContactIds.size > 0 && (
-                <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl surface-card border border-[var(--border)] shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 p-3 surface-card border border-[var(--border)]">
                   <span className="text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]">{selectedContactIds.size} selected</span>
                   <select
                     onChange={(e) => { const v = e.target.value; if (v) handleBulkMove(v); e.target.value = ''; }}
-                    className="text-sm px-2 py-1.5 rounded-lg border border-[var(--border)] bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-100"
+                    className="text-sm px-2 py-1.5 border border-[var(--border)] bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-100"
                   >
                     <option value="">Move To...</option>
                     {PIPELINE_STATUSES.map((s) => (
@@ -555,7 +551,7 @@ export default function Outreach() {
                   </select>
                   <select
                     onChange={(e) => { const v = e.target.value; if (v) handleBulkAddToCampaign(parseInt(v, 10)); e.target.value = ''; }}
-                    className="text-sm px-2 py-1.5 rounded-lg border border-[var(--border)] bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-100"
+                    className="text-sm px-2 py-1.5 border border-[var(--border)] bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-100"
                   >
                     <option value="">Add To Campaign...</option>
                     {outreachCampaigns.map((oc) => (
@@ -598,7 +594,7 @@ export default function Outreach() {
                   return (
                     <div
                       key={status}
-                      className={`${status === mobileStatus ? 'flex' : 'hidden'} md:flex surface-card rounded-xl flex-col overflow-hidden shadow-sm`}
+                      className={`${status === mobileStatus ? 'flex' : 'hidden'} md:flex surface-card surface-card--flush flex-col overflow-hidden`}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={handleColumnDrop(status)}
                     >
@@ -649,7 +645,7 @@ export default function Outreach() {
             </div>
           )}
           {activeTab === 'worklists' && (
-            <div className="surface-card rounded-xl p-4 max-h-[500px] overflow-y-auto space-y-4 w-full">
+            <div className="surface-card max-h-[500px] overflow-y-auto space-y-4 w-full">
               <h3 className="font-semibold text-deep-navy">Outreach work lists</h3>
               <p className="text-sm text-slate-600">
                 Organize contacts into shared or personal worklists. Prepare messages in Drafts, then track sending from Home.
@@ -659,12 +655,12 @@ export default function Outreach() {
                   value={campaignForm.name}
                   onChange={(e) => setCampaignForm((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Campaign name"
-                  className="px-3 py-2 rounded-lg border border-pale-sky text-sm flex-1 min-w-[140px]"
+                  className="px-3 py-2 border border-pale-sky text-sm flex-1 min-w-[140px]"
                 />
                 <select
                   value={campaignForm.type}
                   onChange={(e) => setCampaignForm((p) => ({ ...p, type: e.target.value as 'community' | 'individual' }))}
-                  className="px-3 py-2 rounded-lg border border-pale-sky text-sm"
+                  className="px-3 py-2 border border-pale-sky text-sm"
                 >
                   <option value="community">Community</option>
                   <option value="individual">Individual</option>
@@ -695,14 +691,14 @@ export default function Outreach() {
                   <div
                     key={oc.id}
                     onClick={() => setSelectedCampaign(oc)}
-                    className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`p-3 border cursor-pointer transition-colors ${
                       selectedCampaign?.id === oc.id ? 'border-[var(--btn-primary-bg)] bg-[var(--btn-primary-bg)]/5' : 'border-pale-sky hover:bg-pale-sky/10'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-medium text-slate-800">{oc.name}</span>
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${oc.type === 'community' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${oc.type === 'community' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
                           {oc.type}
                         </span>
                       </div>
@@ -724,11 +720,11 @@ export default function Outreach() {
         {/* Detail or editor */}
         <div className={`${activeTab === 'pipeline' ? 'lg:col-span-3' : activeTab === 'worklists' ? 'lg:col-span-1' : 'lg:col-span-2'} space-y-6`}>
           {activeTab === 'worklists' && selectedCampaign && (
-            <div className="surface-card rounded-xl p-6">
+            <div className="surface-card">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="font-semibold text-deep-navy">{selectedCampaign.name}</h3>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${selectedCampaign.type === 'community' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 ${selectedCampaign.type === 'community' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
                     {selectedCampaign.type}
                   </span>
                   <p className="text-sm text-slate-500 mt-1">
@@ -791,7 +787,7 @@ export default function Outreach() {
               <div className="pt-4 border-t border-pale-sky">
                 <p className="text-xs text-slate-600 mb-2">Add contacts: select from pipeline, then use the &quot;Add to campaign&quot; action (or add bulk from Contacts page).</p>
                 <select
-                  className="w-full px-3 py-2 rounded-lg border border-pale-sky text-sm"
+                  className="w-full px-3 py-2 border border-pale-sky text-sm"
                   onChange={async (e) => {
                     const cid = parseInt(e.target.value, 10);
                     if (!cid) return;
@@ -816,14 +812,14 @@ export default function Outreach() {
             </div>
           )}
           {activeTab === 'worklists' && !selectedCampaign && (
-            <div className="surface-card rounded-xl p-12 text-center">
+            <div className="surface-card text-center">
               <p className="text-slate-500">Select a campaign to view contacts and add more.</p>
             </div>
           )}
           {activeTab === 'pipeline' && (
             selectedContact ? (
             <>
-              <div className="surface-card rounded-xl p-6">
+              <div className="surface-card">
                 <div className="flex justify-between items-start">
                   <h3 className="font-semibold text-deep-navy">Contact: {selectedContact.name || selectedContact.email}</h3>
                   <button
@@ -862,14 +858,14 @@ export default function Outreach() {
                     Check address
                   </button>
                   {emailVerified !== null && (
-                    <span className={`text-xs ${emailVerified.ok ? 'text-slate-600' : 'text-red-600'}`}>
+                    <span className={`text-xs ${emailVerified.ok ? 'text-slate-600' : 'text-deep-navy'}`}>
                       {emailVerified.label}
                     </span>
                   )}
                 </div>
               </div>
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="surface-card rounded-xl p-6">
+              <div className="surface-card">
                 <h3 className="font-semibold text-deep-navy mb-4">Profile Analysis</h3>
                 {profile ? (
                   <div className="space-y-3 text-sm">
@@ -902,14 +898,14 @@ export default function Outreach() {
                 )}
               </div>
               <div className="space-y-6">
-              <div className="surface-card rounded-xl p-6">
+              <div className="surface-card">
                 <h3 className="font-semibold text-deep-navy mb-4">Notes</h3>
                 <div className="flex gap-2 mb-4">
                   <textarea
                     value={newNote}
                     onChange={(e) => setNewNote(e.target.value)}
                     placeholder="Add A Note..."
-                    className="flex-1 px-3 py-2 rounded-lg border border-pale-sky text-sm"
+                    className="flex-1 px-3 py-2 border border-pale-sky text-sm"
                     rows={2}
                   />
                   <button
@@ -931,13 +927,13 @@ export default function Outreach() {
                   ))}
                 </ul>
               </div>
-              <div className="surface-card rounded-xl p-6">
+              <div className="surface-card">
                 <h3 className="font-semibold text-deep-navy mb-4">Activity Log</h3>
                 <div className="flex gap-2 mb-4 flex-wrap">
                   <select
                     value={newActivityType}
                     onChange={(e) => setNewActivityType(e.target.value)}
-                    className="px-3 py-2 rounded-lg border border-pale-sky text-sm"
+                    className="px-3 py-2 border border-pale-sky text-sm"
                   >
                     <option value="email_sent">Email Sent</option>
                     <option value="call">Call</option>
@@ -949,7 +945,7 @@ export default function Outreach() {
                     value={newActivityDetails}
                     onChange={(e) => setNewActivityDetails(e.target.value)}
                     placeholder="Details (optional)"
-                    className="flex-1 min-w-[120px] px-3 py-2 rounded-lg border border-pale-sky text-sm"
+                    className="flex-1 min-w-[120px] px-3 py-2 border border-pale-sky text-sm"
                   />
                   <button
                     onClick={addActivity}
@@ -974,7 +970,7 @@ export default function Outreach() {
               </div>
             </>
             ) : (
-              <div className="surface-card rounded-xl p-12 text-center">
+              <div className="surface-card text-center">
                 <p className="text-slate-500">Select a contact from the pipeline board above to view profile, notes, and activity.</p>
               </div>
             )
@@ -985,7 +981,7 @@ export default function Outreach() {
       {activeTab === 'followups' && (
         <div className="space-y-6">
           <FollowUpSchedule />
-          <div className="surface-card rounded-xl p-6 space-y-4">
+          <div className="surface-card space-y-4">
             <div>
               <h3 className="font-semibold text-deep-navy">Sequences (follow-ups)</h3>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
@@ -996,7 +992,7 @@ export default function Outreach() {
               </p>
             </div>
             {sequences.length > 0 && (
-              <div className="max-h-64 overflow-y-auto border border-pale-sky rounded-lg divide-y divide-pale-sky">
+              <div className="max-h-64 overflow-y-auto border border-pale-sky divide-y divide-pale-sky">
                 {sequences.map((s) => (
                   <div key={s.id} className="p-3">
                     <div className="font-medium text-slate-800">{s.name}</div>
@@ -1012,10 +1008,10 @@ export default function Outreach() {
                 value={sequenceForm.name}
                 onChange={(e) => setSequenceForm((p) => ({ ...p, name: e.target.value }))}
                 placeholder="Sequence name"
-                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-full px-3 py-2 border border-pale-sky"
               />
               {sequenceForm.steps.map((step, i) => (
-                <div key={i} className="p-4 border border-pale-sky rounded-lg space-y-2">
+                <div key={i} className="p-4 border border-pale-sky space-y-2">
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -1029,7 +1025,7 @@ export default function Outreach() {
                         }))
                       }
                       placeholder="Days after"
-                      className="w-24 px-3 py-2 rounded-lg border border-pale-sky"
+                      className="w-24 px-3 py-2 border border-pale-sky"
                     />
                     <input
                       value={step.subject}
@@ -1040,7 +1036,7 @@ export default function Outreach() {
                         }))
                       }
                       placeholder="Subject"
-                      className="flex-1 px-3 py-2 rounded-lg border border-pale-sky"
+                      className="flex-1 px-3 py-2 border border-pale-sky"
                     />
                   </div>
                   <textarea
@@ -1052,7 +1048,7 @@ export default function Outreach() {
                       }))
                     }
                     placeholder="Body"
-                    className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                    className="w-full px-3 py-2 border border-pale-sky"
                     rows={3}
                   />
                 </div>
@@ -1084,7 +1080,7 @@ export default function Outreach() {
 
       {activeTab === 'resources' && (
         <div className="grid grid-cols-1 gap-6">
-          <div className="surface-card rounded-xl p-6 space-y-4">
+          <div className="surface-card space-y-4">
             <div>
               <h3 className="font-semibold text-deep-navy">Templates</h3>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
@@ -1093,13 +1089,13 @@ export default function Outreach() {
               </p>
             </div>
             {templates.length > 0 && (
-              <div className="max-h-64 overflow-y-auto border border-pale-sky rounded-lg divide-y divide-pale-sky">
+              <div className="max-h-64 overflow-y-auto border border-pale-sky divide-y divide-pale-sky">
                 {templates.map((t) => (
                   <div key={t.id} className="p-3 flex justify-between items-center gap-3">
                     <div>
                       <div className="font-medium text-slate-800">
                         {t.name}
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${t.scope === 'club' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${t.scope === 'club' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
                           {t.scope === 'club' ? 'Club' : 'Private'}
                         </span>
                       </div>
@@ -1135,32 +1131,32 @@ export default function Outreach() {
                 value={templateForm.name}
                 onChange={(e) => setTemplateForm((p) => ({ ...p, name: e.target.value }))}
                 placeholder="Template name"
-                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-full px-3 py-2 border border-pale-sky"
               />
               <input
                 value={templateForm.industry}
                 onChange={(e) => setTemplateForm((p) => ({ ...p, industry: e.target.value }))}
                 placeholder="Industry (optional)"
-                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-full px-3 py-2 border border-pale-sky"
               />
               <input
                 value={templateForm.use_case}
                 onChange={(e) => setTemplateForm((p) => ({ ...p, use_case: e.target.value }))}
                 placeholder="Approach, e.g. intro or project pitch (Admin → Metrics compares these)"
                 maxLength={40}
-                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-full px-3 py-2 border border-pale-sky"
               />
               <input
                 value={templateForm.subject}
                 onChange={(e) => setTemplateForm((p) => ({ ...p, subject: e.target.value }))}
                 placeholder="Subject"
-                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-full px-3 py-2 border border-pale-sky"
               />
               <textarea
                 value={templateForm.body}
                 onChange={(e) => setTemplateForm((p) => ({ ...p, body: e.target.value }))}
                 placeholder="Body"
-                className="w-full px-3 py-2 rounded-lg border border-pale-sky"
+                className="w-full px-3 py-2 border border-pale-sky"
                 rows={5}
               />
               <TemplatePreview subject={templateForm.subject} body={templateForm.body} />

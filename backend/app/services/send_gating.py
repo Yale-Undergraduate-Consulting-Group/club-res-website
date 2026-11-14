@@ -33,6 +33,7 @@ HELD_PROBE_BOUNCED = "probe_bounced"
 HELD_TEAMMATE_SENT = "teammate_already_wrote"
 HELD_OUTSIDE_WINDOW = "outside_send_window"
 HELD_COMPANY_REPLIED = "company_replied"
+HELD_COMPANY_MEETING = "company_meeting"
 HELD_COMPANY_CAP = "company_cap_reached"
 
 
@@ -149,8 +150,44 @@ async def replied_companies(db) -> dict[str, str]:
     return index
 
 
-def company_reply(index: dict[str, str], company: str | None, domain: str | None, email: str | None) -> str | None:
-    """The name of the company if someone there has replied, else None."""
+BOOKED_STATUSES = ("meeting", "closed")
+
+
+async def meeting_companies(db) -> dict[str, str]:
+    """Company key -> display name, for every company where a member booked a meeting.
+
+    Same club-wide stop as a reply: a contact the Pipeline board marks
+    ``meeting`` or ``closed`` means the conversation moved off email, so no
+    member follows up with, or first-mails, anyone at that company. Moving the
+    contact back (for example to ``contacted``) lifts the stop.
+    """
+    rows = await (await db.execute(
+        f"""SELECT DISTINCT company, company_domain, email FROM contacts
+            WHERE pipeline_status IN ({",".join("?" * len(BOOKED_STATUSES))})""",
+        BOOKED_STATUSES,
+    )).fetchall()
+    index: dict[str, str] = {}
+    for row in rows:
+        label = _company_label(row["company"], row["company_domain"], row["email"])
+        for key in company_keys(row["company"], row["company_domain"], row["email"]):
+            index.setdefault(key, label)
+    return index
+
+
+async def company_conversations(db) -> dict[str, tuple[str, str]]:
+    """Company key -> (reason, display name) for companies the club has already reached.
+
+    A reply and a booked meeting stop follow-ups and hold first sends alike;
+    a reply is reported first when both apply.
+    """
+    index = {key: (HELD_COMPANY_MEETING, label) for key, label in (await meeting_companies(db)).items()}
+    index.update({key: (HELD_COMPANY_REPLIED, label) for key, label in (await replied_companies(db)).items()})
+    return index
+
+
+def company_stop(index: dict[str, tuple[str, str]], company: str | None, domain: str | None,
+                 email: str | None) -> tuple[str, str] | None:
+    """(reason, company name) if the company replied or booked a meeting, else None."""
     for key in sorted(company_keys(company, domain, email)):
         if key in index:
             return index[key]
@@ -321,19 +358,19 @@ async def select_sendable(db, campaign_id: int, rows: list, sender_id: int | Non
     proven = await proven_hosts(db, by_id.values())
     history = await _host_history(db, campaign_id)
     recently_mailed = await _mailed_by_teammates(db, rows, sender_id)
-    replied = await replied_companies(db)
+    conversations = await company_conversations(db)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=grace_minutes())
 
     sendable: list = []
     held: list[dict[str, Any]] = []
     probing = set() if probing is None else probing
     for row in rows:
-        # One reply anywhere at the company outranks every per-person rule:
-        # the next email from any member reaches the same people.
-        replied_at = company_reply(replied, row.get("company"), row.get("company_domain"), row.get("email"))
-        if replied_at:
+        # One reply or booked meeting anywhere at the company outranks every
+        # per-person rule: the next email from any member reaches the same people.
+        stop = company_stop(conversations, row.get("company"), row.get("company_domain"), row.get("email"))
+        if stop:
             held.append({"row": row, "host": by_id.get(row["id"]) or "",
-                         "reason": HELD_COMPANY_REPLIED, "company": replied_at})
+                         "reason": stop[0], "company": stop[1]})
             continue
         # The club sends as individual members, so nothing downstream would
         # notice two of them writing to the same person. The recipient would.
@@ -377,6 +414,7 @@ def describe_hold(held: list[dict[str, Any]]) -> str:
     if not held:
         return ""
     replied = sorted({h.get("company") or "that company" for h in held if h["reason"] == HELD_COMPANY_REPLIED})
+    meetings = sorted({h.get("company") or "that company" for h in held if h["reason"] == HELD_COMPANY_MEETING})
     capped = [h for h in held if h["reason"] == HELD_COMPANY_CAP]
     teammates = sorted({h.get("teammate") or "a teammate" for h in held if h["reason"] == HELD_TEAMMATE_SENT})
     bounced = sorted({h["host"] for h in held if h["reason"] == HELD_PROBE_BOUNCED})
@@ -393,6 +431,12 @@ def describe_hold(held: list[dict[str, Any]]) -> str:
         held_n = sum(1 for h in held if h["reason"] == HELD_COMPANY_REPLIED)
         parts.append(
             f"{held_n} recipient(s) held: a teammate already has a reply from {', '.join(replied)}. "
+            "Remove them, or ask who is further along."
+        )
+    if meetings:
+        held_n = sum(1 for h in held if h["reason"] == HELD_COMPANY_MEETING)
+        parts.append(
+            f"{held_n} recipient(s) held: A teammate already has a meeting with {', '.join(meetings)}. "
             "Remove them, or ask who is further along."
         )
     for company in sorted({h["company"] for h in capped}):

@@ -7,7 +7,7 @@ python-multipart>=0.0.9
 pydantic>=2.10
 pydantic-settings>=2.6
 aiosmtplib==5.1.2
-dnspython==2.9.0
+dnspython==2.9.2
 validators==0.22.0
 python-dotenv>=1.0
 openpyxl>=3.1

@@ -143,8 +143,8 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
   }, [open]);
   return (
     <span ref={wrapRef} className="relative inline-flex max-w-full" data-company-chip={company.name}>
-      <span className={`company-chip-body inline-flex h-9 max-w-full items-center gap-2 overflow-hidden rounded-full border pl-4 pr-0 text-sm ${
-        sure ? 'border-deep-navy bg-deep-navy text-white' : 'border-amber-300 bg-amber-50 text-amber-950'}`}>
+      <span className={`company-chip-body inline-flex h-9 max-w-full items-center gap-2 overflow-hidden border pl-4 pr-0 text-sm ${
+        sure ? 'border-deep-navy bg-deep-navy text-white' : 'border-pale-sky bg-pale-sky/60 text-deep-navy'}`}>
         <span className="truncate font-medium" title={company.name}>{company.name}</span>
         {(company.targetCountry || company.country) && (
           <span className="shrink-0 text-xs opacity-80" data-testid="chip-country">
@@ -165,7 +165,7 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
         </Button>
       </span>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-80 max-w-[90vw] space-y-1 rounded-xl border border-pale-sky bg-white p-2 text-sm text-deep-navy shadow-lg">
+        <div className="absolute left-0 top-full z-30 mt-1 w-80 max-w-[90vw] space-y-1 border border-pale-sky bg-white p-2 text-sm text-deep-navy">
           {company.country && (
             <div className="flex flex-wrap items-center gap-2 px-2 pb-1">
               <span className="text-xs text-slate-500">Where:</span>
@@ -190,7 +190,8 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
           {(company.alternatives || []).map((alt) => (
             <button key={`${alt.name}-${alt.country || ''}`} type="button"
                     onClick={() => { setOpen(false); if (alt.entity) onPick(alt); else onReplace(alt.name); }}
-                    className="block w-full truncate rounded-lg px-2 py-1.5 text-left hover:bg-pale-sky/40">
+                    title={`${alt.name}${alt.country ? ` · ${countryLabel(alt.country)}` : ''}`}
+                    className="block w-full truncate px-2 py-1.5 text-left hover:bg-pale-sky/40">
               {alt.name}
               <span className="text-xs text-slate-500">
                 {alt.country ? ` · ${countryLabel(alt.country)}` : ''}
@@ -207,7 +208,7 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
           }}>
             <input value={link} onChange={(e) => setLink(e.target.value)} aria-label="Their LinkedIn page"
                    placeholder="Paste their LinkedIn page instead"
-                   className="min-w-0 flex-1 rounded-lg border border-pale-sky px-2 py-1.5 text-xs" />
+                   className="min-w-0 flex-1 border border-pale-sky px-2 py-1.5 text-xs" />
             <button type="submit" className="ui-button ui-button--secondary ui-button--sm">Use</button>
           </form>
         </div>
@@ -232,8 +233,8 @@ function StepHeading({ n, title, hint, step, onSelect }: {
         step === n ? 'bg-pale-sky/40' : 'hover:bg-pale-sky/20'}`}
       aria-current={step === n}
     >
-      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-semibold ${
-        step > n ? 'bg-emerald-600 text-white' : step === n ? 'bg-deep-navy text-white' : 'bg-pale-sky text-slate-600'}`}>
+      <span className={`grid h-6 w-6 shrink-0 place-items-center text-xs font-semibold ${
+        step > n ? 'bg-[var(--blue-600)] text-white' : step === n ? 'bg-deep-navy text-white' : 'bg-pale-sky text-slate-600'}`}>
         {step > n ? '✓' : n}
       </span>
       <span className="min-w-0">
@@ -589,15 +590,15 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   }, [chosen, findPeople]);
 
   return (
-    // 18.25rem is the shell around this grid at xl: header, main padding,
+    // 21.625rem is the shell around this grid at xl: header, main padding,
     // page header and subnav above; workspace and main padding below. The
     // grid fills the rest exactly so the page never grows a scrollbar of
     // its own beside the rail's and the surface's.
-    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 xl:h-[calc(100vh-18.25rem)]"
+    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 xl:h-[calc(100vh-21.625rem)]"
          data-section="campaign-pipeline">
       <div ref={rootRef}
            data-rail
-           className="xl:col-span-2 min-h-0 xl:max-h-full xl:overflow-y-auto surface-card rounded-2xl border border-[var(--border)] shadow-sm overflow-hidden self-start">
+           className="xl:col-span-2 min-h-0 xl:max-h-full xl:overflow-y-auto surface-card surface-card--flush overflow-hidden self-start">
       <StepHeading n={1} title="Add companies" hint={chosen.length ? `${chosen.length} added` : 'A name or its LinkedIn page'} step={step} onSelect={setStep} />
       {step === 1 && (
         <div className="px-5 pb-5 space-y-3 border-b border-pale-sky">
@@ -708,7 +709,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
                 value={fn}
                 onChange={(e) => setFn(e.target.value as Fn | '')}
                 aria-label="Function to look for"
-                className="rounded-lg border border-pale-sky bg-white px-3 py-1.5 text-sm font-normal text-deep-navy"
+                className="border border-pale-sky bg-white px-3 py-1.5 text-sm font-normal text-deep-navy"
               >
                 <option value="">Any function</option>
                 {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
@@ -722,7 +723,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
             </p>
             {showOtherTitles && (
               <input
-                className="mt-1 w-full rounded-lg border border-pale-sky px-3 py-2 text-sm text-deep-navy"
+                className="mt-1 w-full border border-pale-sky px-3 py-2 text-sm text-deep-navy"
                 aria-label="Other titles"
                 value={titleHints}
                 onChange={(e) => setTitleHints(e.target.value)}
@@ -743,7 +744,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
                 onChange={(e) => setMaxText(e.target.value)}
                 onBlur={() => setMaxText(String(maxProspects))}
                 aria-describedby="pipeline-max-hint"
-                className="w-24 rounded-lg border border-pale-sky px-3 py-2 text-sm text-deep-navy"
+                className="w-24 border border-pale-sky px-3 py-2 text-sm text-deep-navy"
               />
               <span id="pipeline-max-hint" className="text-xs text-slate-500">
                 per company. A search keeps going until it has this many, or the company has no more.
@@ -841,7 +842,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
         </div>
       )}
 
-      {error && <p className="px-5 pb-4 text-sm text-red-700">{error}</p>}
+      {error && <p className="ui-notice ui-notice--danger mx-5 mb-4">{error}</p>}
       </div>
 
       {/* The surface: the same two things at every step, in the same order,
@@ -870,7 +871,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
         />
 
         {chosen.length > 0 ? (
-          <section className="surface-card rounded-2xl border border-pale-sky px-4 pb-4" aria-label="People" data-testid="sheet">
+          <section className="surface-card surface-card--compact" aria-label="People" data-testid="sheet">
             <RecipientPicker
               mode={PICKER_MODE[step]}
               companies={chosen}
@@ -892,7 +893,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
             />
           </section>
         ) : (
-          <section className="surface-card rounded-2xl border border-pale-sky p-4 text-sm text-slate-500" aria-label="People">
+          <section className="surface-card text-sm text-slate-500" aria-label="People">
             Choose a company and the people on file there appear here.
           </section>
         )}

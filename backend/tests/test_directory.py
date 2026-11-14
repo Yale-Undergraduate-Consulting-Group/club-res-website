@@ -208,6 +208,22 @@ def tests() -> None:
     assert (wide["shared@acme.com"]["state"], wide["shared@acme.com"]["by"], wide["shared@acme.com"]["sends"]) == ("contacted", "Ben", 2)
     assert wide["queued@clean.com"]["state"] == "queued" and wide["nobody5@nowhere.com"]["state"] == "not_contacted"
 
+    # A prospect-only row carries the run and prospect behind it; a contact row does not.
+    prospect_row = by_email["verified-prospect@gamma.com"]
+    assert (prospect_row["run_id"], prospect_row["contact_id"]) == (1, None) and prospect_row["prospect_id"], prospect_row
+    assert by_email["shared@acme.com"]["run_id"] is None and by_email["shared@acme.com"]["prospect_id"] is None
+    assert by_email["dup@beta.com"]["prospect_id"] is None, "a person already on file is imported"
+
+    # The existing import route is the directory's import path, with the run's own visibility:
+    # a member cannot bring in a prospect from a run they cannot read.
+    for hidden_run in (2, 3):
+        refused = ana.post(f"/api/yucgoutreach/runs/{hidden_run}/import-contacts", json={"prospect_ids": [prospect_row["prospect_id"]]})
+        assert refused.status_code == 404, (hidden_run, refused.text)
+    imported = ana.post("/api/yucgoutreach/runs/1/import-contacts", json={"prospect_ids": [prospect_row["prospect_id"]]})
+    assert imported.status_code == 200 and imported.json()["created"] == 1, imported.text
+    after = next(r for r in listed(ana, q="verified-prospect@gamma.com")["items"])
+    assert after["contact_id"] and after["run_id"] is None and after["on_file"] is True and after["ready"] is True, after
+
 
 if __name__ == "__main__":
     tests()

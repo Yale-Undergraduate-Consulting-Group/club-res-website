@@ -87,7 +87,7 @@ export default function Invitations() {
       await copyLink(result.link);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <section className="surface-card p-6 mb-6">
+  return <section className="surface-card mb-6">
     <h2 className="app-section-title">Member invitations</h2>
     <p className="text-sm my-2">Paste Yale email addresses or upload a CSV (any column). Every address gets a result; then send the invitations from your connected Gmail account, one at a time or all at once.</p>
     <label className="block" htmlFor="invitation-emails">Email addresses</label>
@@ -101,7 +101,7 @@ export default function Invitations() {
       <button className="ui-button ui-button--secondary" disabled={busy || emailsIn(emails).length === 0} onClick={() => void create()}>Create {emailsIn(emails).length || ''} invitation{emailsIn(emails).length === 1 ? '' : 's'}</button>
       <button className="ui-button ui-button--secondary" disabled={busy || !items.some((i) => i.state === 'pending' && i.delivery_state === 'ready')} onClick={() => void sendAll()}>Send all ready ({items.filter((i) => i.state === 'pending' && i.delivery_state === 'ready').length})</button>
     </div>
-    {error && <p role="alert" className="text-red-700 my-2">{error}</p>}
+    {error && <p role="alert" className="ui-notice ui-notice--danger my-2">{error}</p>}
     {report && <div role="status" className="ui-notice ui-notice--info my-3 text-sm">
       Created {report.created}{report.skipped.length ? `; skipped ${report.skipped.length}:` : '.'}
       {report.skipped.length > 0 && <ul className="mt-1 list-disc pl-5">{report.skipped.map((r) => <li key={r.email}>{r.email}: {r.reason}</li>)}</ul>}

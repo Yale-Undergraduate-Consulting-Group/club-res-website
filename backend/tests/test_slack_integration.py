@@ -334,6 +334,48 @@ async def the_channel_digest_posts_with_a_refreshed_install_token() -> None:
     os.environ["SLACK_DIGEST_CHANNEL_ID"] = ""
 
 
+async def a_week_event_posts_with_the_install_token_then_the_env_token_then_nothing() -> None:
+    from app.services.week_slack import post_week_event
+    from app.token_crypto import encrypt_token
+
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE user_slack_tokens SET access_token = ?, refresh_token = NULL, token_expires_at = NULL WHERE user_id = ?",
+            (encrypt_token("xoxb-install"), MEMBER["id"]),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    os.environ["SLACK_BOT_TOKEN"] = "xoxb-pasted"
+    os.environ["SLACK_DIGEST_CHANNEL_ID"] = "C0CLUB"
+    posted: list[str] = []
+
+    async def slack(url, *args, **kwargs):
+        posted.append(kwargs["headers"]["Authorization"])
+        return httpx.Response(200, json={"ok": True})
+
+    with patch("httpx.AsyncClient.post", AsyncMock(side_effect=slack)):
+        assert await post_week_event("Week slate created") is True
+        assert posted == ["Bearer xoxb-install"]
+
+        db = await get_db()
+        try:
+            await db.execute("DELETE FROM user_slack_tokens")
+            await db.commit()
+        finally:
+            await db.close()
+        posted.clear()
+        assert await post_week_event("Week slate created") is True
+        assert posted == ["Bearer xoxb-pasted"]
+
+        os.environ["SLACK_BOT_TOKEN"] = ""
+        posted.clear()
+        assert await post_week_event("Week slate created") is False
+        assert posted == []
+    os.environ["SLACK_DIGEST_CHANNEL_ID"] = ""
+
+
 async def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATABASE_URL"] = f"sqlite:///{Path(tmp) / 'slack.db'}"
@@ -367,6 +409,7 @@ async def main() -> None:
         await an_install_without_rotation_still_works()
         await the_digest_job_runs_without_a_slack_install()
         await the_channel_digest_posts_with_a_refreshed_install_token()
+        await a_week_event_posts_with_the_install_token_then_the_env_token_then_nothing()
         print("slack integration: ok")
 
 

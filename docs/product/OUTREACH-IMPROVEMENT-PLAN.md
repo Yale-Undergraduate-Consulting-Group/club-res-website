@@ -91,7 +91,10 @@ This is the weakest area, and it is not a rough edge; it is absent.
    (`follow_up_job.py`). *Resolved 2026-11-12 (teammate reply, touch cap):* a reply
    from anyone at the company, by any member, stops every follow-up there and holds
    pending first sends, and `COMPANY_SEND_CAP` limits first touches per company
-   across the club (`send_gating.py`). A booked meeting is still open.
+   across the club (`send_gating.py`). *Resolved 2026-11-14 (booked meeting):* a
+   contact at `meeting` or `closed` stops follow-ups to them and to everyone at
+   their company, and holds pending first sends there, through the same
+   club-wide index as a reply; moving the contact back resumes.
 9. **No send window.** The drain runs every five minutes and sends whenever it
    fires. No business hours, no recipient timezone, no "not 03:00 on Sunday".
    For a club whose account reputation is a member's personal Gmail, this is the
