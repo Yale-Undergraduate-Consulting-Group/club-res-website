@@ -211,7 +211,7 @@ export default function Surveys() {
               <div className="survey-import">
                 <p>Paste or upload questions as text; no AI involved. Number each question and put its type in brackets.</p>
                 <textarea
-                  className="ui-input w-full font-mono text-sm"
+                  className="ui-input w-full text-sm"
                   rows={6}
                   value={importText}
                   placeholder={IMPORT_EXAMPLE}
