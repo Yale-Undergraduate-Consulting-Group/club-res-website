@@ -11,7 +11,7 @@ describe('navigation', () => {
 
   it('gives every app on the hub a home page it serves', () => {
     const paths = MODULES.flatMap((m) => m.routes.map((r) => ('index' in r ? '/' : `/${r.path}`)));
-    for (const module of MODULES.filter((m) => m.description)) expect(paths).toContain(module.nav[0].to);
+    for (const module of MODULES.filter((m) => m.id !== 'core')) expect(paths).toContain(module.nav[0].to);
   });
 
   it('shows Admin only to administrators', () => {

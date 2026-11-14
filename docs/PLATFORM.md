@@ -60,15 +60,14 @@ change in behaviour.
 
 ## Portal
 
-The site is "YUCG Resources". Sign-in (`LoginPage`) lists the apps; Home (`/`,
-`pages/Hub.tsx`, core) is a centred tile per app the member may use: the
-app's icon, title and `description` from its manifest, linking to the app's
-first menu entry, plus an admin link for admins. Each app has its own home
-page: Outreach's is Overview at `/campaigns`. An app appears on the hub when
-its `AppModule` sets `description`; its `icon` is a line drawing in
-`components/AppIcons.tsx` (24-unit grid, `currentColor`, 1.6 stroke), and an
-app without one shows its initial. The header (`HEADER_LAYOUT` in
-`lib/navConfig.ts`) lists Home, then each app.
+The site is "YUCG Resources". Sign-in (`LoginPage`) is the logo, the name and
+the sign-in button; Home (`/`, `pages/Hub.tsx`, core) is a centred tile per
+app the member may use (every app but core): the app's icon and title,
+linking to its first menu entry, plus an Admin link for admins. Each app has
+its own home page: Outreach's is Overview at `/campaigns`. The `icon` in an
+app's `AppModule` is a line drawing in `components/AppIcons.tsx` (24-unit
+grid, `currentColor`, 1.6 stroke); an app without one shows its initial. The
+header (`HEADER_LAYOUT` in `lib/navConfig.ts`) lists Home, then each app.
 
 ## Apps today
 

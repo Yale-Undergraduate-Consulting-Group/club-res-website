@@ -26,9 +26,7 @@ export type AppNavItem = {
 export type AppModule = {
   id: string;
   title: string;
-  /** One line for the portal hub card; platform pages without a card omit it. */
-  description?: string;
-  /** The app's icon on the hub; an app without one shows its initial. */
+  /** The app's icon on the Home hub, where every app but core has a tile; without one it shows its initial. */
   icon?: ReactNode;
   routes: AppRoute[];
   /** The first entry is the app's home: where the hub card leads. */
@@ -53,7 +51,6 @@ const core: AppModule = {
 const outreach: AppModule = {
   id: 'outreach',
   title: 'Outreach',
-  description: 'Find contacts at companies, draft each of them a personal email, and follow what comes back.',
   icon: <OutreachIcon />,
   routes: [
     { path: 'scraper', element: <Scraper /> },
@@ -77,7 +74,6 @@ const outreach: AppModule = {
 const surveys: AppModule = {
   id: 'surveys',
   title: 'Survey builder',
-  description: 'Turn project background and hypotheses into a survey draft, then create it in Qualtrics.',
   icon: <SurveyIcon />,
   routes: [{ path: 'surveys', element: <Surveys /> }],
   nav: [{ id: 'surveys', to: '/surveys', label: 'Survey builder', shortLabel: 'Surveys' }],
@@ -86,7 +82,6 @@ const surveys: AppModule = {
 const sentiment: AppModule = {
   id: 'sentiment',
   title: 'Market sentiment',
-  description: 'Sentiment from interview transcripts, Reddit and Google reviews.',
   icon: <SentimentIcon />,
   routes: [{ path: 'sentiment', element: <Sentiment /> }],
   nav: [{ id: 'sentiment', to: '/sentiment', label: 'Market sentiment', shortLabel: 'Sentiment' }],
