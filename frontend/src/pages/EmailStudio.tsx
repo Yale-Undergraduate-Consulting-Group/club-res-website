@@ -140,7 +140,7 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
           onClick={() => setExpanded((e) => !e)}
           className="flex-1 min-w-0 px-3 py-2 flex items-center gap-2 hover:bg-pale-sky/15 dark:hover:bg-slate-600/50 text-left text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]"
         >
-          <span className="truncate min-w-0">{company}</span>
+          <span className="truncate min-w-0" title={company}>{company}</span>
           <span className="text-[var(--text-muted)] text-xs shrink-0">({contacts.length})</span>
           <span className="ui-disclosure-chevron text-[var(--text-muted)] text-xs shrink-0 ml-auto" data-open={expanded} aria-hidden>▼</span>
         </button>
@@ -167,9 +167,9 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
                 onClick={() => onSelect(c)}
                 className="flex-1 min-w-0 text-left py-2 pr-2"
               >
-                <div className="font-medium text-deep-navy dark:text-[var(--text-primary)] text-xs truncate">{c.name || c.email}</div>
-                <div className="text-xs text-[var(--text-muted)] truncate">{c.title}{c.company ? ` • ${c.company}` : ''}</div>
-                {lastSendHint(c) && <div className="text-[11px] text-[var(--text-muted)] truncate">{lastSendHint(c)}</div>}
+                <div className="font-medium text-deep-navy dark:text-[var(--text-primary)] text-xs truncate" title={c.name || c.email}>{c.name || c.email}</div>
+                <div className="text-xs text-[var(--text-muted)] truncate" title={`${c.title ?? ''}${c.company ? ` • ${c.company}` : ''}`}>{c.title}{c.company ? ` • ${c.company}` : ''}</div>
+                {lastSendHint(c) && <div className="text-[11px] text-[var(--text-muted)] truncate" title={lastSendHint(c) ?? undefined}>{lastSendHint(c)}</div>}
               </button>
             </div>
           ))}
@@ -1012,9 +1012,9 @@ export default function EmailStudio() {
                           }}
                           className="flex-1 min-w-0 text-left py-2 pr-2"
                         >
-                          <div className="font-medium text-deep-navy dark:text-[var(--text-primary)] text-xs truncate">{c.name || c.email}</div>
-                          <div className="text-xs text-[var(--text-muted)] truncate">{c.title}{c.company ? ` • ${c.company}` : ''}</div>
-                          {lastSendHint(c) && <div className="text-[11px] text-[var(--text-muted)] truncate">{lastSendHint(c)}</div>}
+                          <div className="font-medium text-deep-navy dark:text-[var(--text-primary)] text-xs truncate" title={c.name || c.email}>{c.name || c.email}</div>
+                          <div className="text-xs text-[var(--text-muted)] truncate" title={`${c.title ?? ''}${c.company ? ` • ${c.company}` : ''}`}>{c.title}{c.company ? ` • ${c.company}` : ''}</div>
+                          {lastSendHint(c) && <div className="text-[11px] text-[var(--text-muted)] truncate" title={lastSendHint(c) ?? undefined}>{lastSendHint(c)}</div>}
                         </button>
                       </div>
                     ))
@@ -1058,7 +1058,7 @@ export default function EmailStudio() {
                         onClick={() => loadDraftIntoEditor(ge)}
                       >
                         <div className="font-medium text-sm">{ge.name || ge.email}</div>
-                        <div className="text-xs text-slate-500 truncate">{ge.subject}</div>
+                        <div className="text-xs text-slate-500 truncate" title={ge.subject ?? undefined}>{ge.subject}</div>
                       </li>
                     ))}
                   </ul>
@@ -1175,7 +1175,7 @@ export default function EmailStudio() {
             </div>
             <div className="border-t border-pale-sky dark:border-slate-600 pt-3">
               <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Recipient details</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="email-studio-auto-grid">
                 <input
                   type="text"
                   placeholder="Name"
@@ -1206,7 +1206,7 @@ export default function EmailStudio() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="email-studio-auto-grid mb-4">
               <div className="min-w-0">
                 <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Tone</label>
                 <select aria-label="Tone"
@@ -1342,7 +1342,7 @@ export default function EmailStudio() {
                                   onChange={() => toggleCompanyPick(row.company)}
                                   className="rounded border-slate-400 dark:border-slate-500 text-[var(--accent)] focus:ring-[var(--accent)] shrink-0"
                                 />
-                                <span className="truncate min-w-0">{row.company}</span>
+                                <span className="truncate min-w-0" title={row.company}>{row.company}</span>
                                 <span className="text-xs text-[var(--text-muted)] shrink-0">({row.contact_count})</span>
                               </label>
                             ))}
@@ -1430,10 +1430,10 @@ export default function EmailStudio() {
                                   className="rounded border-slate-400 text-[var(--accent)] focus:ring-[var(--accent)] shrink-0"
                                   aria-label={`Select ${c.name || c.email}`}
                                 />
-                                <span className="truncate text-sm font-medium text-deep-navy min-w-0">
+                                <span className="truncate text-sm font-medium text-deep-navy min-w-0" title={c.name || c.email}>
                                   {c.name || c.email}
                                 </span>
-                                <span className="text-xs text-slate-600 truncate min-w-0">{c.title}</span>
+                                <span className="text-xs text-slate-600 truncate min-w-0" title={c.title ?? undefined}>{c.title}</span>
                               </label>
                             ))}
                           </div>
@@ -1580,7 +1580,7 @@ export default function EmailStudio() {
                           {selectedAttachments.map((item) => (
                             <li key={item.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                               <span className="text-xs font-medium text-[var(--text-muted)]">File</span>
-                              <span className="truncate">{item.display_name || item.filename}</span>
+                              <span className="truncate" title={item.display_name || item.filename}>{item.display_name || item.filename}</span>
                               <button type="button" onClick={() => toggleAttachment(item.id)} className="ml-auto text-xs text-[var(--text-muted)] hover:text-deep-navy">Remove</button>
                             </li>
                           ))}
@@ -1623,7 +1623,7 @@ export default function EmailStudio() {
                   {/* One row, one height. The delivery target used to sit in a
                       sentence beside the buttons, which wrapped the row onto a
                       second line; it belongs on the button that uses it. */}
-                  <div className="studio-draft-actions flex items-center gap-2 min-w-0">
+                  <div className="studio-draft-actions flex flex-wrap items-center gap-2 min-w-0">
                     <button
                       onClick={saveCurrentAsDraft}
                       disabled={draftSaving || (!email?.subject && !email?.body)}
@@ -1637,9 +1637,7 @@ export default function EmailStudio() {
                       title={`Sends this draft to ${user?.email || 'your inbox'} so you can check delivery`}
                       className="ui-button ui-button--secondary min-w-0"
                     >
-                      <span className="truncate">
-                        {testSending ? 'Sending…' : `Send test to ${user?.email || 'myself'}`}
-                      </span>
+                      {testSending ? 'Sending…' : `Send test to ${user?.email || 'myself'}`}
                     </button>
                     <input
                       type="text"

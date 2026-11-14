@@ -12,8 +12,9 @@
   outline-offset: 2px;
 }
 
+/* Controls keep one 40px row when their text fits and grow, wrapping the
+   label, when it does not: a fixed height sliced the second line. */
 .ui-button {
-  height: var(--control-height);
   min-height: var(--control-height);
   box-sizing: border-box;
   display: inline-flex;
@@ -29,7 +30,8 @@
   font-size: 0.8125rem;
   font-weight: 700;
   line-height: 1.2;
-  white-space: nowrap;
+  text-align: center;
+  overflow-wrap: anywhere;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -42,7 +44,6 @@
 }
 
 .ui-button--sm {
-  height: var(--control-height-sm);
   min-height: var(--control-height-sm);
   padding: 0.25rem 0.875rem;
   font-size: 0.8125rem;
@@ -59,9 +60,9 @@
 .ui-button--icon.ui-button--sm { width: var(--control-height-sm); }
 
 /* Toggles, filters and segmented choices: white with a steel edge; the
-   selected one is a navy-900 bar with white text. Size is fixed. */
+   selected one is a navy-900 bar with white text. One row when the label
+   fits; it wraps instead of being cut when it does not. */
 .ui-chip {
-  height: var(--control-height-sm);
   min-height: var(--control-height-sm);
   box-sizing: border-box;
   display: inline-flex;
@@ -77,7 +78,8 @@
   font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.2;
-  white-space: nowrap;
+  text-align: center;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -190,15 +192,26 @@
   select:not([multiple]):not([size])
 ) {
   box-sizing: border-box;
-  height: var(--control-height);
   min-height: var(--control-height);
   padding-block: 0;
+}
+
+/* Multi-line fields never shrink below the lines their placeholder needs. */
+:where(textarea) {
+  min-height: 5rem;
+  overflow-wrap: anywhere;
+}
+
+/* The arrow is drawn in the right padding. A component class that sets its
+   own padding (ui-input--sm, a Tailwind px-*) must not pull the text under it,
+   so this rule is deliberately more specific than those. */
+select:not([multiple]):not([size]) {
+  padding-right: 2rem;
 }
 
 :where(select:not([multiple]):not([size])) {
   appearance: none;
   cursor: pointer;
-  padding-right: 1.75rem;
   background-image:
     linear-gradient(45deg, transparent 50%, var(--navy-900) 50%),
     linear-gradient(135deg, var(--navy-900) 50%, transparent 50%);

@@ -190,6 +190,7 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
           {(company.alternatives || []).map((alt) => (
             <button key={`${alt.name}-${alt.country || ''}`} type="button"
                     onClick={() => { setOpen(false); if (alt.entity) onPick(alt); else onReplace(alt.name); }}
+                    title={`${alt.name}${alt.country ? ` · ${countryLabel(alt.country)}` : ''}`}
                     className="block w-full truncate px-2 py-1.5 text-left hover:bg-pale-sky/40">
               {alt.name}
               <span className="text-xs text-slate-500">

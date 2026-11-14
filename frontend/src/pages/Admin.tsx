@@ -436,7 +436,7 @@ export default function Admin() {
                           selectedProject?.id === p.id ? 'bg-pale-sky/50 font-medium' : 'hover:bg-pale-sky/20'
                         }`}
                       >
-                        <span className="truncate">{p.semester ? `${p.semester} — ` : ''}{p.name}</span>
+                        <span className="truncate" title={`${p.semester ? `${p.semester} — ` : ''}${p.name}`}>{p.semester ? `${p.semester} — ` : ''}{p.name}</span>
                         <StatusBadge tone={p.discussable ? 'success' : 'neutral'}>
                           {p.discussable ? 'Discussable' : 'Under NDA'}
                         </StatusBadge>

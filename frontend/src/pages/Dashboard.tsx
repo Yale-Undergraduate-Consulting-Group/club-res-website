@@ -128,7 +128,7 @@ export default function Dashboard() {
                       to={`/campaigns/${c.id}`}
                       className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-pale-sky/30"
                     >
-                      <span className="font-medium text-deep-navy truncate">{c.name}</span>
+                      <span className="font-medium text-deep-navy truncate" title={c.name}>{c.name}</span>
                       <span className="text-xs font-semibold text-deep-navy whitespace-nowrap">
                         {c.status === 'needs_attention' ? `${c.failed_count || 0} failed` : 'Paused'}
                       </span>
@@ -176,7 +176,7 @@ export default function Dashboard() {
                       className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-pale-sky/30"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="font-medium text-deep-navy truncate">{c.name}</span>
+                        <span className="font-medium text-deep-navy truncate" title={c.name}>{c.name}</span>
                         <span className="block text-xs text-slate-500">
                           {c.contact_count ?? 0} recipients · {c.sent_count ?? 0} sent
                         </span>
@@ -322,7 +322,7 @@ export default function Dashboard() {
                     {row.picture && (
                       <img src={row.picture} alt="" className="w-7 h-7" referrerPolicy="no-referrer" />
                     )}
-                    <span className="flex-1 text-sm font-medium text-deep-navy truncate">
+                    <span className="flex-1 text-sm font-medium text-deep-navy truncate" title={row.name || 'Member'}>
                       {row.name || 'Member'}
                       {row.user_id === user?.id ? ' (you)' : ''}
                     </span>
