@@ -36,6 +36,7 @@ _SOURCE_LABELS = {
     "inferred": "Guessed from format",
     "linkedin_inferred": "Guessed from format",
     "roster_sec": "SEC filings",
+    "roster_register": "Company filing",
     "roster_cache": "Club roster",
     "yucgoutreach": "Find people",
     "studio": "Added in Drafts",

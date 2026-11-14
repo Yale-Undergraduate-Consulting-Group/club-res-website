@@ -48,10 +48,10 @@ function ContactCard({ c, selectedContact, selectedIds, onSelect, onToggleSelect
           className="rounded shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-slate-800 truncate text-sm">{c.name || c.email}</div>
-          <div className="text-xs text-slate-500 truncate mt-0.5">{c.company || c.email}</div>
+          <div className="font-medium text-slate-800 truncate text-sm" title={c.name || c.email}>{c.name || c.email}</div>
+          <div className="text-xs text-slate-500 truncate mt-0.5" title={c.company || c.email}>{c.company || c.email}</div>
           {c.last_sent_at && (
-            <div className="text-[11px] text-slate-400 truncate mt-0.5">
+            <div className="text-[11px] text-slate-400 truncate mt-0.5" title={`Last send${c.last_campaign_name ? `: ${c.last_campaign_name}` : ''} · ${String(c.last_sent_at).slice(0, 10)}`}>
               Last send{c.last_campaign_name ? `: ${c.last_campaign_name}` : ''} · {String(c.last_sent_at).slice(0, 10)}
             </div>
           )}
@@ -95,7 +95,7 @@ function CompanyFolder({ company, contacts, outcome, selectedContact, selectedId
         className="w-full px-3 py-2 flex items-center justify-between bg-pale-sky/20 hover:bg-pale-sky/30 text-left text-sm font-medium text-deep-navy"
       >
         <span className="min-w-0 flex-1">
-          <span className="truncate block">{company}</span>
+          <span className="truncate block" title={company}>{company}</span>
           <span className={`block text-xs font-normal ${outcome?.bounced_count ? 'text-deep-navy' : 'text-slate-500'}`}>
             {outcomeLine(outcome)}
           </span>

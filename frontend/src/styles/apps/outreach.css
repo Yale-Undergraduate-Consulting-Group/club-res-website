@@ -146,13 +146,30 @@
 .email-studio-field {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   min-width: 0;
 }
 
+/* A label sits on its own line above its field; the field is never squeezed
+   below the lines its placeholder needs (field-sizing grows it with its text
+   where the browser supports it), and a long answer scrolls inside it. */
+.email-studio-field > label { line-height: 1.4; }
+
 .email-studio-grow-field {
   width: 100%;
-  min-height: 4.5rem;
+  min-height: 6.5rem;
+  max-height: 16rem;
+  field-sizing: content;
   resize: vertical;
+}
+
+/* Side-by-side only while each cell keeps room for its own text: the
+   assistant panel is narrow on a laptop and wide on a phone. */
+.email-studio-auto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .email-studio-brief-grid {
@@ -274,14 +291,9 @@
     grid-template-columns: 1fr;
   }
 
+  /* The assistant panel scrolls; its fields keep their own height. */
   .email-studio-field--grow {
-    flex: 1 1 5.5rem;
-    min-height: 5.5rem;
-  }
-
-  .email-studio-field--grow .email-studio-grow-field {
-    flex: 1 1 auto;
-    min-height: 5rem;
+    flex: 0 0 auto;
   }
 
   .email-studio-main {
@@ -310,10 +322,12 @@
     overflow: auto;
   }
 
+  /* The compose area takes the height its content needs and the editor
+     section scrolls. It used to be a fixed-height, overflow-hidden box that
+     sliced the attachments row when the window was short. */
   .email-studio-compose {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: 18rem;
-    overflow: hidden;
     align-items: stretch;
   }
 
@@ -321,21 +335,11 @@
   .email-studio-gmail-rail {
     display: flex;
     flex-direction: column;
-    min-height: 0;
-    overflow: auto;
   }
 
   .email-studio-editor-column > :not(.email-studio-editor-stack),
   .email-studio-gmail-rail > h3 {
     flex-shrink: 0;
-  }
-
-  .studio-draft-actions {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    padding-block: 0.5rem;
-    background: var(--surface);
   }
 
   .email-studio-editor-stack {
@@ -353,7 +357,6 @@
   .email-studio-body {
     flex: 1 1 auto;
     min-height: 17.5rem;
-    padding-bottom: 5rem;
   }
 
   .email-studio-gmail-card {
@@ -567,7 +570,7 @@
 
 .email-toolbar__button {
   min-width: var(--control-height-sm);
-  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -590,7 +593,7 @@
   color: var(--btn-primary-text);
 }
 
-.email-toolbar__select { height: var(--control-height-sm); min-height: var(--control-height-sm); width: auto; max-width: 8.5rem; }
+.email-toolbar__select { min-height: var(--control-height-sm); width: auto; max-width: 100%; }
 
 .email-toolbar__divider {
   width: 1px;
@@ -605,7 +608,7 @@
   align-items: center;
   justify-content: center;
   min-width: var(--control-height-sm);
-  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   border-radius: var(--radius-control);
   font-size: 0.8125rem;
   font-weight: 700;

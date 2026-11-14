@@ -140,6 +140,82 @@ async def cached_roster_contacts(
         await db.close()
 
 
+_REGISTER_RANK = {"roster_sec": 0, "roster_register": 1, "roster_cache": 2}
+
+
+async def register_officer_contacts(
+    company_name: str, domain: str | None, *, legal_name: str | None = None
+) -> list[dict[str, Any]]:
+    """Officers stored in company_register_people for the register entity this
+    company is, as contact dicts (contact_source 'roster_register').
+
+    The company is the register's entity when its name derives the same
+    entity_key the register stored (US or GB, as register_names.derive reads
+    it), or when a register row carries the run's domain. Nothing is fetched:
+    these are the officers a bulk ingest or the member's "Look up officers"
+    already stored. Addresses are derived on ``domain`` only, through the
+    gates roster people pass; with no domain the person has none.
+    """
+    from app.services.company_register import register_entity_people
+    from app.services.register_names import derive
+
+    names = [n.strip() for n in (company_name, legal_name) if n and n.strip()]
+    dom = normalize_domain(domain or "")
+    keys = {derive(n, c).entity_key for n in names for c in ("US", "GB")}
+    db = await get_db()
+    try:
+        if dom:
+            rows = await (await db.execute(
+                "SELECT DISTINCT entity_key FROM company_register WHERE company_domain=? AND entity_key IS NOT NULL",
+                (dom,),
+            )).fetchall()
+            keys.update(r["entity_key"] for r in rows)
+        if keys:
+            marks = ",".join("?" * len(keys))
+            rows = await (await db.execute(
+                f"SELECT DISTINCT entity_key FROM company_register WHERE entity_key IN ({marks})",
+                tuple(keys),
+            )).fetchall()
+            keys = {r["entity_key"] for r in rows}
+    finally:
+        await db.close()
+
+    people: dict[str, dict[str, Any]] = {}
+    for key in sorted(keys):
+        for person in await register_entity_people(key):
+            full = (person.get("full_name") or "").strip()
+            norm = norm_key(full)
+            if not full or not norm or names_entity_or_place(full) or norm in people:
+                continue
+            email = _row_email(full, dom, await _build_email(full, dom)) if dom else None
+            people[norm] = {
+                "name": full,
+                "email": email or "",
+                "title": person.get("relationship") or "",
+                "company": legal_name or company_name,
+                "company_domain": dom,
+                "contact_source": "roster_register",
+                "source_url": person.get("source_url"),
+                "discovery_context": "company register filing",
+                "_roster_norm": norm,
+            }
+    return list(people.values())
+
+
+def merge_register_officers(
+    roster: list[dict[str, Any]], register: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Roster rows plus register officers, one per person: roster_sec, then
+    roster_register, then roster_cache wins a name."""
+    out: dict[str, dict[str, Any]] = {}
+    for row in [*roster, *register]:
+        norm = row.get("_roster_norm") or norm_key(row.get("name") or "")
+        prev = out.get(norm)
+        if prev is None or _REGISTER_RANK.get(row.get("contact_source"), 3) < _REGISTER_RANK.get(prev.get("contact_source"), 3):
+            out[norm] = row
+    return list(out.values())
+
+
 async def roster_refresh_note(company_name: str, domain: str | None = None) -> str:
     """One line for Find people empty/error copy: register status and last SEC error."""
     name = (company_name or "").strip()

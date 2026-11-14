@@ -437,7 +437,7 @@ export default function RecipientPicker({
                         <PersonHeadline name={person.name || person.email} person={person} company={company.name} />
                         <PersonWhy person={person} wanted={wanted}>
                           {writableRow
-                            ? <span className="truncate">{person.email}</span>
+                            ? <span className="truncate" title={person.email}>{person.email}</span>
                             : <span className="text-deep-navy">no address yet</span>}
                           {person.last_sent_at && (
                             <span>written {shortDate(person.last_sent_at)}
@@ -482,7 +482,7 @@ export default function RecipientPicker({
                                   {person.groupUnit}
                                 </span>
                               )}
-                              <span className="truncate">{person.email}</span>
+                              <span className="truncate" title={person.email ?? undefined}>{person.email}</span>
                               {person.skippedReason && (
                                 <span className="text-deep-navy">not added: {person.skippedReason}</span>
                               )}

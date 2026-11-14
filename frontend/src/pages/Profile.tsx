@@ -509,7 +509,7 @@ export default function Profile() {
                       <ul className="mt-2 space-y-1">
                         {attachmentLibrary.map((a) => (
                           <li key={a.id} className="flex justify-between text-sm">
-                            <span className="truncate">{a.display_name || a.filename}</span>
+                            <span className="truncate" title={a.display_name || a.filename}>{a.display_name || a.filename}</span>
                             <button onClick={async () => { try { await api.attachments.delete(a.id); setAttachmentLibrary(await api.attachments.list()); } catch (e) {
       const eMessage = e instanceof Error ? e.message : 'Request failed'; alert(eMessage); } }} className="ui-button ui-button--danger ui-button--sm">Remove</button>
                           </li>
