@@ -288,10 +288,13 @@ select:not([multiple]):not([size]) {
 
 /* Status badges: the navy scale with the word always printed. Strong navy-900
    white, medium blue-600 white, weak mist-100 navy, completed / N/A gray-350.
-   Danger is the muted error colour (failed). */
+   Danger is the muted error colour (failed). One minimum width, word centred,
+   so a column of statuses lines up whatever each one says; longer labels grow. */
 .ui-status {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 6rem;
   min-height: 1.5rem;
   padding: 0.1rem 0.5rem;
   border: 0;
