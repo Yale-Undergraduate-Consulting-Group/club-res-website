@@ -95,13 +95,13 @@ export default function LoginPage() {
           Sign in with Google
         </Button>
 
-        {/* Dev servers only. import.meta.env.DEV is false in every built
-            bundle, so this button cannot exist in the deployed app, and the
-            endpoint behind it 404s unless DEV_LOGIN_EMAIL is set on a
-            backend answering a loopback host. Google will only redirect to
-            the registered production callback, so without this the app
-            cannot be reviewed locally at all. */}
-        {import.meta.env.DEV && (
+        {/* Local review only: a dev server, or the dev box reached through its
+            SSM tunnel at localhost. The endpoint behind it 404s unless
+            DEV_LOGIN_EMAIL is set and the request's own host is loopback, so
+            the public site (its CloudFront address, no setting) cannot sign
+            anyone in this way. Google will only redirect to the registered
+            production callback, so without this dev cannot be reviewed. */}
+        {(import.meta.env.DEV || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) && (
           <Button
             variant="secondary"
             className="mt-3 w-full"
