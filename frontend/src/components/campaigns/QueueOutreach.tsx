@@ -151,7 +151,7 @@ export default function QueueOutreach({ source, onClose }: { source: OutreachSou
                   {(preview.skipped ?? 0) > 0 && <>, {preview.skipped} left out (no email on file, or another member's private contact)</>}.
                 </p>
                 {preview.sample && (
-                  <div className="rounded-lg border border-pale-sky p-3 text-sm">
+                  <div className="border border-pale-sky p-3 text-sm">
                     <div className="text-xs uppercase tracking-wide text-slate-500">First email as {preview.sample.email || 'the first recipient'} will read it</div>
                     <div className="mt-1 font-medium text-[var(--ink)]">{preview.sample.subject}</div>
                     <div className="mt-1 whitespace-pre-wrap text-[var(--ink)]">{preview.sample.body}</div>

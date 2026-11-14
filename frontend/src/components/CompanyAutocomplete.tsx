@@ -170,7 +170,7 @@ export default function CompanyAutocomplete({
         className="ui-input"
       />
       {open && filtered.length > 0 && (
-        <ul id={listId} role="listbox" className="company-autocomplete-list absolute z-30 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-pale-sky bg-white shadow-lg">
+        <ul id={listId} role="listbox" className="company-autocomplete-list absolute z-30 mt-1 w-full max-h-64 overflow-auto border border-pale-sky bg-white">
           {filtered.map((option, index) => (
             <li
               id={`${listId}-${index}`}

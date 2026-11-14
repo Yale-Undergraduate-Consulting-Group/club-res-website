@@ -209,7 +209,7 @@ export default function Tour() {
       {lit && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute rounded-xl ring-2 ring-white transition-all duration-200"
+          className="pointer-events-none absolute ring-2 ring-white transition-all duration-200"
           style={{
             top: lit.top, left: lit.left, width: lit.right - lit.left, height: lit.bottom - lit.top,
             boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.55)',
@@ -222,7 +222,7 @@ export default function Tour() {
         aria-modal="true"
         aria-labelledby="tour-title"
         tabIndex={-1}
-        className="absolute rounded-2xl bg-white p-4 shadow-2xl outline-none"
+        className="absolute bg-white p-4 outline-none"
         style={cardStyle}
       >
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

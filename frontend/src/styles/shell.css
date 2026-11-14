@@ -1,25 +1,18 @@
 /* The platform: brand and photo banners, form and preference rules, the
    navigation, app shell, page menus and page chrome every app sits in. */
 
-/* ——— YUCG brand: Lato + photo banners (not full-page overlay) ——— */
+/* ——— YUCG brand: serif type + photo banners under the 72% navy overlay
+   (design.md sections 3 and 6). The class name is historical: the club's
+   "YUCG brand" is now the design system itself. ——— */
 html.yucg-brand-redesign {
-  --yucg-tint: rgba(0, 53, 107, 0.58);
-  --yucg-tint-strong: rgba(26, 47, 90, 0.72);
   --banner-ink: #ffffff;
-  --banner-ink-muted: rgba(255, 255, 255, 0.88);
-}
-
-html.yucg-brand-redesign.dark {
-  --yucg-tint: rgba(0, 34, 68, 0.68);
-  --yucg-tint-strong: rgba(8, 15, 28, 0.78);
-  --banner-ink: #f1f5f9;
-  --banner-ink-muted: rgba(226, 232, 240, 0.85);
+  --banner-ink-muted: rgba(255, 255, 255, 0.9);
 }
 
 html.yucg-brand-redesign body {
   background-color: var(--bg-primary);
   font-weight: 400;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 html.yucg-brand-redesign .app-shell,
@@ -32,17 +25,11 @@ html.yucg-brand-redesign .app-shell-main {
   position: relative;
   overflow: hidden;
   background-image:
-    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    linear-gradient(var(--yucg-tint), var(--yucg-tint)),
     var(--yucg-banner-image, url('/yucg-bg/pauli-murray-tower.jpg'));
   background-size: cover;
   background-position: center;
-  background-blend-mode: multiply, normal;
-  border: 2px solid var(--deep-navy);
-}
-
-html.yucg-brand-redesign.dark .yucg-photo-banner {
-  border-color: var(--border);
-  background-blend-mode: soft-light, normal;
+  background-color: var(--yucg-navy);
 }
 
 .yucg-photo-banner--hero {
@@ -69,17 +56,16 @@ html.yucg-brand-redesign.dark .yucg-photo-banner {
 
 .yucg-photo-banner__title {
   margin: 0;
-  font-size: 1.35rem;
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
   color: var(--banner-ink);
-  text-transform: uppercase;
   overflow-wrap: anywhere;
 }
 
 @media (min-width: 640px) {
   .yucg-photo-banner__title {
-    font-size: 1.65rem;
+    font-size: 1.875rem;
   }
 }
 
@@ -92,21 +78,15 @@ html.yucg-brand-redesign.dark .yucg-photo-banner {
   overflow-wrap: anywhere;
 }
 
-/* Login — full-viewport campus photo + Yale blue tint, centered frosted card */
+/* Login — full-viewport campus photo under the navy overlay */
 html.yucg-brand-redesign .app-auth-shell {
-  background-color: var(--deep-navy);
+  background-color: var(--yucg-navy);
   background-image:
-    linear-gradient(var(--yucg-tint-strong), var(--yucg-tint)),
+    linear-gradient(var(--yucg-tint), var(--yucg-tint)),
     url('/yucg-bg/pauli-murray-tower.jpg');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
-  background-blend-mode: multiply, normal;
-}
-
-html.yucg-brand-redesign.dark .app-auth-shell {
-  background-color: #0f172a;
-  background-blend-mode: soft-light, normal;
 }
 
 .sr-only {
@@ -123,7 +103,8 @@ html.yucg-brand-redesign.dark .app-auth-shell {
 
 body {
   margin: 0;
-  font-family: 'Lato', system-ui, sans-serif;
+  font-family: var(--yucg-font);
+  line-height: 1.5;
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
@@ -138,19 +119,7 @@ textarea {
 
 #root {
   min-height: 100vh;
-  font-family: 'Lato', system-ui, sans-serif;
-}
-
-/*
- * Light mode fields: same ink as body; background from theme.
- * Excludes checkbox/radio/color/file/etc. so native controls stay usable.
- */
-html:not(.dark) input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
-html:not(.dark) select,
-html:not(.dark) textarea {
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
-  caret-color: var(--text-primary);
+  font-family: var(--yucg-font);
 }
 
 /* Plain contenteditable (e.g. rich text): default typing uses theme ink */
@@ -172,37 +141,64 @@ select:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--text-primary);
 }
 
-/* Shared panels use one restrained frame and radius. */
-html:not(.dark) .surface-card {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  box-shadow: none;
-}
+/* Shared panels: white, a 1px hairline, square, no shadow, one padding
+   (1.5rem; 1rem on phones) whatever p-* a page asks for. --flush is for the
+   few cards whose table or list runs edge to edge; --compact is for panels
+   whose header pins to the top edge (it bleeds out by the 1rem side padding). */
+.surface-card,
+html:not(.dark) .surface-card,
 .dark .surface-card {
   background-color: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
+  border-radius: 0;
   box-shadow: none;
+  padding: 1rem;
 }
 
-/* ——— Top navigation ——— */
+@media (min-width: 640px) {
+  .surface-card,
+  html:not(.dark) .surface-card,
+  .dark .surface-card { padding: 1.5rem; }
+}
+
+.surface-card.surface-card--flush,
+html:not(.dark) .surface-card.surface-card--flush,
+.dark .surface-card.surface-card--flush { padding: 0; }
+
+.surface-card.surface-card--compact,
+html:not(.dark) .surface-card.surface-card--compact,
+.dark .surface-card.surface-card--compact { padding: 0 1rem 1rem; }
+
+/* Card heading: 16 / 700 navy. */
+.surface-card :is(h2, h3, .app-section-title) {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+/* ——— Top navigation (yucg-header + yucg-nav) ———
+   White bar, hairline underneath, aligned to the page column. Text-only bold
+   links 40px tall: slate-600 at rest, navy with a 2px navy bar under the
+   current page. No pills, no fills. */
 .app-top-nav {
   background: var(--bg-card);
-  border-bottom: 3px solid var(--deep-navy);
+  border-bottom: 1px solid var(--border);
   box-shadow: none;
 }
 
 .app-nav-menu {
   flex-wrap: nowrap;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--bg-secondary);
+  gap: 0.25rem;
+  background: transparent;
   display: none;
 }
 
 .app-shell-desktop-nav {
   display: none;
+  flex: 1;
+  justify-content: flex-start;
+  margin-left: 1.5rem;
 }
 
 @media (min-width: 1024px) {
@@ -215,55 +211,35 @@ html:not(.dark) .surface-card {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.45rem 0.75rem;
-  font-size: 0.8125rem;
+  box-sizing: border-box;
+  height: var(--control-height);
+  padding: 0 0.75rem;
+  font-size: 0.9375rem;
   font-weight: 700;
-  letter-spacing: 0;
-  color: var(--deep-navy);
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  background: transparent;
+  border-bottom: 2px solid transparent;
   text-decoration: none;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: color 0.15s ease;
   white-space: nowrap;
 }
 
-.app-nav-link:last-child {
-  border-right: none;
-}
-
 .app-nav-link:hover {
-  background: var(--pale-sky);
-  color: var(--deep-navy);
+  color: var(--text-primary);
 }
 
 .app-nav-link--active,
 .app-nav-link.active {
-  background: var(--deep-navy);
-  color: #ffffff;
-}
-
-.dark .app-nav-link {
   color: var(--text-primary);
-  background: var(--bg-card);
-  border-right-color: var(--border);
-}
-
-.dark .app-nav-link:hover {
-  background: #334155;
-}
-
-.dark .app-nav-link--active,
-.dark .app-nav-link.active {
-  background: var(--accent);
-  color: #ffffff;
+  border-bottom-color: var(--accent);
 }
 
 .app-avatar {
   width: 2rem;
   height: 2rem;
   object-fit: cover;
-  border: 2px solid var(--deep-navy);
-  border-radius: 999px !important;
+  border: 1px solid var(--accent);
+  border-radius: 0;
 }
 
 /* ——— App shell (desktop + mobile) ——— */
@@ -272,7 +248,7 @@ html:not(.dark) .surface-card {
 }
 
 .app-shell-header-inner {
-  max-width: 1920px;
+  max-width: calc(var(--page-max) + 3rem);
   margin: 0 auto;
   padding: 0.5rem 1rem;
   display: flex;
@@ -309,24 +285,16 @@ html:not(.dark) .surface-card {
 }
 
 .app-shell-title {
-  font-size: 1rem;
-  font-weight: 900;
-  color: var(--deep-navy);
-  letter-spacing: -0.02em;
-  text-transform: uppercase;
-  line-height: 1;
-}
-
-.dark .app-shell-title {
-  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--heading);
+  line-height: 1.1;
 }
 
 .app-shell-subtitle {
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: #64748b;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-muted);
   margin-top: 0.125rem;
 }
 
@@ -372,21 +340,21 @@ html:not(.dark) .surface-card {
   }
 }
 
+/* A wide table scrolls sideways on a narrow screen instead of running off it. */
+@media (max-width: 767px) {
+  .app-workspace table { display: block; max-width: 100%; overflow-x: auto; }
+}
+
 .app-shell-profile-link {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--deep-navy);
+  color: var(--accent);
   text-decoration: none;
 }
 
 .app-shell-profile-link:hover {
   text-decoration: underline;
-}
-
-.dark .app-shell-profile-link {
-  color: var(--text-primary);
+  text-underline-offset: 3px;
 }
 
 .app-shell-main {
@@ -433,7 +401,7 @@ html:not(.dark) .surface-card {
   bottom: 0;
   z-index: 45;
   background: var(--bg-card);
-  border-top: 3px solid var(--deep-navy);
+  border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -447,24 +415,15 @@ html:not(.dark) .surface-card {
   min-width: 3.75rem;
   padding: 0.625rem 0.5rem;
   border: none;
-  border-right: 2px solid var(--deep-navy);
-  background: var(--bg-secondary);
-  color: var(--deep-navy);
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
   cursor: pointer;
   transition: background 0.12s ease;
 }
 
 .app-mobile-nav-menu-btn:hover {
-  background: var(--pale-sky);
-}
-
-.dark .app-mobile-nav-menu-btn {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.dark .app-mobile-nav-menu-btn:hover {
-  background: #334155;
+  background: var(--surface-subtle);
 }
 
 .app-mobile-nav-menu-glyph {
@@ -498,41 +457,24 @@ html:not(.dark) .surface-card {
   justify-content: center;
   padding: 0.625rem 0.75rem;
   text-decoration: none;
-  color: var(--deep-navy);
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
-  transition: background 0.12s ease;
-}
-
-.app-mobile-nav-item:last-child {
-  border-right: none;
+  color: var(--text-muted);
+  background: transparent;
+  border-top: 2px solid transparent;
+  transition: color 0.15s ease;
 }
 
 .app-mobile-nav-item:hover {
-  background: var(--pale-sky);
+  color: var(--text-primary);
 }
 
 .app-mobile-nav-item--active {
-  background: var(--deep-navy);
-  color: #ffffff;
-}
-
-.dark .app-mobile-nav-item {
-  background: var(--bg-card);
   color: var(--text-primary);
-  border-right-color: var(--border);
-}
-
-.dark .app-mobile-nav-item--active {
-  background: var(--accent);
-  color: #ffffff;
+  border-top-color: var(--accent);
 }
 
 .app-mobile-nav-label {
-  font-size: 0.5625rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 0.6875rem;
+  font-weight: 700;
   line-height: 1.1;
   text-align: center;
   max-width: 100%;
@@ -569,7 +511,7 @@ html:not(.dark) .surface-card {
   bottom: 0;
   width: min(100%, 20rem);
   background: var(--bg-card);
-  border-left: 3px solid var(--deep-navy);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -613,6 +555,7 @@ html:not(.dark) .surface-card {
 
   .app-tab-menu-item {
     flex: 0 0 auto;
+    margin-bottom: 0;
   }
 
   .app-subnav {
@@ -621,77 +564,57 @@ html:not(.dark) .surface-card {
   }
 }
 
-/* ——— Page tab menus (Outreach, Admin, Profile) ——— */
+/* ——— Page tab menus (yucg-tabs): text tabs in the nav style; the active tab
+   is full strength with a navy rule beneath (Outreach, Admin, Profile) ——— */
 .app-tab-menu {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  border: 2px solid var(--deep-navy);
-  border-bottom: none;
-  background: var(--bg-secondary);
+  gap: 0 1.75rem;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
 }
 
 .app-tab-menu-item {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: max-content;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--control-height-sm);
-  padding: 0 1rem;
-  font-size: 0.8125rem;
+  box-sizing: border-box;
+  height: var(--control-height);
+  padding: 0;
+  margin-bottom: -1px;
+  font-size: 0.9375rem;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  border-right: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--deep-navy);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.app-tab-menu-item:last-child {
-  border-right: none;
+  transition: color 0.15s ease;
 }
 
 .app-tab-menu-item:hover {
-  background: var(--pale-sky);
+  color: var(--text-primary);
 }
 
 .app-tab-menu-item--active {
-  background: var(--deep-navy);
-  color: #ffffff;
-}
-
-.dark .app-tab-menu-item {
-  background: var(--bg-card);
   color: var(--text-primary);
-  border-right-color: var(--border);
-}
-
-.dark .app-tab-menu-item--active {
-  background: var(--accent);
-  color: #ffffff;
+  border-bottom-color: var(--accent);
 }
 
 .app-tab-panel {
-  border: 2px solid var(--deep-navy);
-  border-top: none;
-  background: var(--bg-secondary);
-  padding: 0.75rem 1rem;
+  border: 0;
+  background: transparent;
+  padding: 1rem 0;
 }
 
-.dark .app-tab-panel {
-  background: var(--bg-card);
-}
-
-/* ——— Segmented subnav (Scraper, Profile settings) ——— */
+/* ——— Segmented subnav (yucg-segmented): the selected option fills navy ——— */
 .app-subnav {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0;
-  border: 2px solid var(--deep-navy);
-  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  background: transparent;
 }
 
 .app-subnav-item {
@@ -700,13 +623,11 @@ html:not(.dark) .surface-card {
   justify-content: center;
   min-height: var(--control-height-sm);
   padding: 0 1.25rem;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  border-right: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--deep-navy);
+  font-size: 0.875rem;
+  font-weight: 400;
+  border-right: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -716,70 +637,58 @@ html:not(.dark) .surface-card {
 }
 
 .app-subnav-item:hover {
-  background: var(--pale-sky);
+  background: var(--surface-subtle);
 }
 
-.app-subnav-item--active {
-  background: var(--deep-navy);
-  color: #ffffff;
-}
-
-.dark .app-subnav-item {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.dark .app-subnav-item--active {
-  background: var(--accent);
-  color: #ffffff;
+.app-subnav-item--active,
+.app-subnav-item--active:hover {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
 }
 
 /* ——— Community sidebar ——— */
 .app-sidebar {
-  border-left: 3px solid var(--deep-navy);
+  border-left: 1px solid var(--border);
   background: var(--bg-card);
 }
 
 .app-sidebar-section-title {
-  font-size: 0.6875rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--deep-navy);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--heading);
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 1px solid var(--accent);
   margin-bottom: 0.75rem;
 }
 
 .app-sidebar-link {
   display: block;
   padding: 0.5rem 0.625rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  border: 1px solid var(--border);
-  border-left: 3px solid transparent;
+  font-size: 0.9375rem;
+  font-weight: 400;
+  border: 0;
+  border-bottom: 1px solid var(--border);
   color: var(--text-primary);
   text-decoration: none;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: background 0.12s ease;
 }
 
 .app-sidebar-link:hover {
-  background: var(--pale-sky);
-  border-left-color: var(--steel-blue);
+  background: var(--surface-subtle);
+}
+
+.app-sidebar-link--active {
+  font-weight: 700;
+  box-shadow: none;
+  border-left: 2px solid var(--accent);
 }
 
 .app-sidebar-badge {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   padding: 0.125rem 0.375rem;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.dark .app-sidebar-section-title {
+  border: 1px solid var(--border-control);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -807,8 +716,8 @@ html:not(.dark) .surface-card {
   gap: 0.5rem;
   padding: 0.5rem 0.625rem;
   font-size: 0.8125rem;
-  border: 2px solid var(--border);
-  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -821,7 +730,7 @@ html:not(.dark) .surface-card {
   z-index: 40;
   width: 3rem;
   height: 3rem;
-  border: 2px solid var(--deep-navy);
+  border: 1px solid var(--btn-primary-bg);
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
   display: flex;
@@ -857,9 +766,9 @@ html:not(.dark) .surface-card {
   font-size: 0.625rem;
   font-weight: 700;
   line-height: 1;
-  border: 2px solid var(--deep-navy);
-  background: #f59e0b;
-  color: #ffffff;
+  border: 1px solid var(--accent);
+  background: var(--canvas);
+  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -932,15 +841,9 @@ html:not(.dark) .surface-card {
 
 .checklist-panel-title {
   margin: 0;
-  font-size: 0.8125rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--deep-navy);
-}
-
-.dark .checklist-panel-title {
-  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--heading);
 }
 
 .checklist-panel-close {
@@ -1082,7 +985,7 @@ html:not(.dark) .surface-card {
 }
 
 .checklist-item-remove:hover {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .checklist-panel-footer {
@@ -1095,32 +998,9 @@ html:not(.dark) .surface-card {
 }
 
 .app-toast {
-  border: 2px solid var(--border);
+  border: 1px solid var(--border-control);
   box-shadow: none;
-  border-radius: var(--radius-panel);
-}
-
-.dark .app-sidebar-link:hover {
-  background: #334155;
-}
-
-/* Inputs & buttons share the same control radius as everything else. */
-html:not(.dark) input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
-html:not(.dark) select,
-html:not(.dark) textarea,
-.dark input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
-.dark select,
-.dark textarea {
-  border-radius: var(--radius-control) !important;
-}
-
-/* Single-line text inputs and selects get a height floor so a field on one
-   page matches a field on another - a textarea is naturally multi-line and
-   is excluded, and this is a floor (min-height), not a forced height, so an
-   input that already needs more room for its own content is unaffected. */
-input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not([type='reset']):not([type='image']),
-select {
-  min-height: var(--control-height);
+  border-radius: 0;
 }
 
 
@@ -1286,30 +1166,7 @@ select optgroup {
 html.dark select option,
 html.dark select optgroup {
   color: var(--text-primary);
-  background-color: #334155;
-}
-
-/*
- * Elevation: map Tailwind shadow-* to theme tokens site-wide (light + dark).
- * Unlayered so these win over default Tailwind shadows.
- */
-.shadow-sm {
-  box-shadow: var(--shadow-sm);
-}
-.shadow {
-  box-shadow: var(--shadow-md);
-}
-.shadow-md {
-  box-shadow: var(--shadow-md);
-}
-.shadow-lg {
-  box-shadow: var(--shadow-lg);
-}
-.shadow-xl {
-  box-shadow: var(--shadow-xl);
-}
-.shadow-2xl {
-  box-shadow: var(--shadow-2xl);
+  background-color: var(--surface-subtle);
 }
 
 /* User preferences: reduce motion */
@@ -1332,39 +1189,15 @@ body.yucg-reduce-motion *::after {
   }
 }
 
-/* YUCG redesign — must follow base .surface-card rules (cascade fix) */
-html.yucg-brand-redesign:not(.dark) .surface-card {
+/* Login card: a solid white panel on the photo, hairline edge, no blur or shadow. */
+html.yucg-brand-redesign .app-auth-shell .surface-card {
   background-color: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-sm);
-}
-
-html.yucg-brand-redesign.dark .surface-card {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-sm);
-}
-
-html.yucg-brand-redesign:not(.dark) .app-auth-shell .surface-card {
-  background-color: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(15, 32, 58, 0.22);
-}
-
-html.yucg-brand-redesign.dark .app-auth-shell .surface-card {
-  background-color: rgba(30, 41, 59, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
 }
 
 html.yucg-brand-redesign.dark .app-auth-shell .bg-slate-50 {
-  background-color: rgba(51, 65, 85, 0.65);
+  background-color: var(--surface-subtle);
 }
 
 html.yucg-brand-redesign.dark .app-auth-shell .text-deep-navy,
@@ -1379,30 +1212,8 @@ html.yucg-brand-redesign.dark .text-slate-700 {
   opacity: 0.88;
 }
 
-html.yucg-brand-redesign:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
-html.yucg-brand-redesign:not(.dark) select,
-html.yucg-brand-redesign:not(.dark) textarea {
-  background-color: #ffffff;
-  color: var(--text-primary);
-  border-color: var(--border);
-}
-
-html.yucg-brand-redesign.dark input:not([type="checkbox"]):not([type="radio"]),
-html.yucg-brand-redesign.dark select,
-html.yucg-brand-redesign.dark textarea {
-  background-color: #334155;
-  color: var(--text-primary);
-  border-color: #475569;
-}
-
-html.yucg-brand-redesign .yucg-photo-banner table thead th,
-html.yucg-brand-redesign .yucg-coordinator-table thead th {
-  background: var(--deep-navy);
-  color: #ffffff;
-}
-
 html.yucg-brand-redesign.dark .bg-slate-50 {
-  background-color: #334155;
+  background-color: var(--surface-subtle);
 }
 
 html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
@@ -1412,7 +1223,28 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 /* Page chrome — photo banner + optional actions */
 .app-page-header {
   margin: 0 0 1.5rem;
+  /* Deck chrome: the 1.5pt navy title rule under every page title. */
+  padding-bottom: 0.5rem;
+  border-bottom: 1.5px solid var(--navy-900, #00346b);
 }
+
+/* Deck action-title style: 32 / 400 navy. */
+.app-page-title {
+  font-size: 2rem;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--navy-900, #00346b);
+}
+
+.app-page-subtitle {
+  margin-top: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--slate-600, #44546a);
+}
+
+.dark .app-page-header { border-bottom-color: currentColor; }
+.dark .app-page-title { color: var(--text-primary); }
+.dark .app-page-subtitle { color: var(--text-muted); }
 
 .app-page-header .yucg-photo-banner {
   margin: 0;
@@ -1428,11 +1260,9 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 
 .app-week-guide__title {
   margin: 0 0 0.75rem;
-  font-size: 0.7rem;
+  font-size: 0.9375rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--steel-blue);
+  color: var(--heading);
 }
 
 .app-week-guide__list {
@@ -1442,7 +1272,7 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 2px solid var(--deep-navy);
+  border: 1px solid var(--border);
   background: var(--bg-card);
 }
 
@@ -1497,9 +1327,9 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--deep-navy);
-  font-size: 0.8rem;
-  font-weight: 900;
+  border: 1px solid var(--accent);
+  font-size: 0.875rem;
+  font-weight: 700;
   line-height: 1;
 }
 
@@ -1511,17 +1341,14 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 .app-week-guide__door {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--steel-blue);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .app-week-guide__name {
-  font-size: 1rem;
-  font-weight: 900;
-  letter-spacing: 0.02em;
+  font-size: 1.0625rem;
+  font-weight: 700;
 }
 
 .app-week-guide__how {
@@ -1545,18 +1372,18 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 .app-stat__label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--steel-blue);
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .app-stat__value {
   margin-top: 0.25rem;
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: var(--deep-navy);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
 }
 
 .app-tool-grid {
@@ -1577,22 +1404,22 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 .app-tool:hover {
-  border-color: var(--steel-blue);
+  border-color: var(--accent);
 }
 
 .app-tool__name {
   display: block;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 700;
-  color: var(--deep-navy);
+  color: var(--heading);
 }
 
 .app-tool__what {
   display: block;
   margin-top: 0.15rem;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  color: var(--slate-blue, #64748b);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
 .app-ai-select-wrap {
@@ -1603,11 +1430,9 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
 }
 
 .app-ai-select-label {
-  font-size: 0.7rem;
+  font-size: 0.8125rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--deep-navy);
+  color: var(--heading);
 }
 
 .app-ai-select {
@@ -1648,13 +1473,51 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   padding: 1.125rem 1.25rem;
 }
 
-@layer components {
-  .app-workspace {
-    width: 100%;
-    max-width: 90rem;
-    margin-inline: auto;
-  }
+/* ——— Layout system ———
+   One content width for every page, so titles, rules and edges line up when
+   moving between pages; one vertical rhythm between page sections; one
+   control height, so buttons, inputs and chips sit on the same line.
+   Unlayered on purpose: it overrides the per-page max-w-* and space-y-*
+   utilities, which are what made each page a different width. */
+:root {
+  --page-max: 80rem;
+  --section-gap: 2rem;
+  --stack-gap: 1rem;
 }
+
+.app-workspace {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+}
+
+/* The email editor is a full-width tool, the one exception. */
+.email-studio.app-workspace { max-width: min(100%, 1920px); }
+
+/* Stacked layouts only: in a row (flex or grid) a top margin would push
+   every item after the first below the line. */
+.app-workspace:not(.flex):not(.grid):not(.inline-flex) > * + * { margin-top: var(--section-gap); }
+.app-workspace > .app-page-header { margin-bottom: 0; }
+
+/* Cards in a grid share a row height, so their bottoms line up. */
+.app-workspace .grid > .surface-card { height: 100%; }
+
+/* Inside a card, each block (heading, text, field, button row, table) gets
+   the same breathing room, and a label sits a little above its field. */
+.app-workspace .surface-card:not(.flex):not(.grid):not(.inline-flex):not([class*="md:flex"]):not([class*="md:grid"]):not([class*="lg:grid"]) > * + * { margin-top: var(--stack-gap); }
+
+/* Text boxes: one text indent, one text size and one label gap everywhere,
+   so the words in every field start on the same line as its label. */
+.app-workspace :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):not([type="range"]), select, textarea) {
+  padding-left: 0.75rem;
+  font-size: 0.9375rem;
+}
+.app-workspace textarea { padding: 0.5rem 0.75rem; }
+.app-workspace input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { padding-right: 0.75rem; }
+.app-workspace .surface-card label + :is(input, select, textarea),
+.app-workspace label + :is(input, select, textarea),
+.app-workspace label > :is(input, select, textarea) { margin-top: 0.375rem; }
+.app-workspace label:has(+ :is(input, select, textarea)) { margin-bottom: 0; display: block; }
 
 .app-toolbar {
   display: flex;
@@ -1675,18 +1538,20 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   margin: 0;
   color: var(--ink);
   font-size: 1.125rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 /* One persistent navigation bar; page sections scroll with their content. */
 .app-nav-group { position: relative; }
 .app-nav-group summary { cursor: pointer; list-style: none; height: 100%; }
 .app-nav-group summary::-webkit-details-marker { display: none; }
-.app-nav-group-panel { position: absolute; top: calc(100% + 0.5rem); left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--border); box-shadow: 0 8px 24px rgb(15 23 42 / 0.12); }
-.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0.75rem 1rem; }
+.app-nav-group-panel { position: absolute; top: 100%; left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--border); }
+.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0 1rem; }
+.app-nav-group-panel .app-nav-link:hover,
+.app-nav-group-panel .app-nav-link--active { background: var(--surface-subtle); }
 .app-nav-group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 @media (min-width: 768px) {
-  .app-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+  .app-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; }
   .app-page-header-actions { margin-top: 0; flex-shrink: 0; }
 }

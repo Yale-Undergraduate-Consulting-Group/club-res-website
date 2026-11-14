@@ -3,7 +3,6 @@
  * White in light mode, dark in dark mode. Smooth bar and line animations.
  */
 import { useEffect, useState } from 'react';
-import { useTheme } from '../contexts/useTheme';
 
 type Aggregates = { by_event_type?: { event_type: string; count: number }[]; by_resource_type?: { resource_type: string; count: number }[]; days?: number };
 
@@ -22,9 +21,7 @@ export function AnimatedBarChart({
   maxBars?: number;
   title: string;
 }) {
-  const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const isDark = theme === 'dark';
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 50);
@@ -39,11 +36,8 @@ export function AnimatedBarChart({
 
   return (
     <div
-      className="rounded-xl border overflow-hidden p-6 transition-colors duration-300"
-      style={{
-        background: isDark ? 'var(--bg-card)' : '#ffffff',
-        borderColor: isDark ? '#475569' : '#e2e8f0',
-      }}
+      className="yucg-chart border overflow-hidden p-6 transition-colors duration-300"
+      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
     >
       <h4 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
         {title}
@@ -66,16 +60,14 @@ export function AnimatedBarChart({
                 </span>
               </div>
               <div
-                className="h-6 rounded overflow-hidden"
-                style={{
-                  background: isDark ? '#334155' : '#f1f5f9',
-                }}
+                className="h-6 overflow-hidden"
+                style={{ background: 'var(--chart-idle)' }}
               >
                 <div
                   className="h-full rounded transition-all duration-500 ease-out flex items-center"
                   style={{
                     width: mounted ? `${pct}%` : '0%',
-                    background: isDark ? 'linear-gradient(90deg, #3d5c82, #5b7fa6)' : 'linear-gradient(90deg, #3d5c82, #5b7fa6)',
+                    background: 'var(--chart-1)',
                     transitionDelay: `${i * STAGGER_MS}ms`,
                   }}
                 />

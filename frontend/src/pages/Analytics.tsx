@@ -71,7 +71,7 @@ export default function Analytics() {
 
       {error && <Notice tone="danger" className="mb-4">{error}</Notice>}
 
-      <section className="surface-card p-5" aria-label="Outcomes">
+      <section className="surface-card" aria-label="Outcomes">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="app-section-title">Outcomes</h2>
           <div className="flex gap-2" role="group" aria-label="Whose results">
@@ -101,7 +101,7 @@ export default function Analytics() {
               ['Reply rate', `${split?.reply_rate ?? 0}%`],
               ['Bounced', split?.bounced ?? 0],
             ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-lg bg-pale-sky/25 px-3 py-2">
+              <div key={String(label)} className="bg-pale-sky/25 px-3 py-2">
                 <dt className="text-xs text-slate-500">{label}</dt>
                 <dd className="mt-0.5 text-xl font-bold text-deep-navy">{value}</dd>
               </div>
@@ -126,7 +126,7 @@ export default function Analytics() {
         ))}
       </div>
 
-      <section className="surface-card p-5" aria-label="Campaign drilldown">
+      <section className="surface-card" aria-label="Campaign drilldown">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="app-section-title">Campaign drilldown</h2>
           <Link to="/" className="text-sm font-semibold text-[var(--accent)] hover:underline">All campaigns</Link>
@@ -166,7 +166,7 @@ export default function Analytics() {
       </section>
 
       {insights.length > 0 && (
-        <section className="surface-card p-5" aria-label="Notes from the data">
+        <section className="surface-card" aria-label="Notes from the data">
           <h2 className="app-section-title mb-3">Notes from the data</h2>
           <ul className="space-y-2">
             {insights.map((insight) => <li key={insight} className="text-sm text-slate-600">• {insight}</li>)}
