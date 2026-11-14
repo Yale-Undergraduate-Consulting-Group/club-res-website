@@ -78,6 +78,10 @@ printf '%s' "$SECRET_JSON" | jq -e 'type == "object"
   and all(.[]; . == null or (type == "string" and (test("[\r\n]") | not)))' >/dev/null \
   || { echo 'App secret must be a JSON object of single-line strings including JWT_SECRET'; exit 1; }
 install -d -m 0700 /etc/yucg
+# AI_MONTHLY_BUDGET_USD stays below the 20-dollar spending limit on the
+# temporary Anthropic API key, so the site refuses AI calls before the key
+# does (backend/app/services/llm.py). Comments go here, not in the heredoc
+# below: it expands $ and the script runs with set -u.
 {
   printf '%s' "$SECRET_JSON" | jq -r 'to_entries[] | select(.value != null) | "\(.key)=\(.value)"'
   unset SECRET_JSON
@@ -86,8 +90,6 @@ APP_ENV=$APP_ENV
 EMAIL_DELIVERY_ENABLED=$EMAIL_DELIVERY_ENABLED
 DATABASE_URL=sqlite:////data/clientreach.db
 LLM_PROVIDER=bedrock
-# Below the $20 spending limit on the temporary Anthropic API key, so the
-# site refuses AI calls before the key does (backend/app/services/llm.py).
 AI_MONTHLY_BUDGET_USD=15
 AI_REVIEW_WORKERS=2
 INBOX_VERIFY_MODE=mx
