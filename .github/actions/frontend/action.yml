@@ -1,5 +1,5 @@
 name: Frontend checks and build
-description: Unit tests and local build in Intake; Vite build output in Dev; required UI coverage in Production.
+description: Unit tests and local build in Intake; Vite build output in Dev; Production's UI tests run as sharded `ui` jobs in production.yml.
 inputs:
   stage:
     description: Stage supplied by the stage workflow.
@@ -76,19 +76,6 @@ runs:
           echo "::error::AWS delivery requires the Vite build output frontend/dist/index.html"
           exit 1
         fi
-    - name: Require production UI tests
-      if: steps.present.outputs.present == 'true' && inputs.stage == 'production'
-      shell: bash
-      working-directory: frontend
-      run: |
-        if ! jq -e '.scripts["test:ui"]' package.json > /dev/null; then
-          echo '::error::Production requires a test:ui script covering critical website paths.'
-          exit 1
-        fi
-        if [ -x node_modules/.bin/playwright ]; then
-          npx playwright install --with-deps chromium
-        fi
-        npm run test:ui
     # Only production publishes the SPA to S3 behind CloudFront; dev serves the
     # copy built into the application image.
     - id: package

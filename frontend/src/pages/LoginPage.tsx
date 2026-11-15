@@ -53,6 +53,7 @@ export default function LoginPage() {
             {error === 'userinfo_failed' && 'Could not load your profile. Please try again.'}
             {error === 'no_email' && 'No email from Google. Please use an account with email.'}
             {error === 'domain_not_allowed' && 'Only @yale.edu email addresses are allowed to sign in.'}
+            {error === 'join_closed' && 'This join QR code is closed, expired or full. Ask a club admin for a new one.'}
             {error === 'account_deactivated' && 'Your account has been deactivated. Contact an admin.'}
             {error === 'callback_failed' && (
               <>Sign-in could not be completed. Try again; if the problem continues, contact a club administrator.</>
@@ -60,7 +61,7 @@ export default function LoginPage() {
             {error === 'oauth_not_configured' && (
               <>Club sign-in is temporarily unavailable. Contact a club administrator.</>
             )}
-            {!['invalid_callback', 'token_exchange_failed', 'no_access_token', 'userinfo_failed', 'no_email', 'domain_not_allowed', 'oauth_not_configured', 'account_deactivated', 'callback_failed'].includes(error) && error}
+            {!['invalid_callback', 'token_exchange_failed', 'no_access_token', 'userinfo_failed', 'no_email', 'domain_not_allowed', 'oauth_not_configured', 'account_deactivated', 'callback_failed', 'join_closed'].includes(error) && error}
           </div>
         )}
 
