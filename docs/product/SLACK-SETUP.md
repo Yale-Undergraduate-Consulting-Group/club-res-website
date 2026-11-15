@@ -96,8 +96,8 @@ after it, so "link me to A24's contacts" still goes to the assistant.
 - `unlink` deletes the member's `user_slack_tokens` row, as the website's
   Disconnect does. The workspace token is the newest install, so if the last
   linked member unlinks, DM and mention replies stop until someone links again.
-- `usage` counts the member's `bedrock_reserved` usage events this month and
-  the club's share of `AI_MONTHLY_BUDGET_USD`. Admins (role `admin`) also see
+- `usage` counts the member's `bedrock_reserved` usage events this month,
+  their web links read, and the club's share of `AI_MONTHLY_BUDGET_USD`. Admins (role `admin`) also see
   dollars and the top ten members.
 - `requests <idea>` stores the idea in `slack_feature_requests` (five per
   member per day, 1,000 characters, `@channel`-style pings removed) and DMs
@@ -149,6 +149,31 @@ such as "summarize this thread" or "what did we decide in #channel last week?":
 
 Slack message text read this way is sent to Bedrock to write the answer, like club
 data, and is not stored by the club app (see retention above for what is).
+
+#### Reading web links
+
+When a member pastes a link, the assistant can read that public web page, for
+example `@YUCG summarize https://… for our A24 pitch`. It has no open web
+search.
+
+- Only the links the member typed in this conversation (the question and their
+  earlier questions in the thread) can be opened. A link the model writes
+  itself, or finds in club data or Slack messages, is refused, so a page or a
+  message cannot make the assistant send club data to another address.
+- Pages are fetched by the server through `research_providers.fetch_public_page`:
+  public addresses only (no private, loopback or cloud-metadata addresses, no
+  login in the URL, ports 80/443), every redirect re-resolved and re-checked,
+  HTML only, the first 2 MB, 12 seconds. PDFs and other files are not read.
+- At most 2 links per question and `SLACK_LINKS_PER_MEMBER_PER_DAY` (default
+  20) per member per day. A read counts when it is attempted.
+- Page text (at most 6,000 characters) goes to the model as untrusted data,
+  like Slack text, and is part of that question's AI cost; reading has no fee
+  of its own. Only the site's host name is recorded, as a `slack_link_read`
+  usage event; the page text and the full link are not stored.
+- `/yucg usage` shows each member's links read this month and in the last day;
+  admins also see the club total.
+- `SLACK_LINK_READING=off` turns it off without a code change. It works
+  on both the Anthropic API and Bedrock, since the server does the fetching.
 
 #### Bot scopes and reinstalling
 
