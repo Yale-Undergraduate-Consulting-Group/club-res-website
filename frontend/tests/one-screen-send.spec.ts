@@ -70,9 +70,6 @@ async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: numb
     else if (p === '/api/yucgoutreach/resolve-company') {
       const q = url.searchParams.get('q') || '';
       body = { name: q, domain: null, domain_verified: false, linkedin_url: null, source: 'typed', alternatives: [] };
-    } else if (p === '/api/yucgoutreach/officers') {
-      status = 404;
-      body = { detail: 'No company filing is on record for that company. Use Find more people to search the web instead.' };
     } else if (p === '/api/yucgoutreach/runs' && method === 'POST') {
       // One search per member at a time.
       if (runs.some((r) => !r.polled)) {
@@ -87,7 +84,9 @@ async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: numb
         body = { id, status: 'queued' };
       }
     } else if (p === '/api/yucgoutreach/runs' && method === 'GET') {
-      body = runs.filter((r) => r.polled).map((r) => ({ id: r.id, company_name: r.company, status: 'completed', progress_pct: 100, progress_message: 'Done' }));
+      body = runs.map((r) => (r.polled
+        ? { id: r.id, company_name: r.company, status: 'completed', progress_pct: 100, progress_message: 'Done' }
+        : { id: r.id, company_name: r.company, status: 'running', progress_pct: 10, progress_message: 'Searching…' }));
     } else if (/^\/api\/yucgoutreach\/runs\/\d+$/.test(p)) {
       const run = runs.find((r) => r.id === Number(p.split('/').pop()))!;
       run.polled = true;
@@ -109,7 +108,7 @@ async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: numb
         const contactId = nextContact++;
         contacts.push({
           id: contactId, name: `${x.first} ${x.last}`, email: `${slug(x.first)}.${slug(x.last)}@${slug(run.company)}.com`,
-          title: x.title, company: run.company, contact_source: 'web_discovery',
+          title: x.title, company: run.company, contact_source: 'web_discovery', person_level: /chief/i.test(x.title) ? 'executive' : 'working',
         });
         return { prospect_id: id, contact_id: contactId, outcome: 'created' };
       });

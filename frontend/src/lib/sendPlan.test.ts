@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Contact } from '../api';
+import { defaultSelection, type Level } from './recipients';
 import { recipientsOf, tallyPeople, tallyReasons } from './sendPlan';
 
 const person = (id: number, fields: Partial<Contact> = {}): Contact => ({
@@ -35,5 +36,25 @@ describe('tallyPeople', () => {
     expect(tallyReasons(tallyPeople(people, new Set([1]), new Map())))
       .toBe('1 no address · 2 already written to · 2 not ticked');
     expect(tallyReasons(tallyPeople([person(1)], new Set([1]), new Map()))).toBe('');
+  });
+});
+
+describe('the one number follows the levels chosen', () => {
+  const people = [
+    person(1, { title: 'Director of Strategy', person_level: 'working' }),
+    person(2, { title: 'Trustee', person_level: 'board' }),
+    person(3, { title: '', person_level: 'unknown' }),
+    person(4, { title: '', person_level: 'unknown', email: '' }),
+  ];
+  const sentTo = (levels: Level[]) => {
+    const selected = new Set(defaultSelection(people, new Set(levels)));
+    const tally = tallyPeople(people, selected, new Map());
+    return { canEmail: tally.canEmail, recipients: recipientsOf(people, selected, new Map()).length };
+  };
+
+  it('counts the header and the send alike for any set of levels', () => {
+    expect(sentTo(['working'])).toEqual({ canEmail: 1, recipients: 1 });
+    expect(sentTo(['working', 'unknown'])).toEqual({ canEmail: 2, recipients: 2 });
+    expect(sentTo(['working', 'board', 'unknown'])).toEqual({ canEmail: 3, recipients: 3 });
   });
 });

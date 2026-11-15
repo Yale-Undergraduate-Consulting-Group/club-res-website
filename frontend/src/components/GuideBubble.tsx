@@ -27,7 +27,7 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
         'Companies is the index: about 200,000 companies from public records, one entry each. Tick any, then "Find people and write to them".',
         'Find people is one screen: add companies by name, by pasting a list, or from the index, and each is searched as soon as it is added.',
         'Everyone found is on the list at once. The number at the top is how many can be emailed; beside it are the reasons for everyone left out.',
-        'Board seats and the very senior are never ticked for you: they rarely answer a cold email.',
+        'Board seats are ticked only if you choose Board under "Who to look for", and the very senior are never ticked for you: they rarely answer a cold email.',
         'The Intro template is already chosen. Switch template or have the AI write each email, then "Send to N". Nothing leaves until you confirm.',
       ],
       next: { to: '/campaigns', label: 'Overview' },

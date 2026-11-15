@@ -307,7 +307,7 @@ Use the existing durable queue as the starting point. Split a run into bounded t
 
 Operational rules:
 
-- one active research run per member by default;
+- a per-member ceiling on active research runs (`MEMBER_ACTIVE_RUNS`, three by default);
 - a configurable club queue ceiling;
 - fair scheduling so one member cannot occupy every worker;
 - per-domain crawl serialization and request delay;

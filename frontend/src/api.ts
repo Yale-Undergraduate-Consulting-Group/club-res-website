@@ -147,16 +147,6 @@ export type CatalogBuilderStatus = {
 };
 
 
-export type OfficerLookup = ImportOutcomes & {
-  /** Officers the filing names, and how many had no address to import. */
-  officers: number;
-  without_address: number;
-  /** Why nothing was added, when that is the case. */
-  note?: string;
-  /** "2 already worked by Ana", when others hold some of the addresses. */
-  held_by_note?: string;
-};
-
 export type DiscoveryRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 /** One durable Find people search, as the runs endpoints return it. */
 export type DiscoveryRun = {
@@ -1336,7 +1326,7 @@ export const api = {
       list: (industry?: string) =>
         fetchApi<Template[]>(industry ? `/api/outreach/templates?industry=${encodeURIComponent(industry)}` : '/api/outreach/templates'),
       create: (data: { name: string; subject: string; body: string; industry?: string; use_case?: string }) =>
-        fetchApi<unknown>('/api/outreach/templates', { method: 'POST', body: JSON.stringify(data) }),
+        fetchApi<{ id: number; ok: boolean }>('/api/outreach/templates', { method: 'POST', body: JSON.stringify(data) }),
       delete: (id: number) => fetchApi<unknown>(`/api/outreach/templates/${id}`, { method: 'DELETE' }),
       /** The draft as one made-up recipient would read it, and the merge fields on offer. */
       preview: (data: { subject: string; body: string }) =>
@@ -1459,11 +1449,6 @@ export const api = {
     registerRecords: (key: string) => fetchApi<RegisterRecords>(`/api/yucgoutreach/register/records?key=${encodeURIComponent(key)}`),
     registerPeople: (key: string) => fetchApi<RegisterPerson[]>(`/api/yucgoutreach/register/entity-people?key=${encodeURIComponent(key)}`),
     fetchRegisterPeople: (id: number) => fetchApi<{ ok: boolean; attached?: number; officer_count?: number; cached?: boolean; note?: string; error?: string }>(`/api/yucgoutreach/register/${id}/people`, { method: 'POST' }),
-    /** Read a company's filing and put its officers on the member's list, no
-     *  web search. Rejects with a readable message when the register has
-     *  nothing for the company or could not be read. */
-    lookUpOfficers: (company: { company_name: string; company_domain?: string; entity?: EntityProfile }) =>
-      fetchApi<OfficerLookup>('/api/yucgoutreach/officers', { method: 'POST', body: JSON.stringify(company) }),
     /** A typed name or a pasted LinkedIn company page, resolved to one
      *  company and - only when it can be checked - its website. */
     resolveCompany: (q: string, signal?: AbortSignal) =>
@@ -1486,7 +1471,7 @@ export const api = {
       max_prospects?: number;
       worker_concurrency?: number;
       entity?: EntityProfile;
-      level?: 'working' | 'executive' | 'board';
+      levels: Array<'working' | 'executive' | 'board' | 'unknown'>;
     }) =>
       fetchApi<{ id: number; status: string }>('/api/yucgoutreach/runs', {
         method: 'POST',

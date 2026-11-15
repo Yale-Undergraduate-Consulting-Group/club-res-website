@@ -465,6 +465,13 @@ def fit_level(title: str | None) -> str:
     return level
 
 
+#: What "Who to look for" can hold, any combination. ``unknown`` is the page's
+#: "No title shown": people found with no job title, or one that names no level.
+LEVEL_IDS = ("working", "executive", "board", "unknown")
+#: The page's default choice: team leads and senior leaders.
+DEFAULT_LEVELS = ("working", "executive")
+
+
 # What a person does, read from the title alone. The picker filters on it and a
 # search can ask for it. FUNCTIONS is the display order; _FUNCTION_TITLE is the
 # precedence: a title naming two functions ("Marketing Operations", "Product

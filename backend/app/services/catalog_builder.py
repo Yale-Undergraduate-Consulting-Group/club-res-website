@@ -280,6 +280,9 @@ async def _enqueue_next(limits: dict[str, float]) -> dict[str, Any]:
                     max_prospects=int(limits["target"]),
                     entity=entity,
                     origin="builder",
+                    # The unattended crawl keeps its one search level: team
+                    # leads, the people who answer.
+                    levels=("working",),
                 )
             except HTTPException as exc:
                 # The club queue is full: members are busy, try next tick.

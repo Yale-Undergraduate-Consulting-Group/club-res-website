@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, type Contact, type ImportOutcome, type ResolvedAlternative, type ResolvedCompany } from '../../api';
 import CompanyAutocomplete from '../CompanyAutocomplete';
-import RecipientPicker, { type OfficerLookupState } from './RecipientPicker';
+import RecipientPicker from './RecipientPicker';
 import CompanyLanes, { type Lane } from './CompanyLanes';
 import SendPanel, { type Held } from './SendPanel';
 import { Button, Chip } from '../ui/Primitives';
-import { LEVEL_TITLES, companyKey, defaultSelection } from '../../lib/recipients';
+import { LEVEL_CHOICES, companyKey, defaultSelection, levelTitles, type Level } from '../../lib/recipients';
 import {
-  WANTED_LABEL, companyStatus, dedupePeople, foundNotOnFile, matchesWanted,
-  type CompanyStatus, type Wanted,
+  WANTED_LABEL, companyStatus, dedupePeople, foundNotOnFile, matchesWanted, wantedLabel,
+  type CompanyStatus,
 } from '../../lib/peopleSheet';
 import { recipientsOf, tallyPeople, tallyReasons, type Tally } from '../../lib/sendPlan';
 import { type ChosenCompany, type CompanyRun, type SearchOptions, useDiscoveryRuns } from '../../lib/useDiscoveryRuns';
@@ -23,7 +23,7 @@ import { type ChosenCompany, type CompanyRun, type SearchOptions, useDiscoveryRu
  * that many buttons, so the later steps went unused.
  *
  * Now adding a company is the whole of step one: its search starts at once
- * (its filing's officers and a web search, queued behind the one before it),
+ * (its filing's officers and a web search; a few run at once, the rest wait),
  * everyone it finds is on the list as they arrive, ticked by the default
  * rule, and the message and the one Send button are in the left rail under
  * the companies. The campaign page and Drafts stay for members who want
@@ -50,13 +50,6 @@ const CONTACT_PAGE = 2000;
 const IMPORT_TRIES = 3;
 const IMPORT_RETRY_MS = 3000;
 const IDLE: CompanyRun = { state: 'idle', pct: 0, message: '' };
-/** Who to look for, in the member's words, mapped to the titles a search
- *  asks for. Team leads by default: they are the people who answer. */
-const WHO: { id: Wanted; label: string }[] = [
-  { id: 'working', label: WANTED_LABEL.working },
-  { id: 'executive', label: WANTED_LABEL.executive },
-  { id: 'board', label: WANTED_LABEL.board },
-];
 
 /** Pasted text as the companies it names: one per line, or several LinkedIn
  *  pages on one line. A single line is one company even with commas in it -
@@ -266,9 +259,12 @@ export default function CampaignPipeline() {
 
   // What the search is told. Shared across companies because it is what the
   // member wants, not what a company calls it.
-  // Who to look for is one choice; titles in the member's own words are
-  // optional and, when given, win. Nobody has to type a title to search.
-  const [level, setLevel] = useState<Wanted>('working');
+  // Who to look for is a choice of levels, at least one; titles in the
+  // member's own words are optional and, when given, win. Nobody has to type
+  // a title to search.
+  const [levels, setLevels] = useState<ReadonlySet<Level>>(() => new Set<Level>(['working', 'executive']));
+  const levelsRef = useRef(levels);
+  const levelList = useMemo(() => LEVEL_CHOICES.filter((l) => levels.has(l)), [levels]);
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
   // The goal a search keeps going for: it stops at this many qualified
@@ -278,7 +274,7 @@ export default function CampaignPipeline() {
     params.get('max') ? clampProspects(Number(params.get('max'))) : DEFAULT_MAX_PROSPECTS,
   ));
   const maxProspects = clampProspects(Number(maxText));
-  const searchTitles = titleHints.trim() || LEVEL_TITLES[level];
+  const searchTitles = titleHints.trim() || levelTitles(levels);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [resolving, setResolving] = useState(0);
 
@@ -363,7 +359,7 @@ export default function CampaignPipeline() {
     });
   };
   // Where a company's search looks. Changing it lets the next search of that
-  // company run again: the lane's Find people, or "Search all countries".
+  // company run again: its "Search again", or "Search all countries".
   const setWhere = (name: string, target: string | undefined) =>
     setChosen((current) => current.map((c) => (companyKey(c.name) === companyKey(name) ? { ...c, targetCountry: target } : c)));
   const autoTried = useRef<Set<string>>(new Set());
@@ -407,9 +403,9 @@ export default function CampaignPipeline() {
         setError(`Showing the first ${rows.length} of ${res.total} people at these companies. Search for the rest by company.`);
       }
       setSelected((current) => {
-        if (!touchedRef.current) return defaultSelection(items);
+        if (!touchedRef.current) return defaultSelection(items, levelsRef.current);
         const present = new Set(items.map((p) => p.id));
-        const fresh = defaultSelection(items.filter((p) => createdIds.includes(p.id)));
+        const fresh = defaultSelection(items.filter((p) => createdIds.includes(p.id)), levelsRef.current);
         return [...new Set([...current.filter((id) => present.has(id)), ...fresh])];
       });
     } catch (e) {
@@ -457,6 +453,18 @@ export default function CampaignPipeline() {
     setSelected(ids);
   };
 
+  // A level is switched on or off; the last one stays on, because a search
+  // needs someone to look for. Ticks the member has not touched follow the
+  // choice, so the header and the Send count change with it.
+  const toggleLevel = (id: Level) => {
+    const next = new Set(levels);
+    if (!next.delete(id)) next.add(id);
+    if (next.size === 0) return;
+    levelsRef.current = next;
+    setLevels(next);
+    if (!touchedRef.current) setSelected(defaultSelection(people, next));
+  };
+
   // One number, counted once: who is ticked, reachable and not held. The
   // header, every lane and the Send button read this and nothing else.
   const selectedSet = useMemo(() => new Set(selected), [selected]);
@@ -473,7 +481,7 @@ export default function CampaignPipeline() {
     const statusByKey: Record<string, CompanyStatus> = {};
     const tallyByKey: Record<string, Tally> = {};
     const heldNames: Held[] = [];
-    let refusedTotal = 0;
+    const refusedCounts: number[] = [];
     const list = chosen.map<Lane>((company) => {
       const key = companyKey(company.name);
       const rows = byKey[key] || [];
@@ -481,12 +489,12 @@ export default function CampaignPipeline() {
       for (const p of refused) {
         heldNames.push({ name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.email || 'Someone', reason: p.skippedReason! });
       }
-      refusedTotal += refused.length;
+      refusedCounts.push(refused.length);
       const companyTally = tallyPeople(rows, selectedSet, held, refused.length);
       tallyByKey[key] = companyTally;
       const run = runs[key] || IDLE;
-      const matching = rows.filter((p) => matchesWanted(p, level)).length;
-      const status = companyStatus({ run, total: companyTally.total, ready: companyTally.canEmail, matching, wanted: level });
+      const matching = rows.filter((p) => matchesWanted(p, levels)).length;
+      const status = companyStatus({ run, total: companyTally.total, ready: companyTally.canEmail, matching, wanted: levels });
       statusByKey[key] = status;
       return { company: company.name, found: companyTally.total, ready: companyTally.canEmail, run, status };
     });
@@ -496,104 +504,37 @@ export default function CampaignPipeline() {
     }
     return {
       lanes: list, statuses: statusByKey, tallies: tallyByKey, heldList: heldNames,
-      tally: tallyPeople(people, selectedSet, held, refusedTotal),
+      tally: tallyPeople(people, selectedSet, held, refusedCounts.reduce((n, count) => n + count, 0)),
     };
-  }, [chosen, people, selectedSet, held, found, runs, level]);
+  }, [chosen, people, selectedSet, held, found, runs, levels]);
 
   // Why a search could not run, once per reason however many companies hit it.
   const pausedNotes = [...new Set(lanes.flatMap((l) => (l.status.problem ? [l.status.problem] : [])))];
   const searchingCount = lanes.filter((l) => l.run.state === 'searching' || l.run.state === 'queued').length;
 
-  // The company the sheet's actions are for: the lane last pointed at, else
-  // the first chosen.
-  const focused = chosen.find((c) => companyKey(c.name) === focusedKey) ?? chosen[0] ?? null;
+  // The company the lanes highlight: the one last pointed at, else the first.
+  const focusedName = (chosen.find((c) => companyKey(c.name) === focusedKey) ?? chosen[0])?.name ?? null;
   // What a search is told, read when it starts rather than when it was
   // queued: changing who to look for while companies wait changes what all
   // of them look for.
-  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, level });
+  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, levels: levelList });
   useEffect(() => {
-    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level };
-  }, [searchTitles, maxProspects, level]);
+    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, levels: levelList };
+  }, [searchTitles, maxProspects, levelList]);
 
-  // One search, from wherever it is asked for: the sheet header for the
-  // focused company, a group's own button, or on its own when a company
-  // is added.
+  // The one search, from the company's own button in the sheet or on its own
+  // when a company is added.
   const findPeople = useCallback((company: ChosenCompany) => {
     setFocusedKey(companyKey(company.name));
     startRun(company, () => searchOptionsRef.current);
   }, [startRun]);
 
-  // The officers a company's filing names, put on the list without a search.
-  // What it did (or why it did nothing) is said under the company, and the
-  // new people arrive ticked by the same rule a search's do. When it runs by
-  // itself (`auto`), a company with no filing is not worth a message: the
-  // search that runs beside it is how that company's people are found.
-  const [officerLookups, setOfficerLookups] = useState<Record<string, OfficerLookupState>>({});
-  const lookUpOfficers = useCallback(async (company: ChosenCompany, auto = false) => {
-    const key = companyKey(company.name);
-    if (!auto) setFocusedKey(key);
-    setOfficerLookups((prev) => ({ ...prev, [key]: { busy: true } }));
-    const forget = () => setOfficerLookups((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    try {
-      const res = await api.yucgoutreach.lookUpOfficers({
-        company_name: company.name, company_domain: company.domain, entity: company.entity,
-      });
-      const created = Number(res.created) || 0;
-      const updated = Number(res.updated) || 0;
-      const results = Array.isArray(res.results) ? res.results : [];
-      const added = created + updated > 0;
-      const parts = [
-        created > 0 ? `Added ${created} ${created === 1 ? 'officer' : 'officers'} from the company filing.` : '',
-        created === 0 && updated > 0
-          ? `${updated} ${updated === 1 ? 'officer is' : 'officers are'} already on file.` : '',
-        auto && !added ? '' : res.note || '',
-        res.without_address > 0 && added
-          ? `${res.without_address} named in the filing ${res.without_address === 1 ? 'has' : 'have'} no address yet.` : '',
-        res.held_by_note ? `${res.held_by_note}.` : '',
-      ].filter(Boolean);
-      if (auto && parts.length === 0) forget();
-      else setOfficerLookups((prev) => ({ ...prev, [key]: { busy: false, note: parts.join(' '), revealed: created > 0 } }));
-      // The list is read again only when the lookup put someone on it.
-      if (results.length > 0 || !auto) {
-        await loadPeople(chosenNamesRef.current, results.flatMap((r) => (r.outcome === 'created' && r.contact_id !== null ? [r.contact_id] : [])));
-      }
-    } catch (e) {
-      if (auto && e instanceof ApiError && e.status === 404) {
-        forget();
-        return;
-      }
-      setOfficerLookups((prev) => ({
-        ...prev, [key]: { busy: false, error: e instanceof Error ? e.message : 'Could not look up officers' },
-      }));
-    }
-  }, [loadPeople]);
-
-  // Filings are read one company at a time: the public registers behind them
-  // are rate limited, and the club works companies one at a time.
-  const officerQueue = useRef<ChosenCompany[]>([]);
-  const officerBusy = useRef(false);
-  const queueOfficers = useCallback((company: ChosenCompany) => {
-    officerQueue.current.push(company);
-    if (officerBusy.current) return;
-    officerBusy.current = true;
-    void (async () => {
-      for (let next = officerQueue.current.shift(); next; next = officerQueue.current.shift()) {
-        await lookUpOfficers(next, true);
-      }
-      officerBusy.current = false;
-    })();
-  }, [lookUpOfficers]);
-
   // A company with no search yet is searched as soon as it is added - the
-  // search is the reason it was added - and its filing's officers are read
-  // beside it. Every company is queued, however many: the searches run one
-  // after another, each shown as queued until its turn. Waits until both the
-  // people and the earlier searches are known, or a company searched an hour
-  // ago would look unsearched.
+  // search is the reason it was added - and its filing's officers come with
+  // it. Every company is queued, however many: the server runs a few at a
+  // time and the rest are shown as queued until there is room. Waits until
+  // both the people and the earlier searches are known, or a company searched
+  // an hour ago would look unsearched.
   const chosenKeyString = chosen.map((c) => companyKey(c.name)).sort().join('\n');
   useEffect(() => {
     if (busy || !runsReady || peopleFor !== chosenKeyString) return;
@@ -606,11 +547,10 @@ export default function CampaignPipeline() {
       for (const company of due) {
         autoTried.current.add(companyKey(company.name));
         findPeople(company);
-        queueOfficers(company);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [busy, runsReady, peopleFor, chosenKeyString, chosen, runs, findPeople, queueOfficers]);
+  }, [busy, runsReady, peopleFor, chosenKeyString, chosen, runs, findPeople]);
 
   // What a finished search found goes onto the list by itself: everyone, at
   // their own level, ticked by the default rule. The server decides who it
@@ -729,7 +669,7 @@ export default function CampaignPipeline() {
                 ?? (searchingCount > 0
                   ? `Searching for people at ${searchingCount} compan${searchingCount === 1 ? 'y' : 'ies'}…`
                   : lanes.length > 0 && lanes.every((l) => l.run.state === 'done')
-                    ? `Nobody found for ${WANTED_LABEL[level]} at these companies. Try another level below, or import a spreadsheet.`
+                    ? `Nobody found for ${wantedLabel(levels)} at these companies. Try another level below, or import a spreadsheet.`
                     : 'No people on file at these companies yet.')}
             </p>
           )}
@@ -739,15 +679,17 @@ export default function CampaignPipeline() {
               wants them. */}
           <div>
             <p className="text-xs font-medium text-slate-600" id="who-to-look-for">Who to look for</p>
-            <div role="radiogroup" aria-labelledby="who-to-look-for" className="mt-1 flex flex-wrap gap-2">
-              {WHO.map((option) => (
-                <Chip key={option.id} role="radio" selected={level === option.id} onClick={() => setLevel(option.id)}>
-                  {option.label}
+            <div role="group" aria-labelledby="who-to-look-for" className="mt-1 flex flex-wrap gap-2">
+              {LEVEL_CHOICES.map((id) => (
+                <Chip key={id} selected={levels.has(id)} onClick={() => toggleLevel(id)}
+                      aria-disabled={levels.size === 1 && levels.has(id) ? true : undefined}
+                      title={levels.size === 1 && levels.has(id) ? 'Keep at least one choice' : undefined}>
+                  {WANTED_LABEL[id]}
                 </Chip>
               ))}
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Searching for: {searchTitles}{' · '}
+              Searching for: {searchTitles || 'any title'}{' · '}
               <button type="button" className="underline" onClick={() => setShowOtherTitles((v) => !v)}>
                 {showOtherTitles ? 'Hide other titles' : 'Other titles…'}
               </button>
@@ -854,7 +796,7 @@ export default function CampaignPipeline() {
         <CompanyLanes
           lanes={lanes}
           emailed={tally.canEmail}
-          focused={focused?.name ?? null}
+          focused={focusedName}
           onFocus={(name) => setFocusedKey(companyKey(name))}
           onExport={(runId) => void exportRun(runId)}
           onDelete={(runId) => {
@@ -875,11 +817,8 @@ export default function CampaignPipeline() {
               tally={tally}
               tallies={tallies}
               held={held}
-              wanted={level}
+              wanted={levels}
               onFind={findPeople}
-              focused={focused}
-              officers={officerLookups}
-              onLookUpOfficers={lookUpOfficers}
               onFindEverywhere={(company) => {
                 setWhere(company.name, '*');
                 findPeople({ ...company, targetCountry: '*' });

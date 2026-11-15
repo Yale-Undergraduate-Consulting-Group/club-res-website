@@ -1,21 +1,36 @@
 import { publicSourceUrl } from './contactEvidence';
-import { companyKey, isTooSenior, levelOf, looksLikePerson, yaleOf, type Level } from './recipients';
+import { LEVEL_CHOICES, LEVEL_RANK, companyKey, fitLevel, looksLikePerson, yaleOf, type Level } from './recipients';
 import type { CompanyRun, FoundPerson } from './useDiscoveryRuns';
 
 /**
  * What the people sheet and the company lanes say about people, decided once:
- * who matches the level the member chose, why, where each person came from,
+ * who matches the levels the member chose, why, where each person came from,
  * which rows are the same person, and what each company's search amounts to.
  */
 
-/** The three things "Who to look for" can be. */
-export type Wanted = Exclude<Level, 'unknown'>;
+/** What "Who to look for" has ticked: one or more levels, never none. */
+export type Wanted = ReadonlySet<Level>;
 
-export const WANTED_LABEL: Record<Wanted, string> = { working: 'Team leads', executive: 'Senior leaders', board: 'Board' };
-/** Where to suggest looking next when a level came up empty. */
-const WANTED_NEXT: Record<Wanted, Wanted> = { working: 'executive', executive: 'working', board: 'working' };
+export const WANTED_LABEL: Record<Level, string> = {
+  working: 'Team leads', executive: 'Senior leaders', board: 'Board', unknown: 'No title shown',
+};
+/** The chosen levels in words: "Team leads and Senior leaders". */
+export function wantedLabel(wanted: Wanted): string {
+  const labels = LEVEL_CHOICES.filter((l) => wanted.has(l)).map((l) => WANTED_LABEL[l]);
+  return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}` : labels[0] ?? '';
+}
+/** Where to suggest looking next when the chosen levels came up empty: the
+ *  first level not chosen, or nothing when all four are. */
+function tryNext(wanted: Wanted): string {
+  const next = LEVEL_CHOICES.find((l) => !wanted.has(l));
+  return next ? ` (try ${WANTED_LABEL[next]})` : '';
+}
 const SINGULAR: Record<Level, string> = {
   working: 'team lead', executive: 'senior leader', board: 'board seat', unknown: 'role unclear',
+};
+/** What someone is, for "Board seat, not a team lead". */
+const A: Record<Level, string> = {
+  working: 'a team lead', executive: 'a senior leader', board: 'a board seat', unknown: 'someone with no title',
 };
 
 /** What the sheet needs to know about someone, whether they are on file (a
@@ -50,37 +65,24 @@ export function foundAsPerson(p: FoundPerson): PersonLike {
 
 // --- Level ---------------------------------------------------------------
 
-/** The level a person counts as for "who to look for". A filing lists a CFO as
- *  "SVP, Chief Financial Officer", which the server reads as working level; the
- *  title decides, the same way the default tick does. */
-export function fitLevel(person: PersonLike): Level {
-  const level = levelOf(person);
-  return level !== 'board' && isTooSenior(person) ? 'executive' : level;
-}
-
-const FIT_ORDER: Record<Wanted, Level[]> = {
-  working: ['working', 'executive', 'unknown', 'board'],
-  executive: ['executive', 'working', 'unknown', 'board'],
-  board: ['board', 'executive', 'working', 'unknown'],
-};
-
-/** 0 is the level asked for; larger is further from it. */
+/** 0 is a level asked for (team leads first); larger is further from it. */
 export function fitRank(person: PersonLike, wanted: Wanted): number {
-  return FIT_ORDER[wanted].indexOf(fitLevel(person));
+  const level = fitLevel(person);
+  return LEVEL_RANK[level] + (wanted.has(level) ? 0 : LEVEL_CHOICES.length);
 }
 
-/** The sheet's order: the level asked for first, then people tied to Yale
+/** The sheet's order: the levels asked for first, then people tied to Yale
  *  within a level. Callers fall back to their own order (name, score) for ties. */
 export function sheetOrder(a: PersonLike, b: PersonLike, wanted: Wanted): number {
   return fitRank(a, wanted) - fitRank(b, wanted) || Number(Boolean(yaleOf(b))) - Number(Boolean(yaleOf(a)));
 }
 
-/** Shown by default: the level asked for, and a name that is a person's. */
+/** Shown by default: a level asked for, and a name that is a person's. */
 export function matchesWanted(person: PersonLike, wanted: Wanted): boolean {
-  return fitLevel(person) === wanted && looksLikePerson(person);
+  return wanted.has(fitLevel(person)) && looksLikePerson(person);
 }
 
-const KEYWORD: Record<Wanted, RegExp> = {
+const KEYWORD: Record<Exclude<Level, 'unknown'>, RegExp> = {
   working: /\b(head of|director of|vice president|vp|manager|managing|lead|associate|analyst|coordinator|specialist|partner|principal)\b/i,
   executive: /\b(chief of staff|chief [a-z&,\s-]*officer|ceo|cfo|coo|cto|cio|cmo|chro|chief|president|executive director|treasurer|general counsel)\b/i,
   board: /\b(board member|board of directors|trustee|chair(?:man|woman|person)?|director|committee|governor)\b/i,
@@ -92,18 +94,27 @@ const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export function matchReason(person: PersonLike, wanted: Wanted): string {
   if (!looksLikePerson(person)) return 'The name looks like page text, not a person';
   const level = fitLevel(person);
-  if (level === wanted) {
-    const word = KEYWORD[wanted].exec(person.title || '')?.[0];
-    return word ? `${capital(SINGULAR[wanted])}: "${word}" in the title` : `${capital(SINGULAR[wanted])} by title`;
+  if (level === 'unknown') {
+    if (wanted.has('unknown')) return person.title ? 'Role unclear from the title' : 'No title shown';
+    return person.title ? 'Role unclear from the title' : 'No title to judge the level by';
   }
-  if (level === 'unknown') return person.title ? 'Role unclear from the title' : 'No title to judge the level by';
-  return `${capital(SINGULAR[level])}, not a ${SINGULAR[wanted]}`;
+  if (wanted.has(level)) {
+    const word = KEYWORD[level].exec(person.title || '')?.[0];
+    return word ? `${capital(SINGULAR[level])}: "${word}" in the title` : `${capital(SINGULAR[level])} by title`;
+  }
+  return `${capital(SINGULAR[level])}, not ${LEVEL_CHOICES.filter((l) => wanted.has(l)).map((l) => A[l]).join(' or ')}`;
 }
 
 // --- Source --------------------------------------------------------------
 
 const SOURCE_LABEL: Record<string, string> = {
   web_discovery: 'Web search',
+  web_company_page: 'Company leadership page',
+  web_press: 'Press release',
+  web_theorg: 'The Org',
+  web_crunchbase: 'Crunchbase',
+  web_speaker: 'Conference speaker page',
+  web_directory: 'Public profile directory',
   domain_scrape: 'Company website',
   roster_sec: 'SEC filing',
   roster_register: 'Company filing',
@@ -114,7 +125,9 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 /** How far a source can be trusted to name the right person, best first. */
 const SOURCE_RANK: Record<string, number> = {
-  roster_sec: 5, roster_register: 5, roster_cache: 4, domain_scrape: 4, web_discovery: 3, linkedin_inferred: 2,
+  roster_sec: 5, roster_register: 5, roster_cache: 4, domain_scrape: 4, web_company_page: 4,
+  web_discovery: 3, web_press: 3, web_theorg: 3, web_crunchbase: 3, web_speaker: 3,
+  web_directory: 2, linkedin_inferred: 2,
 };
 
 export type PersonSource = { label: string; link: { href: string; text: string } | null; rank: number };
@@ -189,8 +202,8 @@ const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`;
 export function companyStatus({ run, total, ready, matching, wanted }: {
   run: CompanyRun; total: number; ready: number; matching: number; wanted: Wanted;
 }): CompanyStatus {
-  const label = WANTED_LABEL[wanted];
-  const next = WANTED_LABEL[WANTED_NEXT[wanted]];
+  const label = wantedLabel(wanted);
+  const next = tryNext(wanted);
   const emailed = `${ready} can be emailed`;
   if (run.state === 'searching') return { tone: 'busy', text: `Searching… ${Math.round(run.pct)}%`, long: 'Searching…' };
   if (run.state === 'queued') return { tone: 'busy', text: 'Queued', long: 'Queued: waiting for another search to finish' };
@@ -205,11 +218,11 @@ export function companyStatus({ run, total, ready, matching, wanted }: {
       : { tone: 'paused', text: 'Search stopped', long: 'The search stopped before it found anyone; try again' };
   }
   if (total > 0) {
-    const forLevel = matching === total ? '' : matching === 0 ? ` · none for ${label} (try ${next})` : ` · ${matching} for ${label}`;
+    const forLevel = matching === total ? '' : matching === 0 ? ` · none for ${label}${next}` : ` · ${matching} for ${label}`;
     return { tone: 'ok', text: emailed, long: `${emailed} · ${people(total)} found${forLevel}` };
   }
-  if (run.state === 'done') return { tone: 'empty', text: 'Nobody found', long: `Nobody found for ${label} (try ${next})` };
-  return { tone: 'idle', text: 'Not searched yet', long: `Not searched yet. Find people to look for ${label}.` };
+  if (run.state === 'done') return { tone: 'empty', text: 'Nobody found', long: `Nobody found for ${label}${next}` };
+  return { tone: 'idle', text: 'Not searched yet', long: `Not searched yet. Search again to look for ${label}.` };
 }
 
 /** Who a search found at a company that is not already on file there, by

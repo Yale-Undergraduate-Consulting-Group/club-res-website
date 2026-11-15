@@ -23,6 +23,7 @@ from app.services.contact_ai_review import _log_row
 from app.services.contact_merge import merge_contacts
 from app.services.company_email_cache import build_email_for_person_sync
 from app.services.contact_scraper import (
+    WEB_SOURCES,
     is_employee_outreach_email,
     is_heuristic_junk_contact,
     is_valid_person_contact,
@@ -34,7 +35,7 @@ from app.services.contact_scraper import (
 from app.services.contact_verify_pipeline import run_contact_verify_pipeline
 from app.services.company_register import FUNCTION_IDS, yale_evidence
 from app.services.role_suggestions import title_from_evidence
-from app.services.web_contact_discovery import discover_contacts_from_web
+from app.services.web_contact_discovery import DEFAULT_LEVELS, discover_contacts_from_web, wanted_levels
 
 
 _active_lease: ContextVar[str | None] = ContextVar("yucgoutreach_lease", default=None)
@@ -62,9 +63,18 @@ DISCOVERY_ROUND_QUERIES = int(os.getenv("DISCOVERY_ROUND_QUERIES", "8") or 8)
 #: A round that saves fewer new qualified people than this means the company
 #: has no more to find through these sources.
 DISCOVERY_ROUND_MIN_NEW = int(os.getenv("DISCOVERY_ROUND_MIN_NEW", "2") or 2)
-#: How a short run explains why it stopped. Only "exhausted" is a claim about the company.
 #: What a run's goal counts, in the words the page uses.
-_LEVEL_WORD = {"working": "team leads", "executive": "senior leaders", "board": "board members"}
+_LEVEL_WORD = {"working": "team leads", "executive": "senior leaders", "board": "board members",
+               "unknown": "people with no title shown"}
+
+
+def _levels_phrase(levels: tuple[str, ...]) -> str:
+    """"team leads and senior leaders": what a run's goal counts."""
+    words = [_LEVEL_WORD[level] for level in levels]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+#: How a short run explains why it stopped. Only "exhausted" is a claim about the company.
 _STOP_LABEL = {
     "exhausted": "no more found",
     "time_budget": "search time limit reached",
@@ -72,11 +82,14 @@ _STOP_LABEL = {
     "search_failed": "web search failing",
 }
 # Searches per run, against the shared TinyFish/Monid request pace and wallet:
-# the first wave asks at most 17 web queries plus 1 company-meta query (the
-# seeds reading shares the first one). Later rounds draw from round_query_pool
-# (at most ~25 queries), at most DISCOVERY_MAX_ROUNDS x DISCOVERY_ROUND_QUERIES
-# = 32 of them. So <= ~43 searches for a run that never reaches its goal, and
-# ~18 for one the first wave satisfies.
+# the first wave asks 19 web queries for the default levels (team leads and
+# senior leaders; 17 for one level, at most 25 for all three with titles typed
+# in) plus 1 company-meta query - the seeds reading shares the first one. That
+# wave includes the public-source searches (org charts, press releases, speaker
+# lists, profile directories, the company's own leadership pages). Later rounds
+# draw from round_query_pool (about 34 queries), at most DISCOVERY_MAX_ROUNDS x
+# DISCOVERY_ROUND_QUERIES = 32 of them. So <= ~52 searches for a run that never
+# reaches its goal, and ~20 for one the first wave satisfies.
 
 
 async def add_yale_signal(db) -> None:
@@ -207,18 +220,20 @@ def _title_hints_from_spec(spec: dict[str, Any]) -> str:
     return ""
 
 
-def _level_from_spec(spec: dict[str, Any]) -> str:
-    """Who to look for: working (team leads, the default), executive or board.
-    Runs made before the choice reached the server carry none and count as
-    team-lead searches, which is what the page asked for by default."""
-    from app.services.web_contact_discovery import wanted_level
-
+def _levels_from_spec(spec: dict[str, Any]) -> tuple[str, ...]:
+    """Who to look for: any of working (team leads), executive (senior
+    leaders), board and unknown ("no title shown"). A run queued while the page
+    could choose only one carries ``level``, and one older than that carries
+    nothing and counts as a team-lead search, which is what the page asked for
+    by default then."""
     raw = spec.get("research_json") or ""
     try:
         data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
         data = {}
-    return wanted_level(data.get("level") if isinstance(data, dict) else None)
+    if not isinstance(data, dict):
+        return wanted_levels("working")
+    return wanted_levels(data["levels"] if "levels" in data else data.get("level") or "working")
 
 
 def _function_from_spec(spec: dict[str, Any]) -> str | None:
@@ -320,7 +335,7 @@ def _grounded_at_company(
 
 async def _tavily_name_seeds(
     company_name: str, domain: str, max_n: int, custom_patterns: list[str], title_hints: str = "",
-    *, entity: dict[str, Any] | None = None, skips: dict | None = None, level: str = "working",
+    *, entity: dict[str, Any] | None = None, skips: dict | None = None, levels: tuple[str, ...] = DEFAULT_LEVELS,
 ) -> list[dict]:
     """Supplement merged list with Tavily+LLM name extraction when Apify/web yield few rows."""
     from app.services.web_contact_discovery import (
@@ -332,7 +347,7 @@ async def _tavily_name_seeds(
     dom = normalize_domain(domain) if domain else ""
     # The web stage's first query, word for word: the run asks it once and
     # both stages read the answer (a second copy used to go out in parallel).
-    query = first_wave_queries(company_name, dom, title_hints, entity, level)[0]
+    query = first_wave_queries(company_name, dom, title_hints, entity, levels)[0]
     results = await _tavily_search(query, max_results=SEARCH_PAGE_RESULTS)
     if not results:
         return []
@@ -422,7 +437,7 @@ def _yale_signal(contact: dict) -> str:
         f"{contact.get('title') or ''}\n{contact.get('discovery_context') or ''}")
 
 
-def _quality_score(contact: dict, title_hints: str = "", level: str | None = None) -> float:
+def _quality_score(contact: dict, title_hints: str = "", levels: tuple[str, ...] | None = None) -> float:
     score = 40.0
     ev = contact.get("email_verification_status") or ""
     if ev == "valid":
@@ -441,7 +456,7 @@ def _quality_score(contact: dict, title_hints: str = "", level: str | None = Non
     src = contact.get("contact_source") or ""
     if src in ("domain_scrape", "roster_sec", "roster_register", "roster_cache"):
         score += 12
-    elif src == "web_discovery":
+    elif src in WEB_SOURCES:
         score += 8
     if contact.get("linkedin_url"):
         score += 10
@@ -453,13 +468,13 @@ def _quality_score(contact: dict, title_hints: str = "", level: str | None = Non
             score += 10
             break
     score = max(0.0, min(100.0, score))
-    if level:
-        # The level the member asked for ranks first: anyone else loses 15
+    if levels:
+        # The levels the member asked for rank first: anyone else loses 15
         # points after the cap, so a verified chief officer in a team-lead
         # search sits below a verified director instead of tying at 100.
         from app.services.company_register import fit_level
 
-        if fit_level(contact.get("title")) != level:
+        if fit_level(contact.get("title")) not in levels:
             score = max(0.0, score - 15)
     return score
 
@@ -623,6 +638,28 @@ async def _run_update(
         await db.close()
 
 
+async def _fill_company_facts(run_id: int, meta: dict[str, str]) -> None:
+    """Put the company's country, size, industry and keywords on the people
+    saved before the facts were read. Only rows that have none of them are
+    touched, so people saved after the reading keep what they were given."""
+    values = (meta.get("country"), meta.get("employees"), meta.get("industry"),
+              meta.get("keywords"), meta.get("keywords_2"))
+    if not any(values):
+        return
+    db = await get_db()
+    try:
+        await db.execute(
+            """UPDATE yucgoutreach_prospects
+               SET country=?, employees=?, industry=?, keywords_1=?, keywords_2=?
+               WHERE run_id=? AND country IS NULL AND employees IS NULL AND industry IS NULL
+                 AND keywords_1 IS NULL AND keywords_2 IS NULL""",
+            (*(v or None for v in values), run_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
 async def _timed(timings: dict[str, float], stage: str, work: Any) -> Any:
     """Await ``work`` and add its wall-clock seconds to ``timings[stage]``."""
     t0 = time.monotonic()
@@ -681,13 +718,13 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     company = (spec.get("company_name") or "").strip()
     domain_in = (spec.get("company_domain") or "").strip()
     title_hints = _title_hints_from_spec(spec)
-    level = _level_from_spec(spec)
+    levels = _levels_from_spec(spec)
     function = _function_from_spec(spec)
     from app.services.company_register import fit_level
-    level_word = _LEVEL_WORD[level]
+    level_word = _levels_phrase(levels)
     entity = _entity_from_spec(spec, company)
     profiled = entity.get("source") != "fallback"
-    # The goal counts people at the level asked for. Everyone else who passes
+    # The goal counts people at the levels asked for. Everyone else who passes
     # is saved too, but a team-lead search does not stop because it found
     # sixty executives.
     max_prospects = max(1, min(int(spec.get("max_prospects") or YUCG_DEFAULT_PROSPECTS), YUCG_MAX_PROSPECTS))
@@ -755,7 +792,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             return []
         return await discover_contacts_from_web(
             cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
-            seen=seen, level=level, function=function,
+            seen=seen, levels=levels, function=function,
         )
 
     async def _roster() -> tuple[list[dict], str]:
@@ -765,30 +802,42 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         alongside it."""
         try:
             from app.services.roster_email import (
-                cached_roster_contacts, merge_register_officers, refresh_roster_on_demand,
-                register_officer_contacts, roster_refresh_note,
+                cached_roster_contacts, fetch_register_officers, merge_register_officers,
+                refresh_roster_on_demand, register_officer_contacts, roster_refresh_note,
             )
 
             # Only a domain the member typed, or the entity's mail domain, may
             # replace the one the roster already holds; a looked-up domain
             # just fills a gap.
             pin = bool(domain_in) or bool(mail_domain)
+            legal_name = entity.get("legal_name")
             rows = await cached_roster_contacts(company, domain, pin_domain=pin)
-            if not rows:
-                # A cold SEC refresh took 36s for Barclays, longer than every
-                # other source. It gets ROSTER_STAGE_TIMEOUT_SEC; past that it
-                # finishes in the background and the next search reads it
-                # from the cache, and this run goes on without it.
-                refresh = asyncio.ensure_future(refresh_roster_on_demand(company, domain, pin_domain=pin))
-                try:
-                    rows = await asyncio.wait_for(asyncio.shield(refresh), ROSTER_STAGE_TIMEOUT_SEC)
-                except asyncio.TimeoutError:
-                    _BACKGROUND.add(refresh)
-                    refresh.add_done_callback(_background_done)
-                    rows = []
-            # Officers already stored in the company register (Form D, 990, or
-            # the member's "Look up officers") join the roster's people.
-            register_rows = await register_officer_contacts(company, domain, legal_name=entity.get("legal_name"))
+            # Two cold reads, side by side: the SEC refresh (36s for Barclays,
+            # longer than every other source) and the officer list of the
+            # company's own register entry (SEC or Companies House) when none
+            # is stored. They get ROSTER_STAGE_TIMEOUT_SEC; past that they
+            # finish in the background and the next search reads them from
+            # the cache, and this run goes on without them.
+            register = asyncio.ensure_future(fetch_register_officers(company, domain, legal_name=legal_name))
+            refresh = None if rows else asyncio.ensure_future(
+                refresh_roster_on_demand(company, domain, pin_domain=pin))
+            done, late = await asyncio.wait([f for f in (register, refresh) if f], timeout=ROSTER_STAGE_TIMEOUT_SEC)
+            for task in late:
+                _BACKGROUND.add(task)
+                task.add_done_callback(_background_done)
+            if register in done:
+                # A register that could not be read leaves the officers out of
+                # this search; the SEC refresh and the web are still searched.
+                failure = register.exception()
+                problems = [f"{type(failure).__name__}: {failure}"] if failure else register.result()
+                if problems:
+                    logger.warning("company register officers not read for %s: %s", company, problems[0])
+            if refresh is not None:
+                rows = refresh.result() if refresh in done else []
+            # Officers stored in the company register (Form D, 990, SEC or
+            # Companies House, read just now when none were stored) join the
+            # roster's people.
+            register_rows = await register_officer_contacts(company, domain, legal_name=legal_name)
             return merge_register_officers(rows, register_rows), await roster_refresh_note(company, domain)
         except Exception:
             logger.exception("roster cache-first lookup failed")
@@ -800,7 +849,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         of the step is more people, so it runs with the rest and what it finds
         is used if it is new."""
         return await _tavily_name_seeds(
-            company, domain, max_prospects, custom_patterns, title_hints, entity=entity, skips=skips, level=level,
+            company, domain, max_prospects, custom_patterns, title_hints, entity=entity, skips=skips, levels=levels,
         )
 
     from app.services.web_contact_discovery import (
@@ -811,14 +860,20 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     # One search run for every round, so no query is asked twice and the
     # failure count covers the whole run.
     search_run, search_token = begin_search_run()
+    # The model's two readings of the search results are not what the first
+    # verification waits for: people are saved before the company's facts are
+    # in (they are filled in when they arrive), and the name seeds are
+    # verified as a later batch. Started here, inside the search run, so they
+    # share its queries and its count.
+    saved_before_facts: list[int] = []
+    meta_task = asyncio.ensure_future(_timed(timings, "company_meta", _company_meta(company, domain)))
+    seeds_task = asyncio.ensure_future(_timed(timings, "name_seeds", _seeds()))
     try:
         t_sources = time.monotonic()
-        domain_contacts, web_contacts, meta, (roster_contacts, roster_note), seeded = await asyncio.gather(
+        domain_contacts, web_contacts, (roster_contacts, roster_note) = await asyncio.gather(
             _timed(timings, "website_crawl", _domain()),
             _timed(timings, "web_search", _web()),
-            _timed(timings, "company_meta", _company_meta(company, domain)),
             _timed(timings, "roster", _roster()),
-            _timed(timings, "name_seeds", _seeds()),
         )
         timings["sources"] = time.monotonic() - t_sources
         search_errors = search_errors_summary(search_run)
@@ -826,8 +881,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         # applies to each search result, before anything is merged.
         domain_contacts = _gate_rows(domain_contacts, entity, skips, company)
         roster_contacts = _gate_rows(roster_contacts, entity, skips, company)
-        kw1 = meta.get("keywords") or ""
-        kw2 = meta.get("keywords_2") or ""
+        # (the company facts are read from meta_task as people are saved)
         if roster_contacts:
             domain_contacts = domain_contacts + roster_contacts
         n_site = max(0, len(domain_contacts) - len(roster_contacts))
@@ -861,15 +915,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             web_contacts=web_contacts,
         )
 
-        # Seeds were fetched alongside the other sources; anybody they found who is
-        # not already here is a person the crawl and the roster missed.
-        if seeded:
-            known = {sanitize_email(c.get("email") or "").lower() for c in merged if c.get("email")}
-            for row in seeded:
-                em = sanitize_email(row.get("email") or "").lower()
-                if em and em not in known and is_valid_person_contact(row, company_name=company, domain=domain):
-                    known.add(em)
-                    merged.append(row)
+        # The seeds were read alongside the other sources; whoever they found
+        # who is new is verified after the first batch (see below).
         timings["merge"] = time.monotonic() - t_merge
 
         # Every address the run has already put through verification, saved
@@ -889,8 +936,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             return out
 
         def _matched(rows: list[dict] | None = None) -> int:
-            """Saved people at the level asked for: what the goal counts."""
-            return sum(1 for c in (saved_rows if rows is None else rows) if fit_level(c.get("title")) == level)
+            """Saved people at the levels asked for: what the goal counts."""
+            return sum(1 for c in (saved_rows if rows is None else rows) if fit_level(c.get("title")) in levels)
 
         def _found() -> str:
             return f"Found {_matched()} of {max_prospects} {level_word} · round {round_no}"
@@ -920,6 +967,12 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         async def _save(candidates: list[dict]) -> list[dict]:
             """Store one round's survivors; the rows actually written."""
             written: list[dict] = []
+            facts_in = meta_task.done() and not meta_task.cancelled() and meta_task.exception() is None
+            meta = meta_task.result() if facts_in else {}
+            if not facts_in:
+                saved_before_facts.append(run_id)
+            kw1 = meta.get("keywords") or ""
+            kw2 = meta.get("keywords_2") or ""
             db = await get_db()
             try:
                 await db.execute("BEGIN IMMEDIATE")
@@ -944,7 +997,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     if not c["title"]:
                         # Only what the collected text states, never a guess.
                         c["title"] = title_from_evidence(name, [company], text=c.get("discovery_context") or "") or None
-                    score = _quality_score(c, title_hints, level)
+                    score = _quality_score(c, title_hints, levels)
                     secondary = score - 3 if c.get("contact_source") == "linkedin_inferred" else score
                     linkedin = c.get("linkedin_url") or ""
                     evidence_obj = {
@@ -1083,7 +1136,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             )
             # People tied to Yale first, then by score: the order they are
             # stored in, which the listing keeps within a score.
-            candidates.sort(key=lambda row: (bool(_yale_signal(row)), _quality_score(row, title_hints, level)),
+            candidates.sort(key=lambda row: (bool(_yale_signal(row)), _quality_score(row, title_hints, levels)),
                             reverse=True)
             written = await _timed(timings, "save", _save(candidates))
             saved_rows.extend(written)
@@ -1095,7 +1148,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         # previous round is being verified whenever even a clean sweep of that
         # round would leave the run short, so no search is spent on a run
         # that could already reach its target.
-        pool = round_query_pool(cn, domain, title_hints, entity, level, function) if web_on else []
+        pool = round_query_pool(cn, domain, title_hints, entity, levels, function) if web_on else []
         # Why no further round was started. Only "exhausted" claims the company
         # has no more people; the others say the search itself stopped.
         state = {"rounds": 0, "why": None, "stop": "exhausted"}
@@ -1120,10 +1173,23 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             state["rounds"] += 1
             return asyncio.ensure_future(_timed(timings, "web_search_rounds", discover_contacts_from_web(
                 cn, domain or None, max_people=web_max, title_hints=title_hints, entity=entity, skips=skips,
-                queries=batch, seen=seen, level=level, function=function,
+                queries=batch, seen=seen, levels=levels, function=function,
             )))
 
+        seeds = {"taken": False}
+
+        def _seeded() -> list[dict]:
+            """What the name seeds found that no other source did, once their
+            reading is in. It joins the next batch to be verified, so a slow
+            reading never holds one up and costs no pass of its own."""
+            if seeds["taken"] or not seeds_task.done():
+                return []
+            seeds["taken"] = True
+            return _fresh([row for row in seeds_task.result()
+                           if is_valid_person_contact(row, company_name=company, domain=domain)])
+
         first = _fresh(merged)
+        first += _seeded()
         base_queries, base_failed, base_limit = search_run["queries"], search_run["failed"], search_run["limit"]
         pending = _next_round() if len(first) < max_prospects else None
         try:
@@ -1141,6 +1207,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                         state["stop"] = state["why"] or "exhausted"
                         break
                 rows = _fresh(await pending)
+                rows += _seeded()
                 pending = None
                 round_no += 1
                 # Fewer new rows than a round must add means this round is
@@ -1152,9 +1219,19 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 await _run_update(run_id, progress_pct=min(97.0, 40.0 + 55.0 * _matched() / max_prospects),
                                   progress_message=_found())
                 exhausted = await _qualify(rows) < DISCOVERY_ROUND_MIN_NEW
+            if not seeds["taken"] and _matched() < max_prospects:
+                # The sources ran dry or the rounds are spent; the name seeds
+                # are the last reading still to come.
+                await seeds_task
+                extra = _seeded()
+                if extra:
+                    await _qualify(extra)
         finally:
             if pending is not None:
                 pending.cancel()
+        meta = await meta_task
+        if saved_before_facts:
+            await _fill_company_facts(run_id, meta)
         # Rounds whose searches mostly failed or hit the provider limit say
         # nothing about the company, so they are never reported as exhausted.
         dq, df = search_run["queries"] - base_queries, search_run["failed"] - base_failed
@@ -1162,13 +1239,15 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             state["stop"] = "search_failed"
         search_errors = search_errors_summary(search_run)
     finally:
+        meta_task.cancel()
+        seeds_task.cancel()
         end_search_run(search_token)
 
     inserted = len(saved_rows)
-    matched = sum(1 for c in saved_rows if fit_level(c.get("title")) == level)
+    matched = sum(1 for c in saved_rows if fit_level(c.get("title")) in levels)
     shortfall = None
     if matched < max_prospects:
-        shortfall = {"target": max_prospects, "found": matched, "reason": state["stop"], "level": level}
+        shortfall = {"target": max_prospects, "found": matched, "reason": state["stop"], "levels": list(levels)}
     short_clause = (
         f" · {matched} of {max_prospects} {level_word} ({_STOP_LABEL.get(state['stop'], 'no more found')})"
         if shortfall else ""
@@ -1212,7 +1291,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 "merged": totals["merged"],
                 "verified": totals["verified"],
                 "saved": inserted,
-                "level": level,
+                "levels": list(levels),
                 "function": function,
                 "level_found": matched,
                 "junk_filtered": totals["junk"],
@@ -1322,30 +1401,38 @@ async def drain_queued_yucgoutreach_runs() -> dict:
         # Members first: a member's search is someone watching a progress bar,
         # a builder run is the catalog builder's unattended crawl. A builder
         # run is only taken when no member run is waiting.
-        row = await (await db.execute(
-            """SELECT r.id FROM yucgoutreach_discovery_runs r
-               JOIN users u ON u.id=r.user_id AND u.is_active=1
-               WHERE r.status='queued'
-               ORDER BY CASE WHEN r.origin='builder' THEN 1 ELSE 0 END, r.id LIMIT 1"""
-        )).fetchone()
-        if not row:
-            return {"ok": True, "claimed": 0}
-        run_id = int(row["id"])
         lease_minutes = max(5, min(int(os.getenv("DISCOVERY_LEASE_MINUTES", "30") or 30), 180))
         lease_token = uuid.uuid4().hex
-        claimed = await (await db.execute(
-            """UPDATE yucgoutreach_discovery_runs
-               SET status='running', progress_message='Starting', updated_at=CURRENT_TIMESTAMP,
-                   attempt_count=attempt_count+1, lease_token=?, lease_expires_at=datetime('now', ?)
-               WHERE id=? AND status='queued' AND EXISTS (
-                   SELECT 1 FROM users u WHERE u.id=yucgoutreach_discovery_runs.user_id AND u.is_active=1
-               ) AND (origin!='builder' OR NOT EXISTS (
-                   SELECT 1 FROM yucgoutreach_discovery_runs m WHERE m.status='queued' AND m.origin!='builder'
-               )) RETURNING id""",
-            (lease_token, f"+{lease_minutes} minutes", run_id),
-        )).fetchone()
-        if not claimed:
+        claimed = None
+        # Every new search kicks its own drain, so several drains read the queue
+        # at once. One that loses the race for a run (another took it between
+        # the read and the claim) goes on to the next, not back to the
+        # scheduler's tick, so a member's searches start side by side.
+        for _ in range(5):
+            row = await (await db.execute(
+                """SELECT r.id FROM yucgoutreach_discovery_runs r
+                   JOIN users u ON u.id=r.user_id AND u.is_active=1
+                   WHERE r.status='queued'
+                   ORDER BY CASE WHEN r.origin='builder' THEN 1 ELSE 0 END, r.id LIMIT 1"""
+            )).fetchone()
+            if not row:
+                break
+            run_id = int(row["id"])
+            claimed = await (await db.execute(
+                """UPDATE yucgoutreach_discovery_runs
+                   SET status='running', progress_message='Starting', updated_at=CURRENT_TIMESTAMP,
+                       attempt_count=attempt_count+1, lease_token=?, lease_expires_at=datetime('now', ?)
+                   WHERE id=? AND status='queued' AND EXISTS (
+                       SELECT 1 FROM users u WHERE u.id=yucgoutreach_discovery_runs.user_id AND u.is_active=1
+                   ) AND (origin!='builder' OR NOT EXISTS (
+                       SELECT 1 FROM yucgoutreach_discovery_runs m WHERE m.status='queued' AND m.origin!='builder'
+                   )) RETURNING id""",
+                (lease_token, f"+{lease_minutes} minutes", run_id),
+            )).fetchone()
+            if claimed:
+                break
             await db.rollback()
+        if not claimed:
             return {"ok": True, "claimed": 0}
         # A recovered job may have committed partial output before the process died.
         await db.execute("DELETE FROM yucgoutreach_prospects WHERE run_id=?", (run_id,))

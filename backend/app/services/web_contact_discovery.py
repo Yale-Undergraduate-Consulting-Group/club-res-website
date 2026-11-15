@@ -8,7 +8,8 @@ import asyncio
 import os
 import re
 from contextvars import ContextVar, Token
-from typing import Any, Awaitable, Callable, Optional
+from itertools import zip_longest
+from typing import Any, Awaitable, Callable, Iterable, Optional
 
 import httpx
 
@@ -22,7 +23,7 @@ from app.services.contact_scraper import (
     sanitize_email,
     confidence_for_contact_dict,
 )
-from app.services.company_register import yale_evidence
+from app.services.company_register import DEFAULT_LEVELS, LEVEL_IDS, yale_evidence
 from app.services.linkedin_scraper import extract_linkedin_profile_slug
 from app.services.role_suggestions import normalize_title, title_from_evidence
 from app.services.web_fetch import (
@@ -41,14 +42,25 @@ NAME_TITLE_RE = re.compile(
     r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s+(?:[-–—|]\s*|[,]\s*)"
     r"([A-Za-z][^|\n]{3,60}?)(?=\.\s|\.$|[|\n]|$)",
 )
+#: "Priya Nair, Head of Product at Acme": how a press release quotes an
+#: executive and a speaker list prints one. Read only on those pages, and only
+#: when the role itself names the employer (see role_names_target).
+NAME_COMMA_ROLE_RE = re.compile(
+    r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+),\s+([A-Za-z][^|\n]{3,60}?)(?=\.\s|\.$|[|\n]|$)",
+)
+#: The employer a role ends with: "... at Acme", "..., Acme". Short and plain,
+#: so the tail of a sentence ("..., said Acme's partner") is not one.
+ROLE_EMPLOYER_RE = re.compile(r"(?:\bat|@|,)\s*([A-Z0-9][^,.;:\"“”|]{1,50})$")
 NAME_AT_COMPANY_RE = re.compile(
     r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\s+(?:at|@)\s+",
     re.I,
 )
 TAVILY_SEARCH_DEPTH = os.getenv("TAVILY_SEARCH_DEPTH", "basic").strip() or "basic"
 # The wave is network-bound: each query is one HTTP round trip, so the
-# worker count is what turns a list of queries into one wait.
-WEB_DISCOVERY_WORKERS = int(os.getenv("WEB_DISCOVERY_WORKERS", "12"))
+# worker count is what turns a list of queries into one wait. It covers a
+# whole first wave (about 25 queries), which a smaller cap split into
+# sequential batches; the club-wide Monid pacer is what limits the pace.
+WEB_DISCOVERY_WORKERS = int(os.getenv("WEB_DISCOVERY_WORKERS", "32"))
 # One results page per query. TinyFish returns 8 results a page and fetches
 # pages one after another, so asking for 25 made every query four sequential
 # calls. Breadth comes from asking more different questions at once instead.
@@ -198,14 +210,17 @@ async def _tavily_parallel(queries: list[str | tuple[str, int]], max_results: in
     batches = await asyncio.gather(*[_one(q) for q in queries])
     seen_urls: set[str] = set()
     merged: list[dict[str, Any]] = []
-    for batch in batches:
+    for item, batch in zip(queries, batches):
+        query = item if isinstance(item, str) else item[0]
         for row in batch:
             url = row.get("url") or ""
             if url and url in seen_urls:
                 continue
             if url:
                 seen_urls.add(url)
-            merged.append(row)
+            # The query that first returned the page: what tells a conference
+            # speaker page from any other page (see web_source).
+            merged.append({**row, "via": query})
     return merged
 
 
@@ -522,6 +537,37 @@ def entity_units(entity: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [u for u in (entity or {}).get("units") or [] if isinstance(u, dict) and (u.get("name") or "").strip()]
 
 
+# Where a person was read. ``web_discovery`` is the open web (profiles,
+# articles); the others name the kind of public page, so a member can judge
+# how far to trust it. The host decides, except for conference speakers, who
+# are on pages nobody can list: those are the pages the speaker search found.
+_SOURCE_HOSTS: tuple[tuple[str, str], ...] = (
+    ("theorg.com", "web_theorg"), ("crunchbase.com", "web_crunchbase"),
+    ("prnewswire.com", "web_press"), ("businesswire.com", "web_press"), ("globenewswire.com", "web_press"),
+    ("rocketreach.co", "web_directory"), ("zoominfo.com", "web_directory"), ("signalhire.com", "web_directory"),
+)
+#: Sources whose result is a profile or an organisation chart that states a
+#: person's employer in its headline, the way a LinkedIn result does. Names and
+#: titles are read from the snippet only; no page behind a login is fetched.
+PROFILE_SOURCES = frozenset({"web_theorg", "web_crunchbase", "web_directory"})
+
+
+def web_source(url: str, via: str = "", domain: str | None = None) -> str:
+    """The contact_source for a person read from this search result: one of
+    contact_scraper.WEB_SOURCES. A LinkedIn profile is plain web discovery."""
+    if LINKEDIN_IN_URL.search(url or ""):
+        return "web_discovery"
+    host = re.sub(r"^https?://", "", (url or "").strip().lower()).split("/")[0].split("@")[-1].split(":")[0]
+    for suffix, kind in _SOURCE_HOSTS:
+        if host == suffix or host.endswith("." + suffix):
+            return kind
+    if _host_is_company(url, domain):
+        return "web_company_page"
+    if _SPEAKER_TERMS.lower() in (via or "").lower():
+        return "web_speaker"
+    return "web_discovery"
+
+
 def person_employer_check(
     name: str, title: str, page: dict[str, Any], company_name: str, domain: str | None,
     entity: dict[str, Any] | None, affiliation: str,
@@ -535,7 +581,8 @@ def person_employer_check(
     page_title = str(page.get("title") or "")
     content = str(page.get("content") or "")
     url = str(page.get("url") or "")
-    own_profile = bool(LINKEDIN_IN_URL.search(url)) and _name_agrees_with_profile(name, url)
+    own_profile = (bool(LINKEDIN_IN_URL.search(url)) and _name_agrees_with_profile(name, url)) \
+        or web_source(url) in PROFILE_SOURCES
     targets = target_names(company_name, entity)
     units = entity_units(entity)
     strict = ambiguous_brand((entity or {}).get("display_name") or company_name)
@@ -546,7 +593,7 @@ def person_employer_check(
         return (True, None, unit) if ok else (False, "other_employer", None)
     if strict and affiliation == "press_mention":
         return False, None, None
-    if affiliation == "linkedin_profile" or (strict and affiliation != "company_site"):
+    if affiliation in ("linkedin_profile", "directory_profile") or (strict and affiliation != "company_site"):
         if not _strong_evidence(f"{page_title}\n{content}", targets, domain):
             return False, "no_employer", None
     return True, None, None
@@ -812,6 +859,13 @@ def _extract_people_from_results(
         return (any(_names_the_company(text, n, domain) for n in targets)
                 or any(text_names_brand(text, p) for u in units for p in [u["name"], *(u.get("aliases") or [])]))
 
+    def role_names_target(role: str) -> bool:
+        """The role as a press quote or a speaker line states it ("VP of
+        Marketing at Acme", "Director of Finance, Acme") ends with the company
+        as the employer, not merely a company the page also mentions."""
+        ended = ROLE_EMPLOYER_RE.search(role.strip())
+        return bool(ended) and employer_is_target(ended.group(1).strip(), targets, units, domain)[0]
+
     people: list[dict[str, Any]] = []
     # The result being read. Its URL is the original one: the country in
     # in.linkedin.com is gone once the link is rewritten to www below.
@@ -915,6 +969,7 @@ def _extract_people_from_results(
                 "affiliation": affiliation,
                 "group_unit": unit,
                 "yale_signal": yale,
+                "source": web_source(page.get("url", ""), page.get("via", ""), domain),
             }
         )
 
@@ -925,7 +980,10 @@ def _extract_people_from_results(
         blob = f"{title}\n{content}\n{url}"
         ctx = f"{title} — {content[:200]}".strip()
         on_company_site = _host_is_company(url, domain)
-        page.update(title=title, content=content, url=url)
+        page.update(title=title, content=content, url=url, via=r.get("via") or "")
+        # A press release or a speaker page quoting "Name, Title at Company" is
+        # the page saying who the company's people are.
+        attributed = web_source(url, page["via"], domain) in ("web_press", "web_speaker")
 
         # What the page itself proves about anyone it names. A profile result
         # that mentions the company is that person's own page; a page on the
@@ -944,6 +1002,8 @@ def _extract_people_from_results(
             page_affiliation = "company_site"
         elif url_match and names_target(f"{title}\n{content}"):
             page_affiliation = "linkedin_profile"
+        elif web_source(url) in PROFILE_SOURCES and names_target(f"{title}\n{content}"):
+            page_affiliation = "directory_profile"
 
         slug_name = _slug_to_name(li_match.group(1)) if li_match else None
         if li_match:
@@ -993,12 +1053,23 @@ def _extract_people_from_results(
             near = blob[max(0, m.start() - MENTION_WINDOW):m.end() + MENTION_WINDOW]
             affiliation = (page_evidence_for(m.group(1), role)
                            or (_mention_affiliation(near, role) if names_target(near) else ""))
+            if affiliation == "press_mention" and attributed and role_names_target(role):
+                affiliation = "press_appointment"
             if not affiliation:
                 continue
             add_person(
                 m.group(1), title=role, linkedin_url=link_for(m.group(1)), source_url=url,
                 discovery_context=ctx, affiliation=affiliation,
             )
+
+        if attributed:
+            for m in NAME_COMMA_ROLE_RE.finditer(blob):
+                role = m.group(2)
+                if COMPANY_ROLE_HINT.search(role) and role_names_target(role):
+                    add_person(
+                        m.group(1), title=role, source_url=url, discovery_context=ctx,
+                        affiliation="press_appointment",
+                    )
 
         for m in NAME_AT_COMPANY_RE.finditer(blob):
             # "Name at <something>" only counts when the something is this
@@ -1044,7 +1115,7 @@ async def discover_contacts_from_web(
     skips: dict[str, dict[str, str]] | None = None,
     queries: list[str | tuple[str, int]] | None = None,
     seen: dict[str, set[str]] | None = None,
-    level: str | None = "working",
+    levels: Iterable[str] | str | None = DEFAULT_LEVELS,
     function: str | None = None,
 ) -> list[dict]:
     """
@@ -1070,7 +1141,7 @@ async def discover_contacts_from_web(
         if on_progress:
             await on_progress(msg, pct)
 
-    batch = queries if queries is not None else first_wave_queries(company, dom, title_hints, entity, level, function)
+    batch = queries if queries is not None else first_wave_queries(company, dom, title_hints, entity, levels, function)
     await emit(f"Running {len(batch)} web searches at once…", 15)
     all_results = await _tavily_parallel(batch, max_results=SEARCH_PAGE_RESULTS)
     if cancel_event and cancel_event.is_set():
@@ -1100,7 +1171,7 @@ async def discover_contacts_from_web(
             # appeared near the company in an article keeps whatever address
             # the page published and is dropped without one - a guessed mailbox
             # for a guessed employee is how a stranger ends up in a campaign.
-            if affiliation in ("company_site", "linkedin_profile", "press_appointment"):
+            if affiliation in ("company_site", "linkedin_profile", "directory_profile", "press_appointment"):
                 email = build_email_for_person_sync(name, dom, custom_patterns=custom_patterns) or ""
         if not email:
             continue
@@ -1111,7 +1182,7 @@ async def discover_contacts_from_web(
             "company": company,
             "company_domain": dom,
             "linkedin_url": p.get("linkedin_url") or None,
-            "contact_source": "web_discovery",
+            "contact_source": p.get("source") or "web_discovery",
             "source_url": p.get("source_url"),
             "discovery_context": p.get("discovery_context"),
             "affiliation_evidence": affiliation,
@@ -1183,8 +1254,10 @@ FUNCTION_TITLES: dict[str, tuple[str, ...]] = {
 }
 
 #: The level-specific profile searches of a run's first wave. Team leads are
-#: the default: the directors, heads and managers who can champion a student
-#: project. Executive and board searches are only asked when chosen.
+#: the default, with senior leaders: the directors, heads and managers who can
+#: champion a student project, and the executives above them. Board searches
+#: are only asked when chosen. "No title shown" has no searches of its own: it
+#: keeps the people any of these find whose profile shows no title.
 _LEVEL_FIRST_WAVE: dict[str, tuple[str, ...]] = {
     "working": (
         '("director of" OR "head of" OR "senior manager") site:linkedin.com/in',
@@ -1207,6 +1280,15 @@ _LEVEL_FIRST_WAVE: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: What each level asks when several are chosen together: its three broadest
+#: searches, so team leads and senior leaders ask 6 profile searches rather
+#: than 8. Index 2 is where a function's titles go (see first_wave_queries).
+_SHARED_FIRST_WAVE: dict[str, tuple[str, ...]] = {
+    "working": _LEVEL_FIRST_WAVE["working"][:3],
+    "executive": (*_LEVEL_FIRST_WAVE["executive"][:2], _LEVEL_FIRST_WAVE["executive"][3]),
+    "board": (_LEVEL_FIRST_WAVE["board"][0], *_LEVEL_FIRST_WAVE["board"][2:]),
+}
+
 #: Title and seniority words a later round pairs with the quoted company, so a
 #: round asks what the first wave did not.
 ROUND_TITLE_VARIANTS: dict[str, tuple[str, ...]] = {
@@ -1217,10 +1299,50 @@ ROUND_TITLE_VARIANTS: dict[str, tuple[str, ...]] = {
     "board": ("board member", "trustee", "board of directors", "chair"),
 }
 
+#: Titles the public-source searches ask for, in one OR group.
+_ROLES = 'director OR "head of" OR manager OR "vice president"'
+_SPEAKER_TERMS = "(speaker OR keynote OR panelist)"
+#: The query text each public-source search carries, so a later round can ask
+#: its second page (see round_query_pool).
+_SOURCE_SITE_MARKS = ("site:theorg.com", "site:crunchbase.com", "site:prnewswire.com", "site:rocketreach.co")
 
-def wanted_level(level: str | None) -> str:
-    """working (team leads), executive or board; anything else is working."""
-    return level if level in _LEVEL_FIRST_WAVE else "working"
+
+def wanted_levels(levels: Iterable[str] | str | None) -> tuple[str, ...]:
+    """The levels a run looks for, in the page's order (team leads, senior
+    leaders, board, no title shown); the page's default when none is valid."""
+    if isinstance(levels, str):
+        levels = (levels,)
+    chosen = set(levels or ())
+    return tuple(level for level in LEVEL_IDS if level in chosen) or DEFAULT_LEVELS
+
+
+def _search_levels(levels: Iterable[str] | str | None) -> list[str]:
+    """The levels that have searches of their own; "no title shown" alone
+    asks the team-lead searches, which return every kind of profile."""
+    return [level for level in wanted_levels(levels) if level in _LEVEL_FIRST_WAVE] or ["working"]
+
+
+def _source_queries(brand: str) -> list[str]:
+    """Public places that name people and their titles, each one query.
+    The site: terms become Monid include_domains (see web_fetch)."""
+    return [
+        # Org charts and team pages.
+        f'"{brand}" site:theorg.com {_ROLES}',
+        f'"{brand}" site:crunchbase.com/person {_ROLES}',
+        # Press releases quoting named executives.
+        f'"{brand}" site:prnewswire.com site:businesswire.com site:globenewswire.com said {_ROLES}',
+        # Public profile snippets: names and titles only.
+        f'"{brand}" site:rocketreach.co site:zoominfo.com site:signalhire.com {_ROLES}',
+    ]
+
+
+def _round_variants(chosen: list[str]) -> tuple[str, ...]:
+    """Title variants for later rounds: one level's own, or every chosen
+    level's taken in turn, at most as many as the longest single list."""
+    if len(chosen) == 1:
+        return ROUND_TITLE_VARIANTS[chosen[0]]
+    interleaved = (v for row in zip_longest(*(ROUND_TITLE_VARIANTS[level] for level in chosen)) for v in row if v)
+    return tuple(dict.fromkeys(interleaved))[: max(len(ROUND_TITLE_VARIANTS[level]) for level in chosen)]
 
 
 def _hint_terms(hints: str) -> str:
@@ -1235,38 +1357,50 @@ def _hint_terms(hints: str) -> str:
 
 def first_wave_queries(
     company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
-    level: str | None = "working", function: str | None = None,
+    levels: Iterable[str] | str | None = DEFAULT_LEVELS, function: str | None = None,
 ) -> list[str]:
     """The first round of a run's web searches.
 
     Every query is one round trip, and they all run at once, so the cost of
     the wave is its slowest query rather than their sum. What decides how many
     reachable people come back is how many different places are asked:
-    profiles, the company's own pages, appointment notices, and the places
-    addresses are actually published. The company is quoted everywhere: bare,
-    "Target" and "Shell" are words, not companies. The profile searches follow
-    the level asked for, so a team-lead search does not spend its wave on the
-    C-suite. A function asked for (finance, operations...) takes the places of
-    two generic searches - never adds one - and is ignored for board seats,
-    which have no function."""
+    profiles, the company's own leadership pages, org charts, appointment
+    notices and press releases, speaker lists, public profile directories, and
+    the places addresses are actually published. The company is quoted
+    everywhere: bare, "Target" and "Shell" are words, not companies. The
+    profile searches follow the levels asked for (each level asks its own, a
+    combination asks its three broadest each), so a team-lead search does not
+    spend its wave on the C-suite. A function asked for (finance,
+    operations...) takes the places of two generic searches - never adds one -
+    and is ignored when only board seats are asked for, which have no
+    function."""
     brand = search_brand(company, entity)
-    level_queries = list(_LEVEL_FIRST_WAVE[wanted_level(level)])
+    chosen = _search_levels(levels)
     function_terms = _hint_terms(", ".join(FUNCTION_TITLES[function])) \
-        if function in FUNCTION_TITLES and wanted_level(level) != "board" else ""
+        if function in FUNCTION_TITLES and any(level != "board" for level in chosen) else ""
+    level_queries: list[str] = []
+    placed = not function_terms
+    for level in chosen:
+        asked = list(_SHARED_FIRST_WAVE[level] if len(chosen) > 1 else _LEVEL_FIRST_WAVE[level])
+        if not placed and level != "board":
+            asked[2] = f"{function_terms} site:linkedin.com/in"
+            placed = True
+        level_queries += asked
     team_query = f'"{brand}" team member site:linkedin.com/in'
     if function_terms:
-        level_queries[2] = f"{function_terms} site:linkedin.com/in"
         team_query = f'"{brand}" {function_terms} email OR contact OR LinkedIn'
-    queries = [f'"{brand}" {q}' for q in level_queries]
+    speaker_query = f'"{brand}" {_SPEAKER_TERMS} {_ROLES}'
+    queries = [f'"{brand}" {q}' for q in dict.fromkeys(level_queries)]
     queries += [
         team_query,
         f'"{brand}" press release appointed OR joins OR named',
-        # People are reachable when a page prints their address or the company
-        # publishes who does what, so ask for those pages directly.
-        f'"{brand}" "our team" OR "meet the team"',
         f'"{brand}" spokesperson OR "media contact" OR "press contact" email',
-        f'"{brand}" conference speaker OR panelist OR webinar',
+        speaker_query,
+        *_source_queries(brand),
     ]
+    if not dom:
+        # With a domain the site: searches below ask the company's own pages.
+        queries.append(f'"{brand}" "our team" OR "meet the team"')
     hints = (title_hints or "").strip()
     if hints:
         first_hint = hints.split(",")[0].strip().strip('"')
@@ -1282,7 +1416,9 @@ def first_wave_queries(
             [
                 f'"{brand}" "@{dom}" email employee',
                 f'site:linkedin.com/in "{brand}" {dom.split(".")[0]}',
-                f'site:{dom} team OR leadership OR people OR about',
+                # The company's own leadership and team pages.
+                f'site:{dom} "leadership team" OR "executive team" OR "management team" OR "our team" OR "our people"',
+                f'site:{dom} {_ROLES} OR biography',
                 f'"@{dom}" contact OR email -jobs -careers',
             ]
         )
@@ -1293,8 +1429,7 @@ def first_wave_queries(
     # guarantees it.
     targeted = _entity_queries(brand, hints, entity)
     if targeted:
-        dropped = (team_query,
-                   f'"{brand}" conference speaker OR panelist OR webinar')
+        dropped = (team_query, speaker_query)
         queries = [q for q in queries if q not in dropped[: len(targeted)]] + targeted
     if brand != company:
         # The name as typed too: a holding's own staff write "Alphabet".
@@ -1305,24 +1440,25 @@ def first_wave_queries(
 
 def round_query_pool(
     company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
-    level: str | None = "working", function: str | None = None,
+    levels: Iterable[str] | str | None = DEFAULT_LEVELS, function: str | None = None,
 ) -> list[tuple[str, int]]:
     """Every (query, results page) a run's later rounds may ask, best first:
-    the Yale search, the next page of the first wave's profile searches, title
-    variants for the level (and the function) asked for, the HQ city with a few
-    of them, then the group units. None of them is a first-wave query, so no
-    round repeats one. At most ~25 searches, and rounds only start when the
-    first wave left the goal unmet, so the Yale search costs a slot in a
-    budget the run already has rather than a request on top of it."""
-    level = wanted_level(level)
+    the Yale search, the next page of the first wave's profile and
+    public-source searches, title variants for the levels (and the function)
+    asked for, the HQ city with a few of them, then the group units. None of
+    them is a first-wave query, so no round repeats one. At most ~30
+    searches, and rounds only start when the first wave left the goal unmet,
+    so the Yale search costs a slot in a budget the run already has rather
+    than a request on top of it."""
+    chosen = _search_levels(levels)
     brand = search_brand(company, entity)
     negatives = _negatives(entity, brand)
-    first = first_wave_queries(company, dom, title_hints, entity, level, function)
+    first = first_wave_queries(company, dom, title_hints, entity, chosen, function)
     pool = [(_with_negatives(f'"{brand}" ("Yale University" OR "Yale School of Management" OR "Yale College") '
                              "site:linkedin.com/in", negatives), 0)]
-    pool += [(q, 1) for q in first if "site:linkedin.com/in" in q]
-    variants = ROUND_TITLE_VARIANTS[level]
-    if function in FUNCTION_TITLES and level != "board":
+    pool += [(q, 1) for q in first if "site:linkedin.com/in" in q or any(mark in q for mark in _SOURCE_SITE_MARKS)]
+    variants = _round_variants(chosen)
+    if function in FUNCTION_TITLES and any(level != "board" for level in chosen):
         # The function's own titles take the place of as many generic ones.
         variants = (*FUNCTION_TITLES[function], *variants[: max(0, len(variants) - len(FUNCTION_TITLES[function]))])
     pool += [(_with_negatives(f'"{brand}" "{t}" site:linkedin.com/in', negatives), 0) for t in variants]
