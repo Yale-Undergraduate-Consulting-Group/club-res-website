@@ -158,14 +158,20 @@ data, and is not stored by the club app (see retention above for what is).
 `chat:write`, `im:write`, `im:history`, `im:read`, `app_mentions:read`,
 `users:read`, `users:read.email`, `team:read`,
 **`channels:history`**, **`groups:history`**, **`channels:read`**, **`groups:read`**,
-`reactions:write`
+`reactions:write`, `commands`
+
+`commands` installs the `/yucg` slash command. The command itself is defined
+in the Slack app under **Slash Commands** (request URL
+`https://<backend>/api/slack/commands`); an install that lacks `commands`
+leaves `/yucg` out of Slack even when it is defined there.
 
 `reactions:write` puts :eyes: on a message while a model answer is being
-written. Add it under **OAuth & Permissions → Bot Token Scopes** too, then
-**Reinstall to Workspace**, and have at least one member press **Connect Slack**
-again: replies use the newest member's token, so the reaction appears once that
-token carries the scope. Without it the answer still arrives, just without the
-reaction.
+written. Add it under **OAuth & Permissions → Bot Token Scopes** too. The app
+is distributed, so Slack offers no Reinstall button: the install is the site's
+own OAuth flow. A member presses **Reconnect Slack** (Profile → Integrations),
+which runs the install again with the current scopes and replaces the stored
+token. Replies use the newest member's token, so one reconnect is enough.
+Without the scope the answer still arrives, just without the reaction.
 
 The last four (bold) are new for reading Slack. `im:history` was already
 present. After deploying this change, add those four under **OAuth &
