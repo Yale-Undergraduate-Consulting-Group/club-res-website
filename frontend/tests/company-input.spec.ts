@@ -60,7 +60,6 @@ async function mockInput(page: Page, opts: { limited?: boolean } = {}) {
         : { items: [], total: 0, limit: 8, offset: 0 };
     }
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     // Nobody on file anywhere, so a sure company has every reason to search.
     else if (p === '/api/contacts') body = { items: [], total: 0, limit: 800, offset: 0 };
     else if (p === '/api/contacts/companies/summary') body = [];
@@ -123,7 +122,7 @@ test('Enter sends the typed name to the resolver and does not take the top sugge
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
 });
 
-test('an unsure company is marked a best guess, is not searched by itself, and can be corrected', async ({ page }) => {
+test('an unsure company is marked a best guess, is searched like any other, and can be corrected', async ({ page }) => {
   const { runsCreated } = await mockInput(page);
   await page.goto('/scraper?view=company');
   const rail = railOf(page);
@@ -134,12 +133,11 @@ test('an unsure company is marked a best guess, is not searched by itself, and c
 
   const chip = rail.locator('[data-company-chip="Bartik Family Foundation"]');
   await expect(chip.getByRole('button', { name: 'Best guess · Not this?' })).toBeVisible();
-  // Its lane waits for the member instead of spending a search on a guess.
+  // Every added company is searched as it is added; the guess is labelled on
+  // its chip so a wrong one is corrected from there.
   const lane = pipeline.locator('[data-lane="Bartik Family Foundation"]');
-  await expect(lane.getByTestId('lane-state')).toHaveText('Not searched yet');
-  await page.waitForTimeout(1000);
-  expect(runsCreated).toHaveLength(0);
-  await expect(lane).toHaveAttribute('data-state', 'idle');
+  await expect(lane).toHaveAttribute('data-state', 'searching');
+  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation']);
 
   // "Not this?" offers what the words could have meant; choosing one
   // replaces the guess rather than adding beside it.
@@ -148,8 +146,8 @@ test('an unsure company is marked a best guess, is not searched by itself, and c
   await expect(rail.locator('[data-company-chip="Bartik Foundation"]')).toContainText('bartik.org ✓');
   await expect(chip).toHaveCount(0);
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  // The replacement is sure, so it is searched.
-  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Foundation']);
+  // The replacement is searched too.
+  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation', 'Bartik Foundation']);
 });
 
 test('pasting two lines adds two companies', async ({ page }) => {
@@ -186,8 +184,7 @@ test('× removes a company, and clicking its name does not', async ({ page }) =>
 
 test('who to look for sets the titles the search asks for', async ({ page }) => {
   const { runsCreated } = await mockInput(page);
-  await page.goto('/scraper?view=company&companies=NEON');
-  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  await page.goto('/scraper?view=company');
   const rail = railOf(page);
 
   // Team leads by default; nobody has to type a title.
@@ -199,7 +196,9 @@ test('who to look for sets the titles the search asks for', async ({ page }) => 
   await expect(rail.getByRole('radio', { name: 'Team leads' })).toHaveAttribute('aria-checked', 'false');
   await expect(rail.getByText('Searching for: Board member, Trustee, Director')).toBeVisible();
 
-  await pipeline.locator('[data-lane="NEON"]').getByRole('button', { name: 'Find people' }).click();
+  // Adding the company starts its search, with who to look for as chosen.
+  await rail.getByLabel('Company').fill('NEON');
+  await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
   expect(runsCreated[0].title_hints).toBe('Board member, Trustee, Director');
@@ -213,7 +212,7 @@ test('a search refused by the hourly limit pauses with a notice, not an error', 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const lane = pipeline.locator('[data-lane="NEON"]');
 
-  await lane.getByRole('button', { name: 'Find people' }).click();
+  // The search starts when the company is added, and is refused.
   await expect.poll(() => runsCreated.length).toBe(1);
   await expect(pipeline.getByRole('status').filter({ hasText: 'Searches are paused for a few minutes' })).toBeVisible();
   await expect(pipeline.getByRole('alert')).toHaveCount(0);

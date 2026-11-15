@@ -9,9 +9,9 @@ import { Button } from './ui/Primitives';
  * This replaced the assistant chatbot. The assistant existed to translate a
  * sentence into a form fill, which mattered when the work was spread over six
  * pages and nobody could find the right one. Now that choosing companies,
- * finding people, writing and building are four numbered steps in one place,
- * a member who can read the page does not need a model to drive it - and a
- * model that can only drive it is slower than doing it.
+ * finding people, writing and sending are one screen, a member who can read
+ * the page does not need a model to drive it - and a model that can only
+ * drive it is slower than doing it.
  *
  * So the help is static, page-specific, and costs nothing per open.
  */
@@ -25,10 +25,10 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
       title: 'Find contacts',
       steps: [
         'Companies is the index: about 200,000 companies from public records, one entry each. Tick any, then "Find people and write to them".',
-        'Find people runs three steps in order — choose companies, choose who gets it, then hand them to Drafts to write to each.',
-        'Step 2 is where people come from: search again, import a spreadsheet, or queue deep research.',
+        'Find people is one screen: add companies by name, by pasting a list, or from the index, and each is searched as soon as it is added.',
+        'Everyone found is on the list at once. The number at the top is how many can be emailed; beside it are the reasons for everyone left out.',
         'Board seats and the very senior are never ticked for you: they rarely answer a cold email.',
-        'Drafts writes each person their own email. Nothing leaves until you release the campaign.',
+        'The Intro template is already chosen. Switch template or have the AI write each email, then "Send to N". Nothing leaves until you confirm.',
       ],
       next: { to: '/campaigns', label: 'Overview' },
     },

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ApiError, api,
-  type Contact, type DiscoveryProspect, type DiscoveryRun, type EntityProfile, type ImportOutcome,
+  type DiscoveryProspect, type DiscoveryRun, type EntityProfile, type ImportOutcome,
   type ResolvedAlternative,
 } from '../api';
-import { companyKey, isTooSenior, looksLikePerson, type Fn } from './recipients';
+import { companyKey } from './recipients';
 import { dedupePeople, foundAsPerson } from './peopleSheet';
 
 /**
@@ -13,21 +13,18 @@ import { dedupePeople, foundAsPerson } from './peopleSheet';
  *
  * A search used to live inside the picker of one step and be forgotten when
  * the member moved on or reloaded: a run still working on the server had no
- * lane to report to, and its people, once found, were imported wholesale
- * whether or not anybody wanted them. Here the runs are read back from the
- * server on arrival, so a reload resumes the progress bar. What a search
- * started in this sitting finds is added to the club's contacts straight away
- * - the people the default tick would choose - so the member ticks rather
- * than adds; anyone else, and anything an earlier visit's search found, stays
- * "found" until the member adds them on purpose. The same goes for what the
- * club's catalog builder found at a chosen company, and a teammate's search
- * of the last 30 days: the server hands the newest back with the member's own,
- * and the newest run wins. While a search works, the people it has saved so
- * far are shown, read again whenever it saves more.
+ * lane to report to. Here the runs are read back from the server on arrival,
+ * so a reload resumes the progress bar. What a finished search found - this
+ * sitting's, an earlier visit's, the club catalog builder's, a teammate's of
+ * the last 30 days - is listed in `found`, and `addFound` puts people on the
+ * club's contacts through the server's own import (which keeps its visibility
+ * rules and says why anyone is refused). The caller imports what arrives, so
+ * the member ticks rather than adds. While a search works, the people it has
+ * saved so far are shown, read again whenever it saves more.
  *
- * The server allows one search per member at a time. Asking for a second
- * one is not a mistake, so it is queued here and started when the first
- * finishes, rather than refused.
+ * The server allows one search per member at a time. Asking for another is
+ * not a mistake, so every company is queued here and started when the one
+ * before it finishes, rather than refused.
  */
 
 export type ChosenCompany = {
@@ -109,10 +106,9 @@ function pausedOf(run: DiscoveryRun): string | undefined {
 }
 
 /** `level` is who to look for: the server's goal counts people at that level,
- *  and its searches and ranking follow it. `function` (finance, operations...)
- *  is optional and biases the first searches toward that function's titles. */
+ *  and its searches and ranking follow it. */
 export type SearchOptions = {
-  titleHints: string; maxProspects: number; level: 'working' | 'executive' | 'board'; domain?: string; function?: Fn;
+  titleHints: string; maxProspects: number; level: 'working' | 'executive' | 'board'; domain?: string;
 };
 
 /** Options are read when the search starts, not when it joins the queue:
@@ -155,10 +151,6 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
   const [notice, setNotice] = useState('');
   const queueRef = useRef<Queued[]>([]);
   const loadedProspects = useRef<Set<number>>(new Set());
-  // Searches started here, in this sitting. Their people are added to the
-  // club's contacts as soon as they are found, so they can be ticked without
-  // an "Add all" step; a search from an earlier visit only shows what it found.
-  const startedHere = useRef<Set<number>>(new Set());
   const onImportedRef = useRef(onImported);
   useEffect(() => { onImportedRef.current = onImported; }, [onImported]);
 
@@ -218,25 +210,12 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
     loadedProspects.current.add(run.id);
     try {
       const rows = usable(await api.yucgoutreach.listProspects(run.id, 800));
-      const key = companyKey(run.company_name);
-      setFound((prev) => ({ ...prev, [key]: rows }));
-      if (!startedHere.current.has(run.id)) return;
-      startedHere.current.delete(run.id);
-      // The same people the default tick would choose: a real name, not too
-      // senior to answer. The rest stay under "found" for a deliberate add.
-      const wanted = rows.filter((p) => {
-        const person = { name: [p.first_name, p.last_name].filter(Boolean).join(' '), title: p.title } as Contact;
-        return looksLikePerson(person) && !isTooSenior(person);
-      });
-      if (!wanted.length) return;
-      const res = await api.yucgoutreach.importContacts(run.id, wanted.map((p) => p.id));
-      applyImport(key, res.results);
-      await onImportedRef.current(res.results);
+      setFound((prev) => ({ ...prev, [companyKey(run.company_name)]: rows }));
     } catch (e) {
       loadedProspects.current.delete(run.id);
       setError(e instanceof Error ? e.message : 'Could not read what that search found');
     }
-  }, [applyImport]);
+  }, []);
 
   const refreshRuns = useCallback(async () => {
     try {
@@ -290,7 +269,6 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
         title_hints: options.titleHints.trim() || undefined,
         max_prospects: options.maxProspects,
         level: options.level,
-        function: options.function,
         // A country only when the member chose one: by default the search
         // skips the excluded entities and their countries, not everyone
         // outside the home country (Barclays' New York staff are Barclays).
@@ -299,7 +277,6 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
           : undefined,
       });
       loadedProspects.current.delete(res.id);
-      startedHere.current.add(res.id);
       setRunsById((prev) => ({
         ...prev,
         [res.id]: {
@@ -330,12 +307,32 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
     }
   }, [refreshRuns]);
 
+  // Starts the company at the head of the queue, then the next while starts
+  // fail outright. A start the server answers "busy" leaves the queue as it
+  // is: the poll below calls this again when the running search finishes. A
+  // call that arrives while one is waiting on the server is not dropped - the
+  // finish it reports may be what the answer in flight missed.
+  const pumping = useRef(false);
+  const pumpAgain = useRef(false);
   const startNext = useCallback(async () => {
-    const next = queueRef.current[0];
-    if (!next) return;
-    if (await startNow(next) !== 'busy') {
-      queueRef.current = queueRef.current.slice(1);
-      setQueue(queueRef.current);
+    if (pumping.current) {
+      pumpAgain.current = true;
+      return;
+    }
+    pumping.current = true;
+    try {
+      do {
+        pumpAgain.current = false;
+        while (queueRef.current[0]) {
+          const result = await startNow(queueRef.current[0]);
+          if (result === 'busy') break;
+          queueRef.current = queueRef.current.slice(1);
+          setQueue(queueRef.current);
+          if (result === 'started') break;
+        }
+      } while (pumpAgain.current);
+    } finally {
+      pumping.current = false;
     }
   }, [startNow]);
   useEffect(() => { startNextRef.current = startNext; }, [startNext]);
@@ -378,40 +375,42 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [activeIds, chosenKeys, loadFound, loadProgress, startNext]);
 
-  const startRun = useCallback(async (company: ChosenCompany, options: () => SearchOptions) => {
+  /** Queue a company's search; it starts as soon as the one before it is done. */
+  const startRun = useCallback((company: ChosenCompany, options: () => SearchOptions) => {
     setError('');
     const key = companyKey(company.name);
     if (queueRef.current.some((q) => companyKey(q.company.name) === key)) return;
-    const item: Queued = { company, options };
-    const busyRun = Object.values(runsById).find((run) => ACTIVE[run.status]);
-    if (!busyRun && queueRef.current.length === 0) {
-      if (await startNow(item) !== 'busy') return;
-    } else {
-      // Same words whether the page knew the server was busy or the server
-      // had to say so: this search waits its turn.
-      setNotice(busyRun
-        ? `Already searching ${busyRun.company_name}; ${company.name} is queued behind it.`
-        : `${company.name} is queued behind ${queueRef.current[0].company.name}.`);
-    }
-    if (queueRef.current.some((q) => companyKey(q.company.name) === key)) return;
-    queueRef.current = [...queueRef.current, item];
+    const wasEmpty = queueRef.current.length === 0;
+    queueRef.current = [...queueRef.current, { company, options }];
     setQueue(queueRef.current);
-  }, [runsById, startNow]);
+    // Anything already waiting is waiting on a running search, whose finish
+    // starts the queue again; only an empty queue has nothing to wait for.
+    if (wasEmpty) void startNext();
+  }, [startNext]);
 
-  const addFound = useCallback(async (key: string, ids: number[] | 'all') => {
+  /** Put found people on the club's contacts. False when the request failed
+   *  (the error is shown), so the caller can retry or give up on them. */
+  const addFound = useCallback(async (key: string, ids: number[] | 'all'): Promise<boolean> => {
     const run = latestByKey[key];
     const rows = found[key] || [];
     const wanted = ids === 'all' ? rows.filter((p) => !p.skippedReason).map((p) => p.id) : ids;
-    if (!run || wanted.length === 0) return;
+    if (!run || wanted.length === 0) return true;
     setError('');
     try {
       const res = await api.yucgoutreach.importContacts(run.id, wanted);
       applyImport(key, res.results);
       await onImportedRef.current(res.results);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not add those people');
+      return false;
     }
   }, [latestByKey, found, applyImport]);
+
+  /** Leave found people listed with the reason they are not on the list. */
+  const holdFound = useCallback((key: string, ids: number[], reason: string) => {
+    applyImport(key, ids.map((id) => ({ prospect_id: id, contact_id: null, outcome: 'skipped' as const, reason })));
+  }, [applyImport]);
 
   const exportRun = useCallback(async (runId: number) => {
     setError('');
@@ -474,5 +473,5 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
     return map;
   }, [chosenKeys, latestByKey, queue]);
 
-  return { runs, runsReady, found, linkedRun, error, notice, startRun, addFound, exportRun, deleteRun };
+  return { runs, runsReady, found, linkedRun, error, notice, startRun, addFound, holdFound, exportRun, deleteRun };
 }
