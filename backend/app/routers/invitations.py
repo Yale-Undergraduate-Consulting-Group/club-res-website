@@ -201,3 +201,126 @@ async def revoke_invitation(invitation_id: int, admin: dict = Depends(get_curren
         return {'ok':True}
     finally:
         await db.close()
+
+
+# --- Join sessions: a QR code shown in a room -------------------------------
+# While a session is open, any verified @yale.edu Google account that signs in
+# through its link becomes a member at once (auth._do_google_callback). It is
+# bounded three ways: it expires (at most four hours), it admits at most
+# `max_members` new people, and an admin can close it early. Members who were
+# deactivated stay deactivated; existing members simply sign in.
+
+JOIN_MAX_MINUTES = 240
+
+
+async def create_join_tables(db) -> None:
+    """Migration core:3 - additive (app/migrations.py)."""
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS join_sessions (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               token_hash TEXT NOT NULL UNIQUE,
+               created_by INTEGER NOT NULL REFERENCES users(id),
+               created_at INTEGER NOT NULL,
+               expires_at INTEGER NOT NULL,
+               max_members INTEGER NOT NULL,
+               closed_at INTEGER)"""
+    )
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS join_session_members (
+               session_id INTEGER NOT NULL REFERENCES join_sessions(id),
+               user_id INTEGER NOT NULL REFERENCES users(id),
+               joined_at INTEGER NOT NULL,
+               PRIMARY KEY (session_id, user_id))"""
+    )
+    await db.execute("ALTER TABLE oauth_challenges ADD COLUMN join_session_id INTEGER")
+
+
+_SESSION = """SELECT s.*, (SELECT COUNT(*) FROM join_session_members m WHERE m.session_id = s.id) AS joined
+              FROM join_sessions s"""
+
+
+def _admits(session: dict) -> bool:
+    return (not session.get('closed_at') and session['expires_at'] > time.time()
+            and session['joined'] < session['max_members'])
+
+
+async def open_join_session(db, token: str) -> dict | None:
+    """The session behind ``token`` while it still admits people, else None."""
+    row = await (await db.execute(_SESSION + ' WHERE s.token_hash=?', (digest(token),))).fetchone()
+    return dict(row) if row and _admits(dict(row)) else None
+
+
+async def admit_through_join_session(db, session_id: int, email: str, name: str | None,
+                                     google_id: str, picture: str | None) -> int | None:
+    """Create the member if the session still admits people. Runs inside the
+    caller's write transaction, so the cap holds under concurrent sign-ins."""
+    row = await (await db.execute(_SESSION + ' WHERE s.id=?', (session_id,))).fetchone()
+    if not row or not _admits(dict(row)):
+        return None
+    cursor = await db.execute("INSERT INTO users(email,name,role,google_id,picture) VALUES (?,?,?,?,?)",
+                              (email, name, 'standard', google_id, picture))
+    user_id = cursor.lastrowid
+    await db.execute("INSERT INTO join_session_members(session_id,user_id,joined_at) VALUES (?,?,?)",
+                     (session_id, user_id, int(time.time())))
+    await audit(db, user_id, 'join_session_accept', 'join_session', session_id, {'email': email})
+    return user_id
+
+
+class JoinSessionCreate(BaseModel):
+    minutes: int = Field(default=120, ge=5, le=JOIN_MAX_MINUTES)
+    max_members: int = Field(default=200, ge=1, le=500)
+
+
+async def _join_session_view(db, session_id: int) -> dict:
+    row = await (await db.execute(_SESSION + ' WHERE s.id=?', (session_id,))).fetchone()
+    if not row:
+        raise HTTPException(404, 'Join session not found')
+    session = dict(row)
+    members = await (await db.execute(
+        """SELECT u.name, u.email, m.joined_at FROM join_session_members m JOIN users u ON u.id = m.user_id
+           WHERE m.session_id=? ORDER BY m.joined_at DESC""", (session_id,))).fetchall()
+    return {'id': session['id'], 'expires_at': session['expires_at'], 'max_members': session['max_members'],
+            'closed': bool(session['closed_at']), 'open': _admits(session),
+            'members': [dict(m) for m in members]}
+
+
+@router.post('/join-sessions', status_code=201)
+async def create_join_session(payload: JoinSessionCreate, admin: dict = Depends(get_current_admin)):
+    """Open a join session; the token is returned once and only its hash is stored."""
+    token = secrets.token_urlsafe(32)
+    now = int(time.time())
+    db = await get_db()
+    try:
+        await db.execute('BEGIN IMMEDIATE')
+        cursor = await db.execute(
+            'INSERT INTO join_sessions(token_hash,created_by,created_at,expires_at,max_members) VALUES (?,?,?,?,?)',
+            (digest(token), admin['id'], now, now + payload.minutes * 60, payload.max_members))
+        await audit(db, admin['id'], 'join_session_open', 'join_session', cursor.lastrowid,
+                    {'minutes': payload.minutes, 'max_members': payload.max_members})
+        await db.commit()
+        return {**await _join_session_view(db, cursor.lastrowid), 'token': token}
+    finally:
+        await db.close()
+
+
+@router.get('/join-sessions/{session_id}')
+async def get_join_session(session_id: int, admin: dict = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        return await _join_session_view(db, session_id)
+    finally:
+        await db.close()
+
+
+@router.post('/join-sessions/{session_id}/close')
+async def close_join_session(session_id: int, admin: dict = Depends(get_current_admin)):
+    db = await get_db()
+    try:
+        await db.execute('BEGIN IMMEDIATE')
+        await db.execute('UPDATE join_sessions SET closed_at=? WHERE id=? AND closed_at IS NULL',
+                         (int(time.time()), session_id))
+        await audit(db, admin['id'], 'join_session_close', 'join_session', session_id)
+        await db.commit()
+        return await _join_session_view(db, session_id)
+    finally:
+        await db.close()

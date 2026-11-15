@@ -75,6 +75,15 @@ turns that off. The `icon` is a line drawing in `components/AppIcons.tsx`
 (24-unit grid, `currentColor`, 1.6 stroke); an app without one shows its
 initial.
 
+Join by QR code (Admin → Members; `routers/invitations.py`, join sessions, migration
+`core:3`): an admin opens a session, valid at most four hours and for at most a set
+number of new members, and shows its QR code. The code is the ordinary Google sign-in
+link with a join token (only its hash is stored). While the session is open, a
+verified @yale.edu account that signs in through it becomes a `standard` member at
+once; deactivated members stay out and existing members just sign in. Closing it
+stops it at once, even for a sign-in already under way. Anyone who sees the code
+while it is open can join, so close it when the room is done.
+
 ## Apps today
 
 | App | Server prefixes | Pages | Jobs |
