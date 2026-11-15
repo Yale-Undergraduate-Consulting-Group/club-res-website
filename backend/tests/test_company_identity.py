@@ -80,6 +80,17 @@ def domain_must_be_the_company() -> None:
     assert ok("ATR", "atr.net")
     assert not ok("ATR", "atrgroup.com")
     assert ok("JPMorgan Chase & Co.", "jpmorganchase.com")
+    # A later distinctive word is the company's site only when the search
+    # result names the company in full: Eli Lilly's search found no domain
+    # because lilly.com does not start with "eli".
+    site = lambda name: f"{name} | Official website"  # noqa: E731
+    assert ok("Eli Lilly", "lilly.com", site("Eli Lilly and Company"))
+    assert not ok("Eli Lilly", "lilly.com")
+    assert not ok("Eli Lilly", "lilly.com", "Lilly Pulitzer dresses and prints")
+    assert ok("Walt Disney", "disney.com", site("The Walt Disney Company"))
+    assert ok("Bank of America", "bankofamerica.com", site("Bank of America"))
+    assert not ok("Bank of America", "america.com", site("Bank of America"))
+    assert not ok("Morgan Stanley", "stanley.com", site("Morgan Stanley"))
 
 
 def profile_id_is_not_a_surname() -> None:

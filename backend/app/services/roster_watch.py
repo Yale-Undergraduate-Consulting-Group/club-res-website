@@ -746,13 +746,20 @@ _DOMAIN_TAIL_WORDS = frozenset({
 })
 
 
-def _domain_matches_company(company_name: str, dom: str) -> bool:
+def _domain_matches_company(company_name: str, dom: str, evidence: str = "") -> bool:
     """Whether a domain is plausibly the company's own.
 
     The domain's name must BE the company's name, its opening words, or its
     initials, with at most a generic tail. Starting with the first word was
     not enough: "warner-access.com" passed for Warner Bros. Discovery and was
     stored as its verified website, and "metacritic.com" would pass for Meta.
+
+    ``evidence`` is the text of the search result the domain came from. When
+    it names the company in full, the domain may also be the company's own
+    words written out with their joining words ("bankofamerica" for Bank of
+    America) or a later distinctive word ("lilly" for Eli Lilly, "disney" for
+    Walt Disney). Without that text a later word is not enough: "america.com"
+    is not Bank of America's.
     """
     tokens = _company_tokens(company_name)
     if tokens and tokens[0] == "the":
@@ -771,7 +778,32 @@ def _domain_matches_company(company_name: str, dom: str) -> bool:
         # A tail is allowed only after a real word: "atrgroup" is not ATR's.
         if len(stem) >= 4 and label.startswith(stem) and label[len(stem):] in _DOMAIN_TAIL_WORDS:
             return True
-    return False
+    if not evidence or len(tokens) < 2 or not _names_company_in_full(company_name, evidence):
+        return False
+    words = [w for w in re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKD", company_name.lower())) if w != "the"]
+    if label == "".join(words):
+        return True
+    # A later word counts only as the name's last, distinctive word ("lilly",
+    # "disney"), never a generic or place word that names other companies too.
+    last = tokens[-1]
+    return len(last) >= 5 and label == last and last not in _GENERIC_LAST_WORDS
+
+
+#: Last words that name a place or a kind of business rather than one company.
+_GENERIC_LAST_WORDS = frozenset({
+    "america", "americas", "international", "global", "group", "holdings", "capital", "partners",
+    "bank", "bancorp", "financial", "health", "healthcare", "systems", "solutions", "services",
+    "technologies", "technology", "energy", "foods", "industries", "pharmaceuticals", "therapeutics",
+    "brands", "networks", "communications", "insurance", "airlines", "motors", "stanley", "chase",
+    "united", "national", "general", "american", "company", "corporation", "enterprises", "ventures",
+})
+
+
+def _names_company_in_full(company_name: str, text: str) -> bool:
+    """The text carries every distinctive word of the company's name, in order."""
+    want = " ".join(_company_tokens(company_name))
+    have = " ".join(_company_tokens(text))
+    return bool(want) and f" {want} " in f" {have} "
 
 
 def _seed_domain(company_name: str, extra_json: str | None) -> str:
