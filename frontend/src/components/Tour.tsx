@@ -26,7 +26,7 @@ export const TOUR_EVENT = 'yucg:tour';
 
 const STOPS: Stop[] = [
   {
-    route: '/',
+    route: '/campaigns',
     title: 'How YUCG Outreach works',
     body: 'Four stops, in the order the work happens: pick companies, choose the people there, write each of them their own email, then follow what came back. Nothing is sent to anyone until you release a campaign.',
   },
@@ -78,7 +78,7 @@ const STOPS: Stop[] = [
     body: 'After a campaign is released: who replied, who bounced, and which follow-ups are queued. A reply stops that person\'s follow-ups on its own.',
   },
   {
-    route: '/',
+    route: '/campaigns',
     title: 'That is the whole loop',
     body: 'Companies, people, one email each, then the pipeline. The "?" button explains whichever page you are on, and can start this tour again.',
   },

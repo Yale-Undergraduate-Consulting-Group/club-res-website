@@ -35,7 +35,7 @@ async function mockAll(page: Page) {
 // are excluded by not carrying `ui-button`.
 test('canonical buttons render at the one control height', async ({ page }) => {
   await mockAll(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
   // Only rendered buttons have a size: the header's Log out is hidden on phones,
   // where it lives in the menu drawer instead.
   await page.waitForSelector('button.ui-button:visible', { timeout: 10000 });
@@ -65,7 +65,7 @@ test('canonical buttons render at the one control height', async ({ page }) => {
 
 test('the whole page renders in Lato, including form controls', async ({ page }) => {
   await mockAll(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
 
   const fonts = await page.evaluate(() => {
     const seen = new Set<string>();
@@ -82,7 +82,7 @@ test('the whole page renders in Lato, including form controls', async ({ page })
 
 test('charts stay inside the club palette: blues and greys, no stock green or red', async ({ page }) => {
   await mockAll(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
   // Wait for the data the chart is drawn from, or this measures an empty card.
   await page.waitForSelector('section[aria-label="Results"] svg g path', { timeout: 10000 });
 

@@ -38,8 +38,8 @@ function slicesFor(split: OutcomeSplit | null | undefined, mine: boolean) {
   return [
     { label: 'replied', value: split?.replied ?? 0, colour: 'var(--chart-good)', to: `/outreach?status=replied${scope}` },
     { label: 'awaiting a reply', value: split?.awaiting ?? 0, colour: 'var(--chart-4)', to: `/outreach?status=contacted${scope}` },
-    { label: 'bounced', value: split?.bounced ?? 0, colour: 'var(--chart-bad)', to: `/?filter=needs_attention` },
-    { label: 'still queued', value: split?.queued ?? 0, colour: 'var(--chart-idle)', to: `/` },
+    { label: 'bounced', value: split?.bounced ?? 0, colour: 'var(--chart-bad)', to: `/campaigns?filter=needs_attention` },
+    { label: 'still queued', value: split?.queued ?? 0, colour: 'var(--chart-idle)', to: `/campaigns` },
   ];
 }
 
@@ -108,7 +108,7 @@ export default function Dashboard() {
 
   return (
     <div className="app-workspace max-w-[1920px]">
-      <PageHeader title="Home" />
+      <PageHeader title="Overview" subtitle="Your outreach campaigns and the club's results" />
       {apiError && (
         <p className="ui-notice ui-notice--warning mb-4">
           Live metrics are temporarily unavailable. The work pages remain usable.

@@ -1,40 +1,39 @@
-import { MODULES, usableModules, type AppNavItem } from '../modules';
+import { MODULES, usableModules, type AppModule, type AppNavItem } from '../modules';
 
 /**
- * Navigation layout. The items come from the apps' manifests (src/modules);
- * this file only decides where they sit. Shells (desktop + mobile) read from
- * this module.
+ * Navigation. Home (`/`) is the full-page hub with no bar; every other page
+ * belongs to one app, and its bar holds Home and that app's own pages. The
+ * items come from the apps' manifests (src/modules); shells (desktop +
+ * mobile) read them from here.
  */
 export type NavItem = AppNavItem;
-export type NavItemId = string;
 
-const navOf = (modules: typeof MODULES): NavItem[] => modules.flatMap((module) => module.nav);
+const navOf = (modules: AppModule[]): NavItem[] => modules.flatMap((module) => module.nav);
 
 export const NAV_ITEMS: NavItem[] = navOf(MODULES).filter((item) => !item.adminOnly);
 
 export const ADMIN_NAV_ITEMS: NavItem[] = navOf(MODULES).filter((item) => item.adminOnly);
 
-/**
- * Header layout. Every destination is reachable from TOP_LEVEL_IDS plus the
- * NAV_GROUPS dropdowns - Home does not need to mirror this list with its
- * own tile grid. Home instead surfaces live work state (needs attention,
- * pipeline snapshot, leaderboard) that links into these same destinations.
- *
- * Both shells read this: desktop renders TOP_LEVEL_IDS then NAV_GROUPS, mobile
- * renders MOBILE_PRIMARY_IDS with the drawer covering the rest.
- */
-export const TOP_LEVEL_IDS: NavItemId[] = ['dashboard', 'scraper'];
-
-export const NAV_GROUPS: { label: string; ids: NavItemId[] }[] = [
-  { label: 'Outreach', ids: ['studio', 'outreach', 'directory'] },
-];
-
-export const MOBILE_PRIMARY_IDS: NavItemId[] = ['dashboard', 'scraper', 'studio'];
-
 /** The menu for this member: the apps they may use, and admin pages for admins. */
 export function getNavItems(isAdmin: boolean, apps?: string[]): NavItem[] {
   const items = navOf(usableModules(apps));
   return items.filter((item) => !item.adminOnly || isAdmin);
+}
+
+/** The app a page belongs to: the one serving its first path segment; core (Home, Profile, Admin) otherwise. */
+export function appForPath(pathname: string): AppModule {
+  const segment = pathname.split('/')[1] ?? '';
+  const core = MODULES[0];
+  return MODULES.find((module) => module !== core && module.routes.some(
+    (route) => !('index' in route) && route.path.split('/')[0] === segment,
+  )) ?? core;
+}
+
+/** One app's bar: Home, then that app's pages this member may open. */
+export function appBarItems(app: AppModule, items: NavItem[]): NavItem[] {
+  const home = items.find((item) => item.to === '/');
+  const own = items.filter((item) => item.to !== '/' && app.nav.some((entry) => entry.id === item.id));
+  return home ? [home, ...own] : own;
 }
 
 /** Match active route for nav highlighting */

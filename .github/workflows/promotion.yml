@@ -27,7 +27,24 @@ jobs:
       with:
         ref: ${{ github.event.repository.default_branch }}
         persist-credentials: false
-    - name: Prepare reviewed PR or next verification
+    # Merges go through the promotion GitHub App so the merge push starts the
+    # next stage's workflows (a GITHUB_TOKEN push starts none). Its token can
+    # only write contents and pull requests on this repository, and only this
+    # default-branch job holds it. Without the app, or when its installation is
+    # missing or revoked, the token is empty and auto-merge stays off; PR
+    # preparation and review-gate publishing still run.
+    - name: Promotion app token
+      id: app
+      if: ${{ vars.PROMOTION_APP_CLIENT_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+      with:
+        client-id: ${{ vars.PROMOTION_APP_CLIENT_ID }}
+        private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
+        permission-contents: write
+        permission-pull-requests: write
+    - name: Advance stage PRs
       env:
         GH_TOKEN: ${{ github.token }}
+        PROMOTION_MERGE_TOKEN: ${{ steps.app.outputs.token }}
       run: python3 scripts/promote.py

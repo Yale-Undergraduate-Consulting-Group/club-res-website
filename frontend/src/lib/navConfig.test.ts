@@ -1,12 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { MODULES } from '../modules';
-import { ADMIN_NAV_ITEMS, MOBILE_PRIMARY_IDS, NAV_GROUPS, NAV_ITEMS, TOP_LEVEL_IDS, getNavItems, isNavItemActive } from './navConfig';
+import { ADMIN_NAV_ITEMS, NAV_ITEMS, appBarItems, appForPath, getNavItems, isNavItemActive } from './navConfig';
 
 describe('navigation', () => {
-  it('reaches every member destination from the desktop header', () => {
-    const headerIds = [...TOP_LEVEL_IDS, ...NAV_GROUPS.flatMap((group) => group.ids)];
-    expect(headerIds.toSorted()).toEqual(NAV_ITEMS.map((item) => item.id).toSorted());
-    expect(MOBILE_PRIMARY_IDS.every((id) => headerIds.includes(id))).toBe(true);
+  it('reaches every member destination from Home or an app bar', () => {
+    const reachable = new Set(MODULES.flatMap((app) => appBarItems(app, NAV_ITEMS).map((item) => item.id)));
+    expect([...reachable].toSorted()).toEqual(NAV_ITEMS.map((item) => item.id).toSorted());
+  });
+
+  it.each([
+    ['/', 'core'],
+    ['/profile', 'core'],
+    ['/campaigns/42', 'outreach'],
+    ['/scraper', 'outreach'],
+    ['/surveys', 'surveys'],
+    ['/sentiment', 'sentiment'],
+  ])('%s belongs to %s', (pathname, app) => expect(appForPath(pathname).id).toBe(app));
+
+  it('an app bar holds Home and only that app\'s pages', () => {
+    const surveys = MODULES.find((app) => app.id === 'surveys')!;
+    expect(appBarItems(surveys, getNavItems(true)).map((item) => item.id)).toEqual(['home', 'surveys']);
+    const core = MODULES[0];
+    expect(appBarItems(core, getNavItems(false)).map((item) => item.id)).toEqual(['home']);
+    expect(appBarItems(core, getNavItems(true)).map((item) => item.id)).toEqual(['home', 'admin']);
+  });
+
+  it('gives every app on the hub a home page it serves', () => {
+    const paths = MODULES.flatMap((m) => m.routes.map((r) => ('index' in r ? '/' : `/${r.path}`)));
+    for (const module of MODULES.filter((m) => m.id !== 'core')) expect(paths).toContain(module.nav[0].to);
   });
 
   it('shows Admin only to administrators', () => {

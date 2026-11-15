@@ -315,6 +315,12 @@ html:not(.dark) .surface-card.surface-card--compact,
   display: none;
 }
 
+/* The header avatar is the same square as the guide button beside it. */
+.app-shell-header-avatar {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+
 @media (min-width: 768px) {
   .app-shell-header-avatar {
     display: block;
@@ -516,6 +522,11 @@ html:not(.dark) .surface-card.surface-card--compact,
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.app-shell-drawer-brand {
+  padding: 1rem 1rem 0;
+  background: var(--bg-secondary);
 }
 
 .app-shell-drawer-header {
@@ -1534,17 +1545,135 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   font-weight: 700;
 }
 
-/* One persistent navigation bar; page sections scroll with their content. */
-.app-nav-group { position: relative; }
-.app-nav-group summary { cursor: pointer; list-style: none; height: 100%; }
-.app-nav-group summary::-webkit-details-marker { display: none; }
-.app-nav-group-panel { position: absolute; top: 100%; left: 0; min-width: 12rem; display: flex; flex-direction: column; background: var(--surface, white); border: 1px solid var(--border); }
-.app-nav-group-panel .app-nav-link { justify-content: flex-start; border: 0; padding: 0 1rem; }
-.app-nav-group-panel .app-nav-link:hover,
-.app-nav-group-panel .app-nav-link--active { background: var(--surface-subtle); }
-.app-nav-group summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-
 @media (min-width: 768px) {
   .app-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; }
   .app-page-header-actions { margin-top: 0; flex-shrink: 0; }
+}
+
+/* Home (the portal hub): the whole page, no bar - the greeting and one icon
+   tile per app, centred in the viewport. Deck rules hold: square edges, navy
+   line icons, no shadows. */
+.app-shell--hub .app-shell-main { padding: 0; }
+.hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+.hub-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+.hub-logo { width: clamp(3.5rem, 6vw, 5rem); height: auto; }
+/* Deck title (navy, regular weight) with its navy rule, short and centred. */
+.hub-title {
+  margin: 0;
+  padding-bottom: 1.25rem;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--navy-900);
+  background: linear-gradient(var(--navy-900), var(--navy-900)) bottom center / 4rem 1.5px no-repeat;
+}
+.app-workspace.hub > .hub-tools { margin-top: clamp(2rem, 6vh, 4rem); }
+.hub-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(1rem, 2.5vw, 2rem);
+  width: 100%;
+  max-width: 64rem;
+}
+.hub-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  width: clamp(12rem, 20vw, 16rem);
+  aspect-ratio: 9 / 8;
+  padding: 1.5rem;
+  background: var(--white, #ffffff);
+  border: 1px solid var(--border);
+  color: var(--navy-900);
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.hub-tile:hover {
+  border-color: var(--navy-900);
+  background: var(--mist-100);
+}
+.hub-tile__icon {
+  display: grid;
+  place-items: center;
+  width: clamp(3.5rem, 5.5vw, 4.75rem);
+  aspect-ratio: 1;
+  color: var(--navy-900);
+  border: 1.5px solid var(--navy-900);
+}
+.hub-tile__icon svg { width: 50%; height: 50%; }
+.hub-tile:hover .hub-tile__icon {
+  background: var(--navy-900);
+  color: #ffffff;
+}
+.hub-tile__initial { font-size: 2rem; font-weight: 700; }
+.hub-tile__name { font-size: clamp(1.0625rem, 1.6vw, 1.375rem); font-weight: 700; }
+.app-workspace.hub > .hub-footer { margin-top: clamp(2rem, 5vh, 3.5rem); }
+.hub-footer {
+  display: flex;
+  gap: 2rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.hub-footer a,
+.hub-footer button { color: var(--navy-900); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.hub-footer a:hover,
+.hub-footer button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.dark .hub-title,
+.dark .hub-tile,
+.dark .hub-tile__icon,
+.dark .hub-footer a,
+.dark .hub-footer button { color: var(--text-primary); border-color: var(--border); }
+.dark .hub-tile { background: var(--surface); }
+.dark .hub-tile:hover { background: var(--surface-subtle); }
+.dark .hub-tile:hover .hub-tile__icon { background: transparent; color: var(--text-primary); }
+@media (max-width: 639px) {
+  .hub-tile { width: 100%; aspect-ratio: auto; flex-direction: row; justify-content: flex-start; text-align: left; padding: 1rem; gap: 1rem; }
+  .hub-tile__icon { width: 3.5rem; flex-shrink: 0; }
+}
+
+/* An app's bar slides down when the app opens; its phone bar slides up. Each
+   is keyed by app (AppShell), so moving within one app leaves it still. */
+@keyframes app-bar-in {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+@keyframes app-mobile-bar-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.app-shell-header { animation: app-bar-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.app-mobile-nav { animation: app-mobile-bar-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.app-shell-brand { color: inherit; text-decoration: none; }
+.app-shell-app-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--navy-900);
+  border: 1.5px solid var(--navy-900);
+  flex-shrink: 0;
+}
+.app-shell-app-icon svg { width: 1.25rem; height: 1.25rem; }
+.dark .app-shell-app-icon { color: var(--text-primary); border-color: var(--border); }
+@media (prefers-reduced-motion: reduce) {
+  .hub-tile { transition: none; }
+  .app-shell-header,
+  .app-mobile-nav { animation: none; }
 }

@@ -47,13 +47,13 @@ flowchart TD
   P --> PG{"Strict checks and<br/>exact dev deployment proven?"}
   PG -->|No| FIX
   PG -->|Yes| PP["Controller prepares dev to prod PR"]
-  PP --> PRV["Maintainer review and merge"]
+  PP --> PRV["Controller merges once gates pass"]
   PRV --> PROD["prod: recheck, approve, deploy prod environment"]
 ```
 
-Each arrow across a shared branch requires a PR and a maintainer merge. Passing checks does not authorize a contributor to merge. The controller never merges or synchronizes branches.
+Each arrow across a shared branch is a PR. The Promotion controller merges it itself, as the promotion GitHub App, once the gates for that stage pass (section 4); a maintainer's part is the `review-gate` approval for large or sensitive changes, and the prod deployment approval. Passing checks still do not let a contributor merge. The controller never synchronizes branches.
 
-The controller opens every stage PR as `github-actions[bot]`. A single maintainer can therefore approve and merge it; no second person is required.
+The controller opens every stage PR as `github-actions[bot]`, so a single maintainer can approve it; no second person is required.
 
 Each contributor keeps **one** long-lived branch, `feature/<login>`, created once from `integration`. All their work is committed there. After a maintainer merges their PR, they merge `integration` back into the same branch and continue; the branch is never rebased or force-pushed. One branch per contributor keeps the branch list short and gives each person at most one open PR.
 
@@ -69,28 +69,28 @@ Source: [stage workflows](../.github/workflows/), [`ci_policy.py`](../scripts/ci
 flowchart TD
   A["Attempt branch creation, update, or deletion"] --> N{"Ref matches one-level<br/>feature/*?"}
   N -->|Yes| C["Contributor namespace: repository write access applies"]
-  N -->|No| O{"Actor is a maintainer<br/>(repository admin or organization owner)?"}
+  N -->|No| O{"Actor is a maintainer, or the<br/>promotion GitHub App?"}
   O -->|No| X["Reject ref operation"]
   O -->|Yes| S{"integration, dev, or prod?"}
   S -->|No| ADMIN["Maintainer administrative operation"]
   S -->|Yes| Q["Separate quality rules still apply"]
-  Q --> R["PR, required checks, current base;<br/>dev and prod also need review-gate"]
-  R --> M["Maintainer merges; no force push or branch deletion"]
+  Q --> R["PR and required checks;<br/>dev and prod also need review-gate"]
+  R --> M["Merge commit; no force push or branch deletion"]
 ```
 
 This diagram describes the installed rules. They are repository rulesets on `club-res-website`.
 
 | Setting | Purpose | Bypass |
 |---|---|---|
-| `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners |
-| `integration.org-ruleset.proposed.json` | Require Intake and current base; no approval | None |
-| `dev.org-ruleset.proposed.json` | Require Dev checks, `review-gate`, and current base | None |
-| `prod.org-ruleset.proposed.json` | Require Production checks, `review-gate`, and current base | None |
+| `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners (always); the promotion GitHub App (`pull_request` mode: merging a PR only) |
+| `integration.org-ruleset.proposed.json` | Require Intake; no approval | None |
+| `dev.org-ruleset.proposed.json` | Require Dev checks and `review-gate` | None |
+| `prod.org-ruleset.proposed.json` | Require Production checks and `review-gate` | None |
 | Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
-A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role, deploy-key, or GitHub Actions bypass.
+A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role or deploy-key bypass; its only automation bypass is the promotion GitHub App, in `pull_request` mode, so it can merge a PR but cannot push, create, or delete a shared branch directly, and its token exists only in the Promotion job's default-branch checkout (section 4).
 
-PRs into `integration` need no approval: only maintainers can merge there, so the maintainer's merge is the review, and a single maintainer can merge their own PR. PRs into `dev` and `prod` need the required status `review-gate`, which the controller publishes on the exact PR head. GitHub cannot make an approval rule depend on PR size, so the rulesets require no approving review and the gate carries the size rule instead:
+The quality rulesets do not require the PR to be current with its base (`strict_required_status_checks_policy: false`): merge commits land on the destination and never flow back, so every stage PR is routinely behind. The controller's own check replaces it: a destination that holds file changes the source lacks stops promotion (section 4). PRs into `integration` need no approval, and Promotion merges them once Intake passes; `integration` deploys nothing. PRs into `dev` and `prod` need the required status `review-gate`, which the controller publishes on the exact PR head. GitHub cannot make an approval rule depend on PR size, so the rulesets require no approving review and the gate carries the size rule instead:
 
 | Change (compared with the destination) | `review-gate` |
 |---|---|
@@ -100,7 +100,7 @@ PRs into `integration` need no approval: only maintainers can merge there, so th
 
 Missing or truncated comparisons (300 files or more) count as large. A review on a `dev` or `prod` PR starts the `Review` workflow, which runs no repository code and has no permissions; its completion triggers Promotion, which recomputes the gate from the API in its default-branch checkout. A new push to the PR head dismisses earlier approvals, and the gate is published again for the new head. No code owner is required.
 
-Because only bypass actors may update `integration`, `dev`, and `prod`, GitHub shows every PR into them as **blocked**, even when every check passes. That is expected. A maintainer merges with **Merge without waiting for requirements to be met (bypass rules)**, or `gh pr merge <n> --merge --admin`. The quality rulesets have no bypass actors, so their checks and approvals are still required.
+Promotion merges a stage PR as soon as its gates pass. A maintainer can still merge one by hand with **Merge without waiting for requirements to be met (bypass rules)**, or `gh pr merge <n> --merge --admin`; that bypasses only the namespace restriction, and the quality rulesets, which have no bypass actors, still require their checks.
 
 Keep `require_extra_approval_for_unattributed_changes: false` in every `pull_request` rule. GitHub sets it to `true` when a payload omits it. It then demands a human approval for agent-authored commits even when no approval is required, which blocked PR #8.
 
@@ -173,7 +173,7 @@ Verification compares the complete candidate with its destination branch, not on
 
 Source: [`ci_policy.py`](../scripts/ci_policy.py), [composite actions](../.github/actions/).
 
-## 4. Trusted completion code prepares PRs, never merges
+## 4. Trusted completion code merges only when gates pass
 
 ```mermaid
 flowchart TD
@@ -190,10 +190,17 @@ flowchart TD
   D -->|No| H
   H -->|Blocked| STOP
   H -->|Eligible| PR["Open or retain stage PR; publish exact-head status"]
-  PR --> OWNER["Wait for maintainer review and merge"]
+  PR --> GATE{"integration, or review-gate passed?"}
+  GATE -->|No| OWNER["Wait for maintainer approval; the review restarts Promotion"]
+  GATE -->|Yes| MERGE["Merge the verified head as the promotion app;<br/>the ruleset re-checks every required status"]
+  MERGE --> NEXT["Merge push starts the next stage's workflows"]
 ```
 
 The controller has write permissions because it creates PRs, statuses, and production releases. It never checks out candidate code, runs candidate scripts, or downloads candidate artifacts.
+
+It merges with a token from the promotion GitHub App (repository variable `PROMOTION_APP_CLIENT_ID`, secret `PROMOTION_APP_PRIVATE_KEY`), minted in the Promotion job only and limited to contents and pull requests on this repository. The app, not `GITHUB_TOKEN`, must push the merge: a `GITHUB_TOKEN` push starts no workflows, so the next stage would never verify or deploy. The merge is pinned to the verified head SHA, so a push after verification makes it fail. A refused merge (a missing required status, a moved head) is printed and leaves the PR open for the next completion. Without the app variable, auto-merge is off and stage PRs wait for a maintainer as before.
+
+A review on a `dev` or `prod` PR restarts Promotion; when the gate then passes, the controller merges. A prod PR also needs a successful Dev deployment of its exact head. The prod deploy job keeps the `prod` environment's maintainer approval, so nothing reaches production without one maintainer's click.
 
 A successful Dev deployment dispatches Production verification on `dev`. The Production candidate must have a successful Dev deployment job for its exact SHA, unless the complete `prod…dev` diff contains only documentation.
 
@@ -205,9 +212,9 @@ GitHub-generated PR events do not reliably start workflows when the controller u
 
 Observed 2026-10-07: the Intake `pull_request` run on a controller-opened PR ends in failure with no jobs, no check runs and no annotations, while the Intake `push` run on the same commit succeeds and supplies the required `intake-required-checks`. The Dev workflow's run on a controller-opened PR succeeded, so the cause is not simply the bot actor, and it is unexplained. Gating is unaffected, because the ruleset reads the check run on the commit, not the event that produced it. Treat a red `pull_request` Intake run on a controller PR as noise only after confirming the push run passed.
 
-**Destination commits that change no files do not block a promotion.** PR merge commits land on `dev` and `integration` and never flow back, so the destination routinely holds commits its source lacks. The controller compares the destination against the source (`compare/<source>...<destination>`); when that comparison lists no changed files, the extra commits are history only, cannot change what the candidate's checks tested, and the PR opens anyway. GitHub then marks it behind its base, which changes nothing in practice: only maintainers can merge into these branches, and they merge with bypass. When the comparison lists files, or cannot prove there are none (a missing or non-list `files`), the controller prints "Admin must synchronize ... then verify again." and stops: merge the destination branch into the source first (section 11).
+**Destination commits that change no files do not block a promotion.** PR merge commits land on `dev` and `integration` and never flow back, so the destination routinely holds commits its source lacks. The controller compares the destination against the source (`compare/<source>...<destination>`); when that comparison lists no changed files, the extra commits are history only, cannot change what the candidate's checks tested, and the PR opens and merges anyway; this is why the quality rulesets do not require a current base. When the comparison lists files, or cannot prove there are none (a missing or non-list `files`), the controller prints "Admin must synchronize ... then verify again." and stops: merge the destination branch into the source first (section 11).
 
-Maintainer review remains essential: contributor code can modify its own proposed checks. Protected shared refs and organization rules form the enforcement boundary, not workflow names alone.
+Residual risk, accepted with auto-merge: contributor code can modify its own proposed checks. A change to workflows, scripts, Terraform, dependencies or agent policy always needs a maintainer's `review-gate` approval, but a small change elsewhere (say, deleting a backend test) passes the gate alone and reaches the dev deployment unreviewed. Production still needs the `prod` environment approval, so a maintainer sees every release before it deploys. Protected shared refs and organization rules form the enforcement boundary, not workflow names alone.
 
 A successful production deployment creates a semantic-version release for the **deployed SHA**, not the controller checkout SHA. Documentation-only changes create no deployment release. Repeating a release reuses the existing release for that commit.
 

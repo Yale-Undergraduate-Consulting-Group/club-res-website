@@ -31,14 +31,16 @@ async function mock(page: Page, user: typeof ADMIN) {
   return { updates };
 }
 
-test('a member without Outreach does not see it in the menu', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'the desktop header lists every destination');
+test('a member without Outreach gets no Outreach tile or bar entries', async ({ page }) => {
   await mock(page, BEN);
   await page.goto('/');
-  const header = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(header.getByRole('link', { name: 'Home' })).toBeVisible();
-  await expect(header.getByRole('link', { name: 'Find contacts' })).toHaveCount(0);
-  await expect(header.getByText('Outreach')).toHaveCount(0);
+  const tools = page.getByRole('region', { name: 'Your tools' });
+  await expect(page.getByRole('heading', { name: 'Welcome, Ben' })).toBeVisible();
+  await expect(tools.getByRole('link', { name: /Outreach/ })).toHaveCount(0);
+  await page.goto('/profile');
+  const bar = page.getByRole('navigation', { name: 'Main navigation' }).first();
+  await expect(bar.getByRole('link', { name: 'Home' })).toBeVisible();
+  await expect(bar.getByRole('link', { name: 'Find contacts' })).toHaveCount(0);
 });
 
 test('an admin restricts Outreach to chosen members from Admin → Apps', async ({ page }) => {

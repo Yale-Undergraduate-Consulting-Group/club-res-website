@@ -137,6 +137,6 @@ def schedule(scheduler: Any, modules: list[Module], *, beta: bool) -> None:
 def all_modules() -> list[Module]:
     """The platform's apps, core first. Imported lazily so a manifest's
     routers and services load only when the server is built."""
-    from app.modules import core, outreach, projects
+    from app.modules import core, outreach, projects, surveys, sentiment
 
-    return [core.MODULE, outreach.MODULE, projects.MODULE]
+    return [core.MODULE, outreach.MODULE, projects.MODULE, surveys.MODULE, sentiment.MODULE]

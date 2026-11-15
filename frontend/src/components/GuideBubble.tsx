@@ -30,7 +30,7 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
         'Board seats and the very senior are never ticked for you: they rarely answer a cold email.',
         'Drafts writes each person their own email. Nothing leaves until you release the campaign.',
       ],
-      next: { to: '/', label: 'Home' },
+      next: { to: '/campaigns', label: 'Overview' },
     },
   },
   {
@@ -70,13 +70,13 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
 ];
 
 const DEFAULT_GUIDE: Guide = {
-  title: 'YUCG Outreach',
+  title: 'YUCG Resources',
   steps: [
-    'Find contacts is where work starts: choose companies, find people, write, build.',
-    'Campaigns is where you review and release. Nothing sends without that.',
-    'Pipeline is what happened afterwards — replies, bounces, follow-ups.',
+    'Home lists the tools you can use. Open one from its card or from the menu above.',
+    'Outreach is where work starts: Find contacts, write each person an email in Drafts, then follow replies in Pipeline.',
+    'Nothing is emailed until you release a campaign.',
   ],
-  next: { to: '/scraper', label: 'Find contacts' },
+  next: { to: '/campaigns', label: 'Outreach overview' },
 };
 
 export default function GuideBubble() {

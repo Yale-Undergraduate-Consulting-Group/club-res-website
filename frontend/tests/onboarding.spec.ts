@@ -22,7 +22,7 @@ async function mock(page: Page, user: typeof MEMBER, routes: Record<string, unkn
 
 test('Home lists only the missing setup steps and says Gmail blocks sending', async ({ page }) => {
   await mock(page, MEMBER, { '/api/auth/readiness': { ...DONE, gmail: false, slack: false, ready_to_send: false } });
-  await page.goto('/');
+  await page.goto('/campaigns');
   const card = page.getByTestId('getting-started');
   await expect(card).toContainText('Not ready to send');
   await expect(card.getByRole('link', { name: 'Connect your Gmail' })).toHaveAttribute('href', '/profile?view=integrations');
@@ -33,8 +33,8 @@ test('Home lists only the missing setup steps and says Gmail blocks sending', as
 
 test('Home shows no checklist once setup is complete', async ({ page }) => {
   await mock(page, MEMBER, { '/api/auth/readiness': DONE });
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await page.goto('/campaigns');
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   await expect(page.getByTestId('getting-started')).toHaveCount(0);
 });
 

@@ -52,7 +52,7 @@ async function mockWorkspace(page: Page) {
 test.beforeEach(async ({ page }) => { await mockWorkspace(page); });
 
 test('home only lists campaigns the signed-in member can manage', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/campaigns');
   const campaignsSection = page.getByRole('region', { name: 'Your campaigns' });
   await expect(campaignsSection.getByText('Alice outreach')).toBeVisible();
   await expect(campaignsSection.getByText('Bob outreach')).toHaveCount(0);
@@ -60,7 +60,7 @@ test('home only lists campaigns the signed-in member can manage', async ({ page 
 });
 
 test('an admin can resolve an orphaned campaign’s ownership from home', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/campaigns');
   const review = page.getByRole('region', { name: 'Needs ownership review' });
   await expect(review.getByText('Legacy outreach')).toBeVisible();
   await review.getByRole('button', { name: 'Review ownership evidence' }).click();
@@ -75,7 +75,7 @@ test('unauthorized detail displays an error instead of loading forever', async (
   await expect(page.getByRole('button', { name: 'Review & release' })).toHaveCount(0);
 });
 
-for (const [path, title] of [['/', 'Home'], ['/profile?tab=integrations', 'Profile & preferences'], ['/studio', 'Drafts'], ['/scraper', 'Find contacts'], ['/outreach', 'Pipeline'], ['/analytics', 'Full breakdown'], ['/admin', 'Admin']]) {
+for (const [path, title] of [['/campaigns', 'Overview'], ['/profile?tab=integrations', 'Profile & preferences'], ['/studio', 'Drafts'], ['/scraper', 'Find contacts'], ['/outreach', 'Pipeline'], ['/analytics', 'Full breakdown'], ['/admin', 'Admin']]) {
   test(`accessible page: ${title}`, async ({ page }, testInfo) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(title);
@@ -323,21 +323,11 @@ test('the composer formats like a mail client, and the preview shows the same th
   expect(await editor.innerHTML()).not.toContain('text-align: center');
 });
 
-test('every panel the app draws opens with the same motion', async ({ page }, testInfo) => {
+test('every panel the app draws opens with the same motion', async ({ page }) => {
   await page.goto('/studio');
   const duration = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--disclosure-duration').trim());
   expect(duration).toBe('180ms');
-
-  // A header nav dropdown and an in-page collapsible are different mechanisms
-  // (absolute panel vs animated grid row); both read as one motion. The nav
-  // dropdowns exist on desktop; mobile navigates through the drawer.
-  if (testInfo.project.name === 'desktop') {
-    const panel = page.locator('.app-nav-group-panel').first();
-    await page.locator('.app-nav-group summary').first().click();
-    await expect(panel).toBeVisible();
-    expect(await panel.evaluate(el => getComputedStyle(el).animationDuration)).toBe('0.18s');
-  }
 
   const collapsible = page.locator('.ui-disclosure').first();
   expect(await collapsible.evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0.18s');

@@ -1,4 +1,6 @@
-"""Prepare reviewed stage PRs from trusted workflow completion events; never merge."""
+"""Advance stage PRs from trusted workflow completion events: open each stage PR,
+publish its gates, and merge it once those gates pass. GitHub's rulesets still
+decide every merge; this code only asks when its own checks agree."""
 import json
 import os
 import re
@@ -26,15 +28,20 @@ SENSITIVE_FILES = {'AGENTS.md', 'CLAUDE.md', '.dockerignore', '.trivyignore',
                    'backend/requirements.txt', 'backend/requirements.lock', 'backend/requirements-dev.txt',
                    'frontend/package.json', 'frontend/package-lock.json'}
 DISPATCH_WAIT_SECONDS = 25 * 60
+# The promotion GitHub App's installation token. Merges must be pushed by the
+# app, not GITHUB_TOKEN: a GITHUB_TOKEN push starts no workflows, so the next
+# stage would never verify or deploy. Unset means auto-merge is off.
+MERGE_TOKEN_ENV = 'PROMOTION_MERGE_TOKEN'
 DISPATCH_POLL_SECONDS = 20
 
 
-def api(path, method='GET', payload=None):
+def api(path, method='GET', payload=None, token=None):
     args = ['gh', 'api', path, '--method', method]
     if payload is not None:
         args += ['--input', '-']
+    env = dict(os.environ, GH_TOKEN=token) if token else None
     result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                            text=True, capture_output=True, check=True)
+                            text=True, capture_output=True, check=True, env=env)
     return json.loads(result.stdout) if result.stdout else None
 
 
@@ -165,6 +172,24 @@ def apply_review_gate(repo, pr):
     api(f'repos/{repo}/statuses/{sha}', 'POST', {
         'state': state, 'context': 'review-gate', 'target_url': pr['html_url'], 'description': description})
     print(f'review-gate {state} on #{pr["number"]}: {description}')
+    return state
+
+
+def merge(repo, pr, sha):
+    """Merge a stage PR whose gates passed, as the promotion app, pinned to the
+    verified head. The ruleset re-checks every required status and refuses
+    anything missing; a refusal leaves the PR open for the next completion."""
+    token = os.environ.get(MERGE_TOKEN_ENV)
+    if not token:
+        print(f'Auto-merge off ({MERGE_TOKEN_ENV} unset): #{pr["number"]} waits for a maintainer.')
+        return False
+    try:
+        api(f'repos/{repo}/pulls/{pr["number"]}/merge', 'PUT', {'sha': sha, 'merge_method': 'merge'}, token=token)
+    except subprocess.CalledProcessError as error:
+        print(f'#{pr["number"]} not merged: {error.stderr.strip()}')
+        return False
+    print(f'Merged #{pr["number"]} into {pr["base"]["ref"]}')
+    return True
 
 
 def request_maintainer_review(repo, pr):
@@ -192,10 +217,18 @@ def request_maintainer_review(repo, pr):
 
 
 def refresh_review_gates(repo, sha):
+    """A review changed: recompute the gate, and merge if it now passes. A prod
+    PR still needs the exact commit deployed to dev."""
     for base in sorted(GATED_TARGETS):
         for pr in api(f'repos/{repo}/pulls?state=open&base={base}&per_page=100'):
-            if pr['head']['sha'] == sha and pr['head']['repo']['full_name'] == repo:
-                apply_review_gate(repo, pr)
+            if pr['head']['sha'] != sha or pr['head']['repo']['full_name'] != repo or held(pr):
+                continue
+            if apply_review_gate(repo, pr) != 'success':
+                continue
+            if base == 'prod' and not deployment_proven(repo, sha):
+                print(f'#{pr["number"]} approved, but {sha} has no successful dev deployment.')
+                continue
+            merge(repo, pr, sha)
 
 
 def wait_for_dispatched_run(repo, workflow, branch, sha, since):
@@ -238,16 +271,18 @@ def prepare_pr(repo, run, target):
             'head': source, 'base': target,
             'title': f'Promote {source} to {target}',
             'body': f'Candidate `{sha}` passed [{run["name"]}]({run["html_url"]}).\n\n'
-                    'A maintainer must review and merge. This controller cannot merge. '
+                    'Promotion merges this PR itself once its gates pass: the stage checks, and on '
+                    'dev and prod the review gate (maintainer approval for large or sensitive changes). '
                     'Use a hold label, request changes, or close this PR to stop promotion.'})
     # Dispatched runs are not attached to the PR automatically. Publish only the
-    # verified exact head; strict branch rules still require the current base.
+    # verified exact head; the merge below is pinned to that same head.
     api(f'repos/{repo}/statuses/{sha}', 'POST', {
         'state': 'success', 'context': WORKFLOWS[run['name']][1],
-        'target_url': run['html_url'], 'description': 'Verified candidate; maintainer merge required'})
+        'target_url': run['html_url'], 'description': 'Verified candidate'})
     print(pr['html_url'])
-    if target in GATED_TARGETS:
-        apply_review_gate(repo, pr)
+    if target in GATED_TARGETS and apply_review_gate(repo, pr) != 'success':
+        return
+    merge(repo, pr, sha)
 
 
 def process(run, repo):

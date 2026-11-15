@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-EDITED = ("frontend/src/modules/index.tsx", "frontend/src/modules/pages.ts", "frontend/src/lib/navConfig.ts", "docs/PLATFORM.md")
+EDITED = ("frontend/src/modules/index.tsx", "frontend/src/modules/pages.ts", "docs/PLATFORM.md")
 
 
 def generate(root: Path, *args: str) -> subprocess.CompletedProcess:

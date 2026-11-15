@@ -30,4 +30,4 @@ when_to_use: Use on your own when the requested change is complete and the verif
 10. Check for an open PR: `gh pr list --head feature/<login> --state open --json number,url,labels`.
     - **One is open:** the push already updated it. Do not create another. If this change needs a larger label than the PR has, replace it with `gh pr edit <number> --remove-label <old> --add-label <new>`. Add a PR comment that lists what this push added and which checks ran.
     - **None is open:** create one with `gh pr create --base <base> --head feature/<login> --label <label>`. Fill the body from [the PR template](../../../.github/pull_request_template.md). State which checks ran and which did not.
-11. Show me the PR URL. Do not merge it. A maintainer reviews and merges. After the merge, keep working on the same branch; the `my-branch` skill brings it up to date.
+11. Show me the PR URL. Do not merge it yourself: Promotion merges it once its gates pass, and later stages too (large or sensitive changes wait for a maintainer's approval; prod waits for the deployment approval). After the merge, keep working on the same branch; the `my-branch` skill brings it up to date.

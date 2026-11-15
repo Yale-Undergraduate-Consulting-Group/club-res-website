@@ -42,8 +42,7 @@ export default function LoginPage() {
             decoding="async"
           />
         </div>
-        <h1 className="text-2xl font-bold text-center text-deep-navy mb-2">YUCG Outreach</h1>
-        <p className="text-center text-slate-600 text-sm mb-8">Yale Undergraduate Consulting Group</p>
+        <h1 className="text-2xl font-bold text-center text-deep-navy mb-8">YUCG Resources</h1>
 
         {error && (
           <div className="mb-4 ui-notice ui-notice--danger">
@@ -114,24 +113,7 @@ export default function LoginPage() {
           </Button>
         )}
 
-        <p className="mt-6 text-center text-xs text-slate-500">
-          Secure login via Google. Only @yale.edu accounts.
-        </p>
-
-        <div className="mt-6 p-4 bg-slate-50 border-2 border-[var(--border)]">
-          <h3 className="text-sm font-semibold text-slate-700 mb-2">Yale Duo verification</h3>
-          <p className="text-xs text-slate-600 mb-2">
-            @yale.edu accounts require Duo two-factor authentication. When you sign in, you may be prompted to verify via the Duo Mobile app, a phone call, or passcode.
-          </p>
-          <a
-            href="https://mfa.its.yale.edu"
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-steel-blue hover:text-deep-navy hover:underline font-medium"
-          >
-            Manage Duo devices → mfa.its.yale.edu
-          </a>
-        </div>
+        <p className="mt-6 text-center text-xs text-slate-500">@yale.edu accounts only.</p>
       </div>
     </div>
   );
