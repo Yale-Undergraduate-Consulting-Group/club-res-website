@@ -115,7 +115,7 @@ export default function Analytics() {
           className=""
           title="No send activity yet"
           body="Release a reviewed campaign. Delivery and reply activity appear here once the server sends it."
-          action={<Link to="/" className="ui-button ui-button--primary">Go to Home</Link>}
+          action={<Link to="/campaigns" className="ui-button ui-button--primary">Go to Overview</Link>}
         />
       )}
 
@@ -129,7 +129,7 @@ export default function Analytics() {
       <section className="surface-card" aria-label="Campaign drilldown">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="app-section-title">Campaign drilldown</h2>
-          <Link to="/" className="text-sm font-semibold text-[var(--accent)] hover:underline">All campaigns</Link>
+          <Link to="/campaigns" className="text-sm font-semibold text-[var(--accent)] hover:underline">All campaigns</Link>
         </div>
         {campaigns.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">No campaigns to compare.</p>

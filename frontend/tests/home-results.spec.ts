@@ -34,7 +34,7 @@ async function mockHome(page: Page, dashboard: Record<string, unknown> = DASHBOA
 
 test('the front page shows results as a chart, the member’s own and the club’s', async ({ page }) => {
   await mockHome(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
 
   const results = page.getByLabel('Results');
   await expect(results).toBeVisible();
@@ -68,7 +68,7 @@ test('a member who has mailed nobody is told where to start, not shown a blank c
     mine: { mailed: 0, replied: 0, bounced: 0, queued: 0, awaiting: 0, reply_rate: 0 },
     my_sectors: [],
   });
-  await page.goto('/');
+  await page.goto('/campaigns');
 
   const results = page.getByLabel('Results');
   await expect(results).toContainText('You have not mailed anyone yet');
@@ -79,7 +79,7 @@ test('a member who has mailed nobody is told where to start, not shown a blank c
 
 test('a slice is interactive: it responds to hover and opens its own rows', async ({ page }) => {
   await mockHome(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
 
   const results = page.getByLabel('Results');
   const mine = results.getByRole('img', { name: /^Yours:/ });
@@ -108,13 +108,13 @@ test('a slice is interactive: it responds to hover and opens its own rows', asyn
 
 test('slice keyboard focus reaches the same rows as the mouse', async ({ page }) => {
   await mockHome(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
 
   const bounced = page.getByLabel('Results')
     .getByRole('link', { name: '1 bounced — open the list' }).first();
   await bounced.focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/\?filter=needs_attention/);
+  await expect(page).toHaveURL(/\/campaigns\?filter=needs_attention/);
 });
 
 test('"yours" stays yours after the click: the pipeline asks for your rows only', async ({ page }) => {

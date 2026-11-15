@@ -222,7 +222,7 @@ const draftsStep = (label: string) => async (page: Page) => {
 };
 
 const SURFACES: Surface[] = [
-  { name: 'Home', url: '/', ready: /Results/ },
+  { name: 'Outreach overview', url: '/campaigns', ready: /Results/ },
   { name: 'Find contacts', url: '/scraper', ready: /Find/ },
   { name: 'Outreach pipeline', url: '/outreach', ready: 'Jordan Rivers' },
   {

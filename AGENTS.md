@@ -72,9 +72,9 @@ A branch named `feature` cannot coexist with `feature/user` in Git.
 - A maintainer is anyone with the repository admin role; organization owners also qualify.
 - Name roles, not individuals, in rules, docs, and configuration. Membership changes belong in GitHub settings.
 - Organization ownership, repository administration, code review, merge permission, and AWS access are different permissions.
-- Only maintainers merge into shared branches. `integration` needs passing checks; `dev` and `prod` also need the `review-gate` status, which passes on its own for small changes and otherwise after one maintainer approval. GitHub shows these PRs as blocked; maintainers merge with the rules bypass.
-- One maintainer's review and merge is sufficient for every change, including IAM, client access, deletion, workflow permissions, and protection changes.
-- Keep automation credentials narrow; do not grant every candidate workflow a shared-branch bypass.
+- Stage PRs merge automatically: the Promotion controller (default-branch code) merges each one, as the promotion GitHub App, once its gates pass. `integration` needs passing Intake; `dev` and `prod` also need the `review-gate` status, which passes on its own for small changes and otherwise after one maintainer approval. Prod deploys only after a maintainer approves the `prod` environment. Contributors never merge into shared branches.
+- One maintainer's review is sufficient for every change, including IAM, client access, deletion, workflow permissions, and protection changes.
+- Keep automation credentials narrow; do not grant every candidate workflow a shared-branch bypass. Only the promotion GitHub App bypasses the shared-branch restriction, and only the Promotion job holds its token.
 - An empty environment list does not prove missing permission. Report the actual API result and operation.
 - Namespace rules do not prove personal ownership of `feature/<user>` branches.
 - Check whether a PR remains open before publishing additional changes to its branch.

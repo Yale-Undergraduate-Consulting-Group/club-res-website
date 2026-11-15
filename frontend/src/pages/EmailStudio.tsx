@@ -1484,10 +1484,10 @@ export default function EmailStudio() {
                       Save campaign draft
                     </button>
                     <Link
-                      to={createdCampaignId ? `/campaigns/${createdCampaignId}` : '/'}
+                      to={createdCampaignId ? `/campaigns/${createdCampaignId}` : '/campaigns'}
                       className="inline-flex items-center px-3 py-2 text-sm font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] underline underline-offset-2"
                     >
-                      {createdCampaignId ? 'Review this campaign' : 'Go to Home'}
+                      {createdCampaignId ? 'Review this campaign' : 'Go to Overview'}
                     </Link>
                   </div>
                   {campaignMessage && (
