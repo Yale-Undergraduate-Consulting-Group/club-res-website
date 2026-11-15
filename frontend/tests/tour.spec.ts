@@ -18,7 +18,7 @@ async function mockApp(page: Page) {
 
 test('the tour walks the whole flow across pages and can be left at any stop', async ({ page }) => {
   await mockApp(page);
-  await page.goto('/');
+  await page.goto('/campaigns');
 
   await page.getByRole('button', { name: 'How this page works' }).click();
   await page.getByRole('button', { name: 'Take the tour' }).click();

@@ -1,0 +1,94 @@
+/* Market sentiment: the distribution bar, diverging score rows, trend line and
+   run progress. Colours come from the --chart-* tokens; every mark also has a
+   text label, so colour is never the only signal. Loaded last. */
+
+.sentiment-bar {
+  display: flex;
+  height: 0.75rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+.sentiment-bar__seg--positive { background: var(--chart-3); }
+.sentiment-bar__seg--neutral { background: var(--chart-6); }
+.sentiment-bar__seg--negative { background: var(--chart-7); }
+.sentiment-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.sentiment-legend__dot {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.375rem;
+  vertical-align: baseline;
+}
+
+.sentiment-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+.sentiment-tile {
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+}
+.sentiment-tile__label { font-size: 0.75rem; color: var(--text-muted); }
+.sentiment-tile__value { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+
+/* Diverging rows: a score from -1 to 1 drawn out from a centre line. */
+.sentiment-rows { display: grid; gap: 0.5rem; }
+.sentiment-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 11rem) 1fr 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+}
+.sentiment-row__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sentiment-row__track { position: relative; height: 0.75rem; background: var(--surface-subtle); }
+.sentiment-row__track::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: 1px;
+  background: var(--chart-text);
+}
+.sentiment-row__fill { position: absolute; top: 0; bottom: 0; }
+.sentiment-row__fill--positive { background: var(--chart-3); }
+.sentiment-row__fill--negative { background: var(--chart-7); }
+.sentiment-row__value { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
+.sentiment-trend { width: 100%; height: auto; display: block; }
+.sentiment-trend text { fill: var(--chart-text); font-size: 10px; }
+.sentiment-trend__grid { stroke: var(--chart-grid); stroke-width: 1; }
+.sentiment-trend__zero { stroke: var(--chart-text); stroke-width: 1; stroke-dasharray: 3 3; }
+.sentiment-trend__line { fill: none; stroke: var(--chart-2); stroke-width: 2; }
+.sentiment-trend__dot { fill: var(--chart-1); }
+
+.sentiment-progress { height: 0.5rem; border: 1px solid var(--border); background: var(--surface-subtle); }
+.sentiment-progress__fill { height: 100%; background: var(--chart-2); transition: width 0.4s ease; }
+
+.sentiment-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border);
+}
+.sentiment-run:last-child { border-bottom: none; }
+.sentiment-run:hover { background: var(--surface-subtle); }
+.sentiment-run[aria-current='true'] { background: var(--surface-subtle); font-weight: 700; }
+
+.sentiment-quote { border-left: 2px solid var(--border-control); padding-left: 0.75rem; font-size: 0.875rem; }
+.sentiment-table td, .sentiment-table th { padding: 0.5rem 0.75rem 0.5rem 0; vertical-align: top; }

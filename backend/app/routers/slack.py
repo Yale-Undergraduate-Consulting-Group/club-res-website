@@ -16,9 +16,10 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.services.slack_agent import (
-    MODEL_UNAVAILABLE_REPLY, already_handled, answer_event, handle_message,
+    MODEL_UNAVAILABLE_REPLY, WORKING_REPLY, already_handled, answer_event, handle_message,
     is_deterministic_message, member_for_slack_user, verify_slack_signature,
 )
+from app.services import slack_commands
 from app.services.slack_tools import SlackContext
 
 logger = logging.getLogger(__name__)
@@ -45,17 +46,23 @@ async def slack_command(request: Request, background: BackgroundTasks):
         return JSONResponse({"error": "invalid_signature"}, status_code=401)
 
     form = await request.form()
-    member = await member_for_slack_user(str(form.get("user_id") or ""))
-    if not member:
-        return JSONResponse({
-            "response_type": "ephemeral",
-            "text": (
-                "I do not know which club account this is. Open YUCG Outreach → "
-                "Profile → Integrations and press *Connect Slack*, then try again."
-            ),
-        })
-
+    slack_user = str(form.get("user_id") or "")
+    member = await member_for_slack_user(slack_user)
     text = str(form.get("text") or "")
+
+    # help, onboard, link, unlink, usage, requests: answered from the database,
+    # and the first three also for someone who has not linked an account yet.
+    subcommand = slack_commands.parse_subcommand(text)
+    if subcommand:
+        reply, request_id = await slack_commands.answer(*subcommand, member, slack_user)
+        if request_id:
+            # DMs to the admins finish after the acknowledgement Slack waits for.
+            background.add_task(slack_commands.deliver_request, request_id)
+        return JSONResponse({"response_type": "ephemeral", "text": reply})
+
+    if not member:
+        return JSONResponse({"response_type": "ephemeral", "text": slack_commands.NOT_LINKED})
+
     # Slash commands stay single-turn: no channel/thread, so no memory and no
     # current-thread reading, but named channels the asker belongs to can be read.
     context = SlackContext(slack_user=str(form.get("user_id") or ""))
@@ -77,7 +84,7 @@ async def slack_command(request: Request, background: BackgroundTasks):
             payload = {
                 "response_type": "ephemeral",
                 "replace_original": True,
-                "text": str(answer.get("text") or MODEL_UNAVAILABLE_REPLY),
+                "text": f"<@{slack_user}> " + str(answer.get("text") or MODEL_UNAVAILABLE_REPLY),
             }
             async with httpx.AsyncClient(timeout=10.0) as client:
                 await client.post(response_url, json=payload)
@@ -87,7 +94,7 @@ async def slack_command(request: Request, background: BackgroundTasks):
     background.add_task(answer_command)
     return JSONResponse({
         "response_type": "ephemeral",
-        "text": "Looking that up…",
+        "text": WORKING_REPLY,
     })
 
 

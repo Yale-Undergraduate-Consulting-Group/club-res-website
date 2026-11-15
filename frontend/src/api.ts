@@ -1,6 +1,13 @@
+import type { SurveyDraft } from './lib/surveyImport';
+
 export type MemberProfile = { projects?: string; experience?: string; role_title?: string; linkedin_url?: string; slack_handle?: string; other_handles?: string };
 export type Project = { id: number; name: string; semester?: string; description?: string; role_in_project?: string; client_name?: string; discussable?: boolean };
 export type Attachment = { id: number; filename: string; display_name?: string; file_size: number };
+/** The survey builder's past-survey library on this server (backend/app/routers/surveys.py). */
+export type SurveyLibrary = {
+  qualtrics: boolean; surveys: number; questions: number; names: string[]; synced_at: string | null; syncing: boolean;
+  last_sync: { ok: true; saved: number; skipped: number; failed: string[] } | { ok: false; error: string } | null;
+};
 /** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
 export type Template = {
   id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
@@ -667,6 +674,17 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
 }
 
 export const api = {
+  surveys: {
+    library: () => fetchApi<SurveyLibrary>('/api/surveys/library'),
+    syncLibrary: () => fetchApi<{ syncing: boolean }>('/api/surveys/library/sync', { method: 'POST' }),
+    chat: (messages: { role: 'user' | 'assistant'; content: string }[]) =>
+      fetchApi<{ message: string; survey: SurveyDraft | null; sources: string[] }>('/api/surveys/chat', {
+        method: 'POST', body: JSON.stringify({ messages }),
+      }),
+    create: (survey: SurveyDraft) =>
+      fetchApi<{ survey_id: string; edit_url: string; added: number; failed: { question: string; error: string }[] }>(
+        '/api/surveys/create', { method: 'POST', body: JSON.stringify({ survey }) }),
+  },
   projects: {
     list: () => fetchApi<Project[]>('/api/workspace/projects'),
     suggestCitations: (company: string) =>
@@ -1543,5 +1561,124 @@ export const api = {
       delete: (id: number) =>
         fetchApi<unknown>(`/api/settings/custom-formats/${id}`, { method: 'DELETE' }),
     },
+  },
+};
+
+// ——— Market sentiment ———
+
+export type SentimentKind = 'transcripts' | 'reddit' | 'google';
+export type SentimentLabel = 'positive' | 'neutral' | 'negative';
+export type SentimentSummary = {
+  count: number;
+  avg_sentiment: number | null;
+  distribution: Record<SentimentLabel, number>;
+};
+export type SentimentRunRow = {
+  id: number;
+  kind: SentimentKind;
+  title: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  progress_pct: number;
+  progress_message: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+export type SentimentRun<R> = SentimentRunRow & { result: R | null };
+export type SentimentGroup = SentimentSummary & { name: string };
+export type TranscriptComparison = { all: SentimentSummary; company: SentimentSummary; competitors: SentimentGroup[] };
+export type TranscriptResult = {
+  company: string;
+  competitors: string[];
+  overall: TranscriptComparison;
+  transcripts: (TranscriptComparison & { name: string; sentences: number; interviewee: string | null })[];
+  sentences: {
+    transcript: number;
+    speaker: string;
+    role: 'interviewee' | 'interviewer' | 'unknown';
+    text: string;
+    score: number | null;
+    label: SentimentLabel | null;
+    mentions_company: boolean;
+    mentions: string[];
+  }[];
+  word_stats: { word: string; count: number; avg_sentiment: number }[];
+};
+export type RedditResult = {
+  query: string;
+  summary: SentimentSummary;
+  monthly_trend: { month: string; avg_sentiment: number; post_count: number }[];
+  top_keywords: { word: string; count: number; avg_sentiment: number }[];
+  posts: {
+    id: string;
+    subreddit: string;
+    title: string;
+    text: string;
+    created: string;
+    score: number;
+    num_comments: number;
+    url: string;
+    score_sentiment: number;
+    label: SentimentLabel;
+  }[];
+  subreddit_breakdown: (SentimentSummary & { subreddit: string })[];
+};
+export type GooglePlace = {
+  data_id: string;
+  place_id?: string;
+  name: string;
+  address: string;
+  rating: number | null;
+  review_count: number | null;
+};
+export type GoogleReview = { author: string; rating: number | null; text: string; date: string; score: number; label: SentimentLabel };
+export type GoogleResult = {
+  summary: SentimentSummary;
+  places: (GooglePlace & SentimentSummary & {
+    error: string | null;
+    top_positive: GoogleReview[];
+    top_negative: GoogleReview[];
+    reviews: GoogleReview[];
+  })[];
+};
+
+async function sentimentUpload(path: string, form: FormData): Promise<{ id: number }> {
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST', credentials: 'include', headers: getAuthHeaders(), body: form });
+  const text = await res.text();
+  if (!res.ok) throw new Error(problemDetail(text));
+  return JSON.parse(text) as { id: number };
+}
+
+export const sentimentApi = {
+  status: () => fetchApi<{ reddit: boolean; google: boolean }>('/api/sentiment/status'),
+  runs: (kind: SentimentKind) => fetchApi<SentimentRunRow[]>(`/api/sentiment/runs?kind=${kind}`),
+  run: <R,>(id: number) => fetchApi<SentimentRun<R>>(`/api/sentiment/runs/${id}`),
+  remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/sentiment/runs/${id}`, { method: 'DELETE' }),
+  startTranscripts: (company: string, competitors: string, files: File[]) => {
+    const form = new FormData();
+    form.append('company', company);
+    form.append('competitors', competitors);
+    files.forEach((file) => form.append('files', file));
+    return sentimentUpload('/api/sentiment/runs/transcripts', form);
+  },
+  startReddit: (body: { subreddits: string[]; query: string; time_filter: string; limit: number }) =>
+    fetchApi<{ id: number }>('/api/sentiment/runs/reddit', { method: 'POST', body: JSON.stringify(body) }),
+  searchPlaces: (query: string) =>
+    fetchApi<{ places: GooglePlace[] }>('/api/sentiment/google/places', { method: 'POST', body: JSON.stringify({ query }) }),
+  startGoogle: (places: GooglePlace[], reviewsPerPlace: number) =>
+    fetchApi<{ id: number }>('/api/sentiment/runs/google', {
+      method: 'POST',
+      body: JSON.stringify({ places, reviews_per_place: reviewsPerPlace }),
+    }),
+  downloadCsv: async (id: number, filename: string) => {
+    const res = await fetch(`${API_BASE}/api/sentiment/runs/${id}/csv`, { credentials: 'include', headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(problemDetail(await res.text()));
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   },
 };

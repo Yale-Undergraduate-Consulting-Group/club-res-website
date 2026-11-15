@@ -1,24 +1,25 @@
-import { MOBILE_PRIMARY_IDS, type NavItem } from '../../lib/navConfig';
+import type { NavItem } from '../../lib/navConfig';
 import AppNavLink from './AppNavLink';
 
 type AppShellMobileProps = {
+  /** This app's bar: Home, then its own pages. */
   items: NavItem[];
   onOpenMenu: () => void;
 };
 
+/** Phones show at most this many bar entries; the drawer covers the rest. */
+const MOBILE_SLOTS = 4;
+
 /**
- * Mobile shell chrome: bottom nav + menu button (drawer trigger).
+ * Mobile shell chrome: the app's bottom bar + menu button (drawer trigger).
  * Hidden on lg+ via styles/shell.css — do not render a duplicate menu in the header.
  */
 export default function AppShellMobile({ items, onOpenMenu }: AppShellMobileProps) {
-  const primaryItems = MOBILE_PRIMARY_IDS.map((id) =>
-    items.find((item) => item.id === id),
-  ).filter((item): item is NavItem => !!item);
   return (
     <div className="app-mobile-shell">
       <nav className="app-mobile-nav" aria-label="Main navigation">
         <div className="app-mobile-nav-scroll">
-          {primaryItems.map((item) => (
+          {items.slice(0, MOBILE_SLOTS).map((item) => (
             <AppNavLink key={item.id} item={item} variant="mobile" />
           ))}
         </div>

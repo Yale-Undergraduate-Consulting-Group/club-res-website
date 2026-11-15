@@ -23,7 +23,7 @@ export default function MainApp({ user, onLogout }: MainAppProps) {
 
   useEffect(() => {
     const path = location.pathname || '/';
-    const resource = path === '/' ? 'dashboard' : path.slice(1).split('/')[0];
+    const resource = path === '/' ? 'hub' : path.slice(1).split('/')[0];
     api.telemetry.event({ event_type: 'page_view', resource_type: resource });
   }, [location.pathname]);
 

@@ -17,6 +17,10 @@ export default function AppShellDrawer({ open, onClose, user, onLogout, items }:
     <div className="app-shell-drawer-root" role="dialog" aria-modal="true" aria-label="Menu">
       <button type="button" className="app-shell-drawer-backdrop" onClick={onClose} aria-label="Close menu" />
       <aside className="app-shell-drawer">
+        <div className="app-shell-brand app-shell-drawer-brand">
+          <img src="/yucg-logo.png" alt="YUCG" className="app-shell-logo" decoding="async" />
+          <div className="app-shell-title">YUCG Resources</div>
+        </div>
         <div className="app-shell-drawer-header">
           <div className="flex items-center gap-2 min-w-0">
             {user.picture && (

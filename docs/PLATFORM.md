@@ -23,12 +23,12 @@ and jobs must not collide with another app's.
 | Side | Manifest | Declares |
 |---|---|---|
 | Server | `backend/app/modules/<app>.py` → `MODULE` | its routers (`Route`: prefix, tag, `signed_in`), scheduled jobs (`Job`: id, schedule, `sends_mail`, `first_run_after`) and startup hooks |
-| Browser | an `AppModule` in `frontend/src/modules/index.tsx` | its page routes and menu entries (`adminOnly` for admin pages) |
+| Browser | an `AppModule` in `frontend/src/modules/index.tsx` | its page routes, menu entries (`adminOnly` for admin pages; the first is the app's home) and `icon` |
 
 `backend/main.py` mounts every app listed by `app.modules.all_modules()`;
-`App.tsx` mounts every route in `MODULES`; `lib/navConfig.ts` takes its items
-from the manifests and only decides where each sits (top level, a dropdown,
-the mobile bar).
+`App.tsx` mounts every route in `MODULES`; `lib/navConfig.ts` takes the menu
+entries from the manifests and works out which app a page belongs to, so
+each app's bar holds Home and its own pages.
 
 Rules every manifest keeps, enforced by tests:
 
@@ -58,15 +58,66 @@ change in behaviour.
 | UI kit and styles | `frontend/src/components/ui/Primitives.tsx`; styles in `frontend/src/styles/` (below) |
 | App shell and navigation | `frontend/src/components/shell/`, `frontend/src/lib/navConfig.ts` |
 
+## Portal
+
+The site is "YUCG Resources". Sign-in (`LoginPage`) is the logo, the name and
+the sign-in button. Home (`/`, `pages/Hub.tsx`, core) fills the page with no
+bar: "Welcome, <first name>" (a member whose Google name is missing or only
+their address gets the first part of the address, capitalised), a centred
+tile per app the member may use (every app but core) with its icon and
+title, and Profile, Admin (admins) and Log out. A tile opens the app's first
+menu entry; Outreach's is Overview at `/campaigns`. Every other page shows
+the bar of the app it belongs to (`appForPath`, `appBarItems` in
+`lib/navConfig.ts`): the logo (back to Home), the app's icon and name, Home
+and that app's pages; Profile and Admin use the core bar. The bar slides in
+when an app opens and stays put between one app's pages; reduced motion
+turns that off. The `icon` is a line drawing in `components/AppIcons.tsx`
+(24-unit grid, `currentColor`, 1.6 stroke); an app without one shows its
+initial.
+
 ## Apps today
 
 | App | Server prefixes | Pages | Jobs |
 |---|---|---|---|
-| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home, Profile, Admin | — |
-| `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Find contacts, Drafts, Pipeline, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
+| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home (the hub), Profile, Admin | — |
+| `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Overview (`/campaigns`), Find contacts, Drafts, Pipeline, Directory, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
 | `projects` | `/api/projects` | (inside Admin) | — |
+| `surveys` | `/api/surveys` | Survey builder | — |
+| `sentiment` | `/api/sentiment` | Market sentiment (Interviews, Reddit, Google reviews) | stale-run reaper (fails runs left `running` by a restart) |
 
 `/api/health` and `/api/ai/models` belong to the server itself.
+
+### Market sentiment (`sentiment`)
+
+Each analysis is a queued run in `sentiment_runs`, owned by the member who
+started it (other members get 404 on read, CSV and delete). The model is
+`app/services/llm.py` only, in batches on the ranking model, charged to the
+member (`purpose='sentiment'`); a run is capped at 1,500 scored items and a
+member at two active runs. Uploaded transcripts are reduced to their sentences
+when the request is made and that text is cleared when the run ends. Optional
+settings, each turning one tab on (without them the tab says so and the API
+answers 503):
+
+| Setting | Turns on |
+|---|---|
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Reddit tab (official API, app-only OAuth) |
+| `SERPAPI_KEY` | Google reviews tab (SerpAPI, paid per search) |
+
+### Survey builder (`surveys`)
+
+From the `yucg-survey-agent` prototype. Drafting runs on
+the club model through `llm.py`, charged to the member. The past-survey
+library and Create in Qualtrics use the club's one Qualtrics OAuth client
+(`QUALTRICS_CLIENT_ID`, `QUALTRICS_CLIENT_SECRET`; optional): drafts land in
+that account, and `survey_library` holds outlines (question wording and
+choices, no responses) of every survey it can see. Those outlines can carry
+client wording and are readable by everyone with the app, so before the
+first refresh an admin lists confidential surveys in `SURVEY_LIBRARY_SKIP`
+or restricts the app; a listed survey is never downloaded and is hidden at
+once if already copied. A refresh replaces the library: surveys no longer
+visible to the client leave it. Dev runs without the client by decision
+(no client surveys copied into dev, no drafts created from dev); the page
+says Qualtrics is not configured. Conversations are not stored.
 
 ## Steps
 

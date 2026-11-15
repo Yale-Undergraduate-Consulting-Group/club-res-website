@@ -120,7 +120,7 @@ export default function CampaignDetail() {
     setSelectedIds(new Set());
   };
 
-  if (!loading && !campaign) return <div className="app-workspace"><Notice tone="danger">{error || 'Campaign unavailable.'}</Notice><Link to="/" className="ui-button mt-4">Back to Home</Link></div>;
+  if (!loading && !campaign) return <div className="app-workspace"><Notice tone="danger">{error || 'Campaign unavailable.'}</Notice><Link to="/campaigns" className="ui-button mt-4">Back to Overview</Link></div>;
   if (loading || !campaign) {
     return <div className="flex min-h-[60vh] items-center justify-center text-slate-500">Loading campaign…</div>;
   }
@@ -152,7 +152,7 @@ export default function CampaignDetail() {
     <div className="app-workspace max-w-6xl">
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <Link to="/" className="text-sm font-semibold text-[var(--accent)] hover:underline">← Home</Link>
+          <Link to="/campaigns" className="text-sm font-semibold text-[var(--accent)] hover:underline">← Overview</Link>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold text-deep-navy">{campaign.name}</h1>
             <StatusBadge tone={statusTone(campaign.status)}>{campaign.status.replace('_', ' ')}</StatusBadge>
@@ -305,7 +305,7 @@ export default function CampaignDetail() {
           setBusy(true);
           try {
             await api.campaigns.delete(campaignId);
-            navigate('/');
+            navigate('/campaigns');
           } catch (requestError) {
             setError((requestError as Error).message);
             setBusy(false);
