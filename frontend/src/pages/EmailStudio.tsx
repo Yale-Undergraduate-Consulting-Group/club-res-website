@@ -1068,7 +1068,7 @@ export default function EmailStudio() {
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center py-4 xl:py-6 gap-2">
+            <div className="flex flex-col items-center py-3 gap-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -1257,7 +1257,7 @@ export default function EmailStudio() {
             </div>
             </>
             ) : (
-            <div className="flex flex-col items-center py-4 xl:py-6 gap-2">
+            <div className="flex flex-col items-center py-3 gap-2">
               <Button
                 variant="ghost"
                 size="sm"
