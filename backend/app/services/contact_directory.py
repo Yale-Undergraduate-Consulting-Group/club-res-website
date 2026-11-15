@@ -33,6 +33,12 @@ _CHUNK = 500
 _SOURCE_LABELS = {
     "domain_scrape": "Company website",
     "web_discovery": "Web search",
+    "web_company_page": "Company leadership page",
+    "web_press": "Press release",
+    "web_theorg": "The Org",
+    "web_crunchbase": "Crunchbase",
+    "web_speaker": "Conference speaker page",
+    "web_directory": "Public profile directory",
     "inferred": "Guessed from format",
     "linkedin_inferred": "Guessed from format",
     "roster_sec": "SEC filings",

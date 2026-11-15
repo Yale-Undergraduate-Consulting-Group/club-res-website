@@ -61,16 +61,15 @@ test('the lanes, the sheet and the message stay on screen together', async ({ pa
 
   // Selected and unselected choices use the same control geometry; choosing a
   // level changes only its colour, never the size of the row.
-  const who = pipeline.getByRole('radiogroup', { name: 'Who to look for' });
-  const team = who.getByRole('radio', { name: 'Team leads' });
-  const senior = who.getByRole('radio', { name: 'Senior leaders' });
-  const before = await Promise.all([team.boundingBox(), senior.boundingBox()]);
+  const who = pipeline.getByRole('group', { name: 'Who to look for' });
+  const team = who.getByRole('button', { name: 'Team leads' });
+  const board = who.getByRole('button', { name: 'Board' });
+  const before = await Promise.all([team.boundingBox(), board.boundingBox()]);
   expect(before[0]?.height).toBe(before[1]?.height);
-  await senior.click();
-  const after = await Promise.all([team.boundingBox(), senior.boundingBox()]);
+  await board.click();
+  const after = await Promise.all([team.boundingBox(), board.boundingBox()]);
   expect(after[0]?.height).toBe(after[1]?.height);
   expect(after[0]?.height).toBe(before[0]?.height);
-  await team.click();
 });
 
 test('the state column lines up regardless of how long each row\'s text is', async ({ page }, testInfo) => {
@@ -174,83 +173,44 @@ test('a company in the sheet folds to its header and opens again', async ({ page
   await expect(group.getByText('Jean Bartik')).toBeVisible();
 });
 
-test('the search and the officer lookup live in the people sheet only, once for the company in focus', async ({ page }) => {
-  // The search used to be a small button inside every company's group header,
-  // then one on each lane as well as the sheet's. Now the lanes only report
-  // and the sheet's pinned header holds the actions - on a phone too, where
-  // the lanes sit below the steps.
+test('the one search action is each company\'s Search again in the people sheet', async ({ page }) => {
+  // Searching starts when a company is added. The one way to ask again is a
+  // button in the company's own heading in the sheet: none on the lanes, in
+  // the sheet's pinned header or the rail, and no separate officer lookup.
   await mockLanes(page);
+  const posted: Record<string, unknown>[] = [];
+  await page.route('**/api/yucgoutreach/runs', route => {
+    if (route.request().method() === 'POST') {
+      posted.push(route.request().postDataJSON());
+      return route.fulfill({ json: { id: 50, status: 'queued' } });
+    }
+    return route.fulfill({ json: [finishedRun(8, 'A24', {}), finishedRun(9, 'NEON', {})] });
+  });
+  await page.route(/\/api\/yucgoutreach\/runs\/50$/, route => route.fulfill({
+    json: { id: 50, company_name: 'NEON', status: 'running', progress_pct: 20, progress_message: 'Searching the web' },
+  }));
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
-  const header = pipeline.getByTestId('sheet-header');
-  const sheetFind = header.getByTestId('sheet-find');
-  await expect(sheetFind).toBeVisible();
-  await expect(sheetFind).toHaveText('Find more people at A24');
-  await expect(sheetFind).toHaveClass(/ui-button--primary/);
-  await expect(header.getByTestId('sheet-officers')).toHaveText('Look up officers');
-  // Neither action is repeated on a lane or inside a group header.
-  await expect(pipeline.getByTestId('company-lanes').getByRole('button', { name: /Find|officers/ })).toHaveCount(0);
-  await expect(pipeline.getByTestId('recipient-picker').locator('[data-company]').getByRole('button', { name: /Find (more )?people|officers/ })).toHaveCount(0);
+  const picker = pipeline.getByTestId('recipient-picker');
+  await expect(picker.locator('[data-company="A24"]')).toBeVisible();
+  for (const name of ['A24', 'NEON']) {
+    await expect(picker.locator(`[data-company="${name}"]`).getByRole('button', { name: 'Search again' })).toHaveCount(1);
+  }
+  await expect(pipeline.getByRole('button', { name: 'Search again' })).toHaveCount(2);
+  await expect(pipeline.getByTestId('company-lanes').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
+  await expect(pipeline.getByTestId('sheet-header').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
+  await expect(pipeline.locator('[data-rail]').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
+  await expect(pipeline.getByText(/Look up officers/)).toHaveCount(0);
 
-  // The sheet's actions follow the lane in focus.
-  await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
-  await expect(sheetFind).toHaveText('Find people at NEON');
-  const box = await sheetFind.boundingBox();
+  // Asking again starts one search for that company and the button waits for it.
+  const neon = picker.locator('[data-company="NEON"]').getByTestId('company-search');
+  await neon.click();
+  await expect(neon).toBeDisabled();
+  expect(posted.map((body) => body.company_name)).toEqual(['NEON']);
+  const box = await neon.boundingBox();
   const viewport = page.viewportSize();
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((viewport?.width ?? 0) + 1);
-});
-
-test('Look up officers puts the filing\'s officers on the list ticked, without a search', async ({ page }) => {
-  await mockLanes(page);
-  const CFO = { id: 9, name: 'Priya Raman', email: 'priya.raman@neon.org', title: 'Chief Financial Officer', company: 'NEON', person_level: 'executive', contact_source: 'roster_register' };
-  let looked = 0;
-  let searches = 0;
-  await page.route('**/api/contacts?*', route => route.fulfill({
-    json: { items: looked ? [...PEOPLE, CFO] : PEOPLE, total: 3, limit: 800, offset: 0 },
-  }));
-  await page.route('**/api/yucgoutreach/officers', async route => {
-    looked += 1;
-    await route.fulfill({ json: {
-      created: 1, updated: 0, skipped: 0, officers: 2, without_address: 1,
-      results: [{ prospect_id: 1, contact_id: 9, outcome: 'created' }],
-    } });
-  });
-  await page.route('**/api/yucgoutreach/runs', route => {
-    if (route.request().method() === 'POST') searches += 1;
-    return route.fulfill({ json: route.request().method() === 'POST' ? { id: 5, status: 'queued' } : [] });
-  });
-  await page.goto('/scraper?view=company&companies=A24,NEON');
-
-  const pipeline = page.locator('[data-section="campaign-pipeline"]');
-  await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
-  const neon = pipeline.getByTestId('recipient-picker').locator('[data-company="NEON"]');
-  await expect(neon.getByText('Nobody here yet.')).toBeVisible();
-
-  await pipeline.getByTestId('sheet-officers').click();
-  // The officer is listed straight away, ticked, though a chief officer is
-  // above the level asked for; the note says what the filing gave.
-  await expect(neon.getByRole('checkbox', { name: 'Write to Priya Raman' })).toBeChecked();
-  await expect(neon.getByTestId('officers-note')).toContainText('Added 1 officer from the company filing.');
-  await expect(neon.getByTestId('officers-note')).toContainText('1 named in the filing has no address yet.');
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('3 can be emailed');
-  expect(searches).toBe(0);
-  expect(looked).toBe(1);
-});
-
-test('Look up officers says why when the company has no filing', async ({ page }) => {
-  await mockLanes(page);
-  await page.route('**/api/yucgoutreach/officers', route => route.fulfill({
-    status: 404,
-    json: { detail: 'No company filing is on record for NEON. Use Find more people to search the web instead.' },
-  }));
-  await page.goto('/scraper?view=company&companies=NEON');
-
-  const pipeline = page.locator('[data-section="campaign-pipeline"]');
-  await pipeline.getByTestId('sheet-officers').click();
-  await expect(pipeline.getByTestId('officers-note')).toHaveText(/No company filing is on record for NEON/);
-  await expect(pipeline.getByTestId('officers-note')).toHaveAttribute('data-tone', 'error');
-  await expect(pipeline.getByTestId('sheet-officers')).toBeEnabled();
 });
 
 const PAUSED = 'People search is paused: the search service is out of credit. A maintainer needs to top it up.';
@@ -287,8 +247,8 @@ test('a search that could not run says it is paused, never that nobody was found
   await expect(pipeline.getByText(/Nobody on record|Nobody found/)).toHaveCount(0);
   // No raw provider text or key anywhere on the page.
   await expect(page.locator('body')).not.toContainText(/WALLET|monid_|402/);
-  // The sheet still offers the search, so the member can try again.
-  await expect(pipeline.getByTestId('sheet-find')).toBeEnabled();
+  // The company's own Search again is there to try once more.
+  await expect(pipeline.locator('[data-company="NEON"]').getByRole('button', { name: 'Search again' })).toBeEnabled();
 });
 
 test('a search that ran and found nobody says for whom, and follows who to look for', async ({ page }) => {
@@ -297,12 +257,15 @@ test('a search that ran and found nobody says for whom, and follows who to look 
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const status = pipeline.locator('[data-company="NEON"]').getByTestId('company-status');
+  const who = pipeline.locator('[data-rail]').getByRole('group', { name: 'Who to look for' });
   await expect(pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state')).toHaveText('Nobody found');
-  await expect(status).toHaveText('Nobody found for Team leads (try Senior leaders)');
+  await expect(status).toHaveText('Nobody found for Team leads and Senior leaders (try Board)');
   await expect(pipeline.getByTestId('search-paused')).toHaveCount(0);
 
-  await pipeline.locator('[data-rail]').getByRole('radio', { name: 'Senior leaders' }).click();
+  await who.getByRole('button', { name: 'Team leads' }).click();
   await expect(status).toHaveText('Nobody found for Senior leaders (try Team leads)');
+  await who.getByRole('button', { name: 'No title shown' }).click();
+  await expect(status).toHaveText('Nobody found for Senior leaders and No title shown (try Team leads)');
 });
 
 test('people are grouped by company, the chosen level first, duplicates merged, each company with its status', async ({ page }) => {
@@ -342,12 +305,12 @@ test('people are grouped by company, the chosen level first, duplicates merged, 
   const names = () => a24.getByRole('checkbox').evaluateAll((els) => els
     .map((el) => el.getAttribute('aria-label') || '').filter((label) => label.startsWith('Write to ')));
   await expect.poll(names).toEqual(['Write to Jean Bartik', 'Write to Klara Dan', 'Write to Lena Chief', 'Write to Tomas Board']);
-  await expect(a24.locator('li', { hasText: 'Lena Chief' }).getByTestId('match-reason')).toHaveText('Senior leader, not a team lead');
+  await expect(a24.locator('li', { hasText: 'Lena Chief' }).getByTestId('match-reason')).toHaveText('Senior leader: "Chief of Staff" in the title');
 
   // Every company says where its search stands.
-  await expect(a24.getByTestId('company-status')).toHaveText('3 can be emailed · 4 people found · 2 for Team leads');
+  await expect(a24.getByTestId('company-status')).toHaveText('3 can be emailed · 4 people found · 3 for Team leads and Senior leaders');
   await expect(picker.locator('[data-company="NEON"]').getByTestId('company-status'))
-    .toHaveText('Nobody found for Team leads (try Senior leaders)');
+    .toHaveText('Nobody found for Team leads and Senior leaders (try Board)');
   await expect(picker.locator('[data-company="Acme"]').getByTestId('company-status')).toHaveText('Searching…');
   const lanes = pipeline.getByTestId('company-lanes');
   await expect(lanes.locator('[data-lane="A24"]').getByTestId('lane-state')).toHaveText('3 can be emailed');

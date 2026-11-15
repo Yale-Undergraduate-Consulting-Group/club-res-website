@@ -1,41 +1,59 @@
 import { describe, expect, it } from 'vitest';
 import {
   companyStatus, dedupePeople, fitRank, foundAsPerson, foundNotOnFile, matchReason, matchesWanted, personKey, sheetOrder,
-  sourceOf,
+  sourceOf, wantedLabel,
   type PersonLike,
 } from './peopleSheet';
+import type { Level } from './recipients';
 import type { CompanyRun, FoundPerson } from './useDiscoveryRuns';
 
+const lv = (...levels: Level[]) => new Set<Level>(levels);
 const who = (fields: PersonLike = {}): PersonLike => ({
   name: 'Jean Bartik', title: 'Director of Operations', company: 'A24', person_level: 'working', ...fields,
 });
 const run = (fields: Partial<CompanyRun> = {}): CompanyRun => ({ state: 'idle', pct: 0, message: '', ...fields });
 
 describe('matching the level asked for', () => {
-  it('puts the level asked for first, then the nearest', () => {
+  it('puts the levels asked for first, then the rest', () => {
     const lead = who();
     const chief = who({ name: 'Ada Lovelace', title: 'Vice President, Partnerships', person_level: 'executive' });
     const trustee = who({ name: 'Alan Turing', title: 'Trustee', person_level: 'board' });
     const people = [trustee, chief, lead];
-    expect(people.sort((a, b) => fitRank(a, 'working') - fitRank(b, 'working'))).toEqual([lead, chief, trustee]);
-    expect(people.sort((a, b) => fitRank(a, 'board') - fitRank(b, 'board'))).toEqual([trustee, chief, lead]);
+    expect(people.sort((a, b) => fitRank(a, lv('working')) - fitRank(b, lv('working')))).toEqual([lead, chief, trustee]);
+    expect(people.sort((a, b) => fitRank(a, lv('board')) - fitRank(b, lv('board')))).toEqual([trustee, lead, chief]);
+    // Both chosen levels outrank the one that is not.
+    expect(people.sort((a, b) => fitRank(a, lv('executive', 'board')) - fitRank(b, lv('executive', 'board'))))
+      .toEqual([chief, trustee, lead]);
   });
 
   it('counts a chief officer as a senior leader even when a filing reads as working level', () => {
     const cfo = who({ name: 'Anat Ashkenazi', title: 'SVP, Chief Financial Officer', person_level: 'working' });
-    expect(matchesWanted(cfo, 'working')).toBe(false);
-    expect(matchesWanted(cfo, 'executive')).toBe(true);
+    expect(matchesWanted(cfo, lv('working'))).toBe(false);
+    expect(matchesWanted(cfo, lv('executive'))).toBe(true);
+  });
+
+  it('matches a person at any chosen level, and no title only when asked', () => {
+    const lead = who();
+    const trustee = who({ name: 'Alan Turing', title: 'Trustee', person_level: 'board' });
+    const blank = who({ name: 'Ada Lovelace', title: '', person_level: 'unknown' });
+    const wanted = lv('working', 'board');
+    expect([lead, trustee, blank].map((p) => matchesWanted(p, wanted))).toEqual([true, true, false]);
+    expect([lead, trustee, blank].map((p) => matchesWanted(p, lv('unknown')))).toEqual([false, false, true]);
   });
 
   it('never shows page text as a match', () => {
-    expect(matchesWanted(who({ name: 'Transformation Leader' }), 'working')).toBe(false);
+    expect(matchesWanted(who({ name: 'Transformation Leader' }), lv('working'))).toBe(false);
   });
 
   it('says why in plain words', () => {
-    expect(matchReason(who(), 'working')).toBe('Team lead: "Director of" in the title');
-    expect(matchReason(who({ title: 'Trustee', person_level: 'board' }), 'working')).toBe('Board seat, not a team lead');
-    expect(matchReason(who({ title: '', person_level: 'unknown' }), 'working')).toBe('No title to judge the level by');
-    expect(matchReason(who({ name: 'Choose People' }), 'working')).toMatch(/page text/);
+    const working = lv('working');
+    expect(matchReason(who(), working)).toBe('Team lead: "Director of" in the title');
+    expect(matchReason(who({ title: 'Trustee', person_level: 'board' }), working)).toBe('Board seat, not a team lead');
+    expect(matchReason(who({ title: 'Trustee', person_level: 'board' }), lv('working', 'executive')))
+      .toBe('Board seat, not a team lead or a senior leader');
+    expect(matchReason(who({ title: '', person_level: 'unknown' }), working)).toBe('No title to judge the level by');
+    expect(matchReason(who({ title: '', person_level: 'unknown' }), lv('unknown'))).toBe('No title shown');
+    expect(matchReason(who({ name: 'Choose People' }), working)).toMatch(/page text/);
   });
 });
 
@@ -48,14 +66,14 @@ describe('the sheet order', () => {
     const yaleChief = who({ name: 'Alan Turing', title: 'Vice President, Partnerships', person_level: 'executive', yale_signal: yale });
     const chief = who({ name: 'Dana Scully', title: 'Vice President, Partnerships', person_level: 'executive' });
     const people = [chief, lead, yaleChief, yaleLead];
-    expect(people.sort((a, b) => sheetOrder(a, b, 'working'))).toEqual([yaleLead, lead, yaleChief, chief]);
-    expect(people.sort((a, b) => sheetOrder(a, b, 'executive'))).toEqual([yaleChief, chief, yaleLead, lead]);
+    expect(people.sort((a, b) => sheetOrder(a, b, lv('working')))).toEqual([yaleLead, lead, yaleChief, chief]);
+    expect(people.sort((a, b) => sheetOrder(a, b, lv('executive')))).toEqual([yaleChief, chief, yaleLead, lead]);
   });
 
   it('keeps the list order for people who tie', () => {
     const first = who({ name: 'Ada Lovelace' });
     const second = who({ name: 'Grace Hopper' });
-    expect([second, first].sort((a, b) => sheetOrder(a, b, 'working'))).toEqual([second, first]);
+    expect([second, first].sort((a, b) => sheetOrder(a, b, lv('working')))).toEqual([second, first]);
   });
 
   it('carries Yale and function from a found person to the sheet', () => {
@@ -75,7 +93,20 @@ describe('where someone came from', () => {
       .toEqual({ href: 'https://www.linkedin.com/in/jean', text: 'LinkedIn profile' });
     expect(sourceOf(who({ contact_source: 'domain_scrape', source_url: 'javascript:alert(1)' })).link).toBeNull();
     expect(sourceOf(who({ contact_source: 'domain_scrape_pattern' })).label).toBe('Company website, address guessed');
+    expect(sourceOf(who({ contact_source: 'domain_scrape', source_url: 'https://a24.com/team' })).rank).toBe(4.5);
     expect(sourceOf(who({ contact_source: null })).label).toBe('On file');
+  });
+
+  it.each([
+    ['web_company_page', 'Company leadership page', 4],
+    ['web_press', 'Press release', 3],
+    ['web_theorg', 'The Org', 3],
+    ['web_crunchbase', 'Crunchbase', 3],
+    ['web_speaker', 'Conference speaker page', 3],
+    ['web_directory', 'Public profile directory', 2],
+  ])('labels and ranks %s', (contact_source, label, rank) => {
+    expect(sourceOf(who({ contact_source }))).toMatchObject({ label, rank });
+    expect(sourceOf(who({ contact_source: `${contact_source}_pattern` }))).toMatchObject({ label: `${label}, address guessed`, rank: 0 });
   });
 });
 
@@ -119,7 +150,7 @@ describe('the same person twice', () => {
 });
 
 describe('what a company says about its search', () => {
-  const base = { wanted: 'working' as const };
+  const base = { wanted: lv('working') };
 
   it('is searching while it works', () => {
     expect(companyStatus({ ...base, run: run({ state: 'searching', pct: 40 }), total: 0, ready: 0, matching: 0 }))
@@ -137,7 +168,16 @@ describe('what a company says about its search', () => {
   it('says nobody was found only when a search ran and found nobody', () => {
     expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 0, ready: 0, matching: 0 }))
       .toMatchObject({ tone: 'empty', long: 'Nobody found for Team leads (try Senior leaders)' });
+    expect(companyStatus({ run: run({ state: 'done' }), total: 0, ready: 0, matching: 0, wanted: lv('working', 'executive', 'unknown') }).long)
+      .toBe('Nobody found for Team leads, Senior leaders and No title shown (try Board)');
+    expect(companyStatus({ run: run({ state: 'done' }), total: 2, ready: 0, matching: 0, wanted: lv('working', 'executive', 'board', 'unknown') }).long)
+      .toBe('0 can be emailed · 2 people found · none for Team leads, Senior leaders, Board and No title shown');
     expect(companyStatus({ ...base, run: run(), total: 0, ready: 0, matching: 0 }).tone).toBe('idle');
+  });
+
+  it('words the chosen levels as a list', () => {
+    expect(wantedLabel(lv('executive', 'working'))).toBe('Team leads and Senior leaders');
+    expect(wantedLabel(lv('unknown'))).toBe('No title shown');
   });
 
   it('says the search is paused, never nobody found, when it could not run', () => {

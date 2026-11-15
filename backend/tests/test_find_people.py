@@ -250,7 +250,7 @@ async def a_run_stores_yale_and_recovered_titles_and_lists_yale_first() -> None:
         profile("Lena Fischer", "Marketing Manager at Amazon", "Lena sells Yale locks at Amazon."),
         profile("Kim Walters", "Amazon", "Kim Walters. Seattle. Amazon."),
     ]
-    people, asked = await _run(31, results, {"level": "working"})
+    people, asked = await _run(31, results, {"levels": ["working"]})
     by_name = {f'{p["first_name"]} {p["last_name"]}': p for p in people}
     assert set(by_name) == {"Sam Ortiz", "Priya Nair", "Owen Hart", "Lena Fischer", "Kim Walters"}, by_name.keys()
     # No text states a title for Kim, so none is stored.
@@ -264,13 +264,13 @@ async def a_run_stores_yale_and_recovered_titles_and_lists_yale_first() -> None:
     # The recovered title is stored, classified, and counted at its level.
     assert by_name["Owen Hart"]["title"] == "Director of Partnerships", by_name["Owen Hart"]
     assert by_name["Owen Hart"]["person_function"] == "sales" and by_name["Owen Hart"]["person_level"] == "working"
-    assert len(asked) == len(set(asked)) and len(asked) <= 43, asked
+    assert len(asked) == len(set(asked)) and len(asked) <= 17 + 32, asked
 
 
 async def a_function_search_stays_inside_the_same_budget() -> None:
     results = [profile("Priya Nair", "Finance Manager at Amazon")]
     _, plain = await _run(32, results)
-    people, biased = await _run(33, results, {"level": "working", "function": "finance"})
+    people, biased = await _run(33, results, {"levels": ["working"], "function": "finance"})
     assert len(people) == 1 and len(biased) <= len(plain), (len(biased), len(plain))
     db = await get_db()
     try:

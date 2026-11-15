@@ -182,10 +182,10 @@ async def register_officer_contacts(
     company is (see register_entity_keys), as contact dicts (contact_source
     'roster_register').
 
-    Nothing is fetched: these are the officers a bulk ingest or the member's
-    "Look up officers" already stored. Addresses are derived on ``domain``
-    only, through the gates roster people pass; with no domain the person has
-    none.
+    Nothing is fetched: these are the officers a bulk ingest or an earlier
+    search (fetch_register_officers) already stored. Addresses are derived on
+    ``domain`` only, through the gates roster people pass; with no domain the
+    person has none.
     """
     from app.services.company_register import register_entity_people
 
@@ -212,6 +212,43 @@ async def register_officer_contacts(
                 "_roster_norm": norm,
             }
     return list(people.values())
+
+
+#: Registers that publish a per-company officer list, read on demand when the
+#: company has none stored (see company_register.fetch_officers_for).
+_ON_DEMAND_REGISTERS = ("sec_public", "companies_house")
+
+
+async def fetch_register_officers(
+    company_name: str, domain: str | None, *, legal_name: str | None = None
+) -> list[str]:
+    """Read the officers of the register entries this company is (see
+    register_entity_keys) that publish them and have none stored yet, so that
+    register_officer_contacts finds them. Returns why a register could not be
+    read, one sentence each; nothing when the register holds nothing for the
+    company or everything is already stored. Fetching writes through its own
+    connection."""
+    from app.services.company_register import fetch_officers_for
+
+    keys = await register_entity_keys(company_name, domain, legal_name=legal_name)
+    if not keys:
+        return []
+    db = await get_db()
+    try:
+        marks = ",".join("?" * len(keys))
+        records = await (await db.execute(
+            f"SELECT id, source, officer_count FROM company_register WHERE entity_key IN ({marks})",
+            tuple(sorted(keys)),
+        )).fetchall()
+    finally:
+        await db.close()
+    problems: list[str] = []
+    for record in records:
+        if record["source"] in _ON_DEMAND_REGISTERS and not record["officer_count"]:
+            fetched = await fetch_officers_for(int(record["id"]))
+            if not fetched.get("ok"):
+                problems.append(str(fetched.get("error") or "the register did not answer"))
+    return problems
 
 
 def merge_register_officers(

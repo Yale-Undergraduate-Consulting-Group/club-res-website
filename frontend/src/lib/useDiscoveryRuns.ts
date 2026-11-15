@@ -4,7 +4,7 @@ import {
   type DiscoveryProspect, type DiscoveryRun, type EntityProfile, type ImportOutcome,
   type ResolvedAlternative,
 } from '../api';
-import { companyKey } from './recipients';
+import { companyKey, type Level } from './recipients';
 import { dedupePeople, foundAsPerson } from './peopleSheet';
 
 /**
@@ -22,9 +22,9 @@ import { dedupePeople, foundAsPerson } from './peopleSheet';
  * the member ticks rather than adds. While a search works, the people it has
  * saved so far are shown, read again whenever it saves more.
  *
- * The server allows one search per member at a time. Asking for another is
- * not a mistake, so every company is queued here and started when the one
- * before it finishes, rather than refused.
+ * The server allows a few searches per member at once. Asking for one more is
+ * not a mistake, so every company is queued here and started as soon as the
+ * server has room, rather than refused.
  */
 
 export type ChosenCompany = {
@@ -53,6 +53,8 @@ export type LaneState = 'idle' | 'queued' | 'searching' | 'done' | 'failed';
  *  means the sources had nobody more; the others mean the search stopped. */
 export type Shortfall = {
   target: number; found: number;
+  /** The levels the search looked for. */
+  levels?: Level[];
   reason: 'exhausted' | 'time_budget' | 'round_cap' | 'search_failed' | string;
 };
 
@@ -105,10 +107,10 @@ function pausedOf(run: DiscoveryRun): string | undefined {
   return undefined;
 }
 
-/** `level` is who to look for: the server's goal counts people at that level,
- *  and its searches and ranking follow it. */
+/** `levels` is who to look for: the server's goal counts people at any of
+ *  them, and its searches and ranking follow them. */
 export type SearchOptions = {
-  titleHints: string; maxProspects: number; level: 'working' | 'executive' | 'board'; domain?: string;
+  titleHints: string; maxProspects: number; levels: Level[]; domain?: string;
 };
 
 /** Options are read when the search starts, not when it joins the queue:
@@ -268,7 +270,7 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
         company_domain: options.domain || item.company.domain || undefined,
         title_hints: options.titleHints.trim() || undefined,
         max_prospects: options.maxProspects,
-        level: options.level,
+        levels: options.levels,
         // A country only when the member chose one: by default the search
         // skips the excluded entities and their countries, not everyone
         // outside the home country (Barclays' New York staff are Barclays).
@@ -291,8 +293,9 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
         // Not a failure: the server is already busy for this member, and
         // this request waits its turn.
         const list = await refreshRuns();
-        const busy = list.find((run) => ACTIVE[run.status]);
-        setNotice(`Already searching ${busy ? busy.company_name : 'another company'}; ${item.company.name} is queued behind it.`);
+        const active = list.filter((run) => ACTIVE[run.status]);
+        const searching = active.length === 1 ? active[0].company_name : `${active.length} companies`;
+        setNotice(`Already searching ${active.length ? searching : 'other companies'}; ${item.company.name} is queued behind ${active.length === 1 ? 'it' : 'them'}.`);
         return 'busy';
       }
       if (e instanceof ApiError && e.status === 429) {
@@ -307,10 +310,10 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
     }
   }, [refreshRuns]);
 
-  // Starts the company at the head of the queue, then the next while starts
-  // fail outright. A start the server answers "busy" leaves the queue as it
-  // is: the poll below calls this again when the running search finishes. A
-  // call that arrives while one is waiting on the server is not dropped - the
+  // Starts the queued companies in order, one after another, until the server
+  // answers "busy" (the member's searches are all in use): the rest stay
+  // queued and the poll below calls this again when a running search finishes.
+  // A call that arrives while one is waiting on the server is not dropped - the
   // finish it reports may be what the answer in flight missed.
   const pumping = useRef(false);
   const pumpAgain = useRef(false);
@@ -328,7 +331,6 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
           if (result === 'busy') break;
           queueRef.current = queueRef.current.slice(1);
           setQueue(queueRef.current);
-          if (result === 'started') break;
         }
       } while (pumpAgain.current);
     } finally {
@@ -355,6 +357,11 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
           if (run.status === 'completed' || run.status === 'failed') {
             finished = true;
             if (chosenKeys.has(companyKey(run.company_name))) void loadFound(run);
+            // There is room now: ask for the next queued company at once. The
+            // pass is cancelled as soon as the run list changes, so waiting
+            // for the other runs' answers could lose this.
+            setNotice('');
+            void startNext();
           } else if (run.status === 'running' && chosenKeys.has(companyKey(run.company_name))) {
             void loadProgress(run);
           }
@@ -364,11 +371,7 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
           return;
         }
       }
-      if (finished) {
-        setNotice('');
-        void startNext();
-        return;
-      }
+      if (finished) return;
       timer = window.setTimeout(() => { void tick(); }, POLL_MS);
     };
     timer = window.setTimeout(() => { void tick(); }, POLL_MS);

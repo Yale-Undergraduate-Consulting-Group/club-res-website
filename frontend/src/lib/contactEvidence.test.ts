@@ -12,7 +12,11 @@ describe('evidenceLabel', () => {
     ['permanent_failure_observed', 'Bounced'],
     ['mail_route_available', 'Domain accepts mail'],
     ['likely_valid', 'Domain accepts mail'],
+    ['web_discovery', 'Seen on the web'],
+    ['web_theorg', 'Seen on the web'],
+    ['web_company_page', 'Seen on the web'],
     ['web_discovery_pattern', 'Format guessed'],
+    ['web_press_pattern', 'Format guessed'],
   ])('maps %s to honest member wording', (value, label) => {
     expect(evidenceLabel(value)).toBe(label);
   });
