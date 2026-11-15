@@ -124,6 +124,64 @@ async def a_finished_run_reports_seconds_per_stage() -> None:
     assert 0 <= research["first_prospect_s"] <= timings["total"], research
 
 
+async def slow_model_readings_do_not_hold_up_the_first_people() -> None:
+    """The company-facts reading and the name seeds are model calls. The first
+    verification does not wait for them; the seeds' people are verified as a
+    later batch and the run still ends only when both are in."""
+    await _insert_run(2)
+    lead = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, ["working"])[0]
+    seeded = {"name": "Zed Quinn", "email": "zed.quinn@amazon.com", "title": "Operations Manager",
+              "company": "Amazon", "company_domain": "amazon.com", "contact_source": "web_discovery",
+              "affiliation_evidence": "linkedin_profile", "confidence": "high",
+              "linkedin_url": "https://www.linkedin.com/in/zed-quinn/"}
+    slow = 0.6
+
+    async def search_once(query, max_results, page=0):
+        await asyncio.sleep(0.01)
+        return [profile(n) for n in NAMES] if (query, page) == (lead, 0) else []
+
+    async def seeds(*_a, **_kw):
+        await asyncio.sleep(slow)
+        return [dict(seeded)]
+
+    async def meta(*_a, **_kw):
+        await asyncio.sleep(slow)
+        return {"country": "US"}
+
+    async def verify(rows, *, on_progress=None, **_kw):
+        return [dict(r, ai_verdict="real", email_verification_status="valid") for r in rows], []
+
+    with patch.object(D, "scrape_contacts_from_domain", AsyncMock(return_value=[])), \
+         patch.object(W, "_search_once", search_once), \
+         patch.object(D, "_tavily_name_seeds", seeds), \
+         patch.object(D, "_company_meta", meta), \
+         patch.object(D, "run_contact_verify_pipeline", verify), \
+         patch("app.services.web_fetch.web_search_configured", lambda: True), \
+         patch.object(RE, "cached_roster_contacts", AsyncMock(return_value=[])), \
+         patch.object(RE, "refresh_roster_on_demand", AsyncMock(return_value=[])), \
+         patch.object(RE, "roster_refresh_note", AsyncMock(return_value="")), \
+         patch.object(R, "remember_discovery_people", AsyncMock()):
+        await D._yucgoutreach_run_guard(2, "lease-2")
+
+    db = await get_db()
+    try:
+        run = dict(await (await db.execute(
+            "SELECT status, prospects_count, research_json FROM yucgoutreach_discovery_runs WHERE id=2"
+        )).fetchone())
+        country = (await (await db.execute(
+            "SELECT country FROM yucgoutreach_prospects WHERE run_id=2 LIMIT 1")).fetchone())["country"]
+    finally:
+        await db.close()
+    research = json.loads(run["research_json"])
+    # The goal is 3 and four people were found at once, so the seeds are not
+    # needed: the run saved the first batch without waiting for them.
+    assert run["status"] == "completed" and run["prospects_count"] == len(NAMES), run
+    assert research["first_prospect_s"] < slow / 2, research
+    # The first people were stored before the company's facts were in; the
+    # run waited for them at the end and put them on those people.
+    assert country == "US" and research["timings"]["company_meta"] >= slow * 0.9, research
+
+
 async def main() -> None:
     await init_db()
     db = await get_db()
@@ -133,6 +191,7 @@ async def main() -> None:
     finally:
         await db.close()
     await a_finished_run_reports_seconds_per_stage()
+    await slow_model_readings_do_not_hold_up_the_first_people()
 
 
 if __name__ == "__main__":

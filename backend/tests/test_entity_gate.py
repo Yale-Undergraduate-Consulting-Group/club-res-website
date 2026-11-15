@@ -380,7 +380,7 @@ async def barclays_run_end_to_end() -> None:
         "1 at other mail domains, 2 not people) · 1 of 25 team leads (no more found)"
     ), row["progress_message"]
     research = json.loads(row["research_json"])
-    assert research["shortfall"] == {"target": 25, "found": 1, "reason": "exhausted", "level": "working"}, research
+    assert research["shortfall"] == {"target": 25, "found": 1, "reason": "exhausted", "levels": ["working"]}, research
     remembered = remember.await_args.args[2]
     assert {c["name"] for c in remembered} == {"James Carter", "Emma Wilson"}, remembered
 

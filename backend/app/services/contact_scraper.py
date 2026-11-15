@@ -952,6 +952,14 @@ async def validate_email_mx(email: str) -> bool:
         return False
 
 
+#: contact_source of a person read from a web search result: the open web, or
+#: the kind of public page (see web_contact_discovery.web_source). Each is
+#: scored and trusted as web discovery is.
+WEB_SOURCES = frozenset({
+    "web_discovery", "web_company_page", "web_speaker", "web_press", "web_theorg", "web_crunchbase", "web_directory",
+})
+
+
 def _confidence_rank(c: str) -> int:
     return {"high": 3, "medium": 2, "low": 1}.get((c or "").lower(), 0)
 
@@ -986,7 +994,7 @@ def compute_contact_confidence(
     src = (contact_source or "").lower()
     if src == "domain_scrape":
         score += 20 if (found_with_name or email_verified) else 12
-    elif src == "web_discovery":
+    elif src in WEB_SOURCES:
         score += 22 if email_verified else 14
     elif src.startswith("roster_"):
         score += 20 if email_verified else 14
@@ -1066,10 +1074,10 @@ def confidence_for_contact_dict(
     verified = email_verified
     if verified is None:
         src = (contact.get("contact_source") or "").lower()
-        verified = src in ("domain_scrape", "web_discovery") and not src.endswith("inferred")
+        verified = src in WEB_SOURCES or src == "domain_scrape"
         if src == "linkedin_inferred" or src == "inferred":
             verified = False
-        if src == "web_discovery" and contact.get("email"):
+        if src in WEB_SOURCES and contact.get("email"):
             verified = bool(contact.get("_email_verified"))
     return compute_contact_confidence(
         email=email,

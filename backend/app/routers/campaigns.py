@@ -813,7 +813,9 @@ def _needs_mailbox_precheck(row: dict) -> bool:
     }:
         return True
     source = str(row.get("contact_source") or "").strip().lower()
-    return source in {"domain_scrape", "web_discovery", "inferred"} or source.endswith("_pattern")
+    from app.services.contact_scraper import WEB_SOURCES
+
+    return source in WEB_SOURCES | {"domain_scrape", "inferred"} or source.endswith("_pattern")
 
 
 def _verifalia_precheck_enabled() -> bool:

@@ -114,11 +114,12 @@ def the_headline_employer_decides() -> None:
     working = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, "working")
     executive = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, "executive")
     for q in working:
-        assert not re.search(r"\bCEO\b|\bCFO\b|leadership OR executives|\"leadership team\"", q), q
+        if "site:linkedin.com/in" in q:
+            assert not re.search(r"\bCEO\b|\bCFO\b|leadership OR executives|\"leadership team\"", q), q
     assert any('"director of" OR "head of"' in q for q in working), working
     assert any("CEO OR CFO" in q for q in executive), executive
     assert not {q for q, _ in W.round_query_pool("Amazon", "amazon.com", "", AMAZON, "working")
-                if '"vice president"' in q or '"chief"' in q}
+                if "site:linkedin.com/in" in q and ('"vice president"' in q or '"chief"' in q)}
     # Titles in the member's words are one OR group, not a run-on phrase.
     hinted = W.first_wave_queries("Acme", "acme.com", "Director of, Head of, Manager", None)[0]
     assert hinted == '"Acme" ("Director of" OR "Head of" OR "Manager") site:linkedin.com/in', hinted
@@ -188,7 +189,8 @@ async def _insert_run(run_id: int, target: int, origin: str = "member") -> None:
             """INSERT INTO yucgoutreach_discovery_runs
                (id, user_id, company_name, company_domain, max_prospects, status, lease_token, research_json, origin)
                VALUES (?, 1, 'Amazon', NULL, ?, 'running', ?, ?, ?)""",
-            (run_id, target, f"lease-{run_id}", json.dumps({"title_hints": "", "entity": AMAZON}), origin),
+            (run_id, target, f"lease-{run_id}",
+             json.dumps({"title_hints": "", "entity": AMAZON, "levels": ["working"]}), origin),
         )
         await db.commit()
     finally:
@@ -204,7 +206,7 @@ async def _run(run_id: int, target: int, first_wave: list[dict], later: list[dic
     ``first_wave`` and every later query answering the next two of ``later``."""
     await _insert_run(run_id, target, origin)
     REMEMBERED.reset_mock()
-    lead = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON)[0]
+    lead = W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, "working")[0]
     asked: list[tuple[str, int]] = []
     later = list(later)
 
@@ -213,7 +215,7 @@ async def _run(run_id: int, target: int, first_wave: list[dict], later: list[dic
         await asyncio.sleep(0)
         if (query, page) == (lead, 0):
             return list(first_wave)
-        if (query, page) in {(q, 0) for q in W.first_wave_queries("Amazon", "amazon.com", "", AMAZON)}:
+        if (query, page) in {(q, 0) for q in W.first_wave_queries("Amazon", "amazon.com", "", AMAZON, "working")}:
             return []
         if later_fail:
             W._record_search_error("provider 503", limit=False)
@@ -262,7 +264,7 @@ async def a_short_first_wave_searches_again_until_the_goal() -> None:
 
     research = json.loads(run["research_json"])
     # The goal counts team leads; Dana, an architect, is saved but not counted.
-    assert run["status"] == "completed" and research["level"] == "working", (run, saved)
+    assert run["status"] == "completed" and research["levels"] == ["working"], (run, saved)
     assert research["level_found"] >= 10 and research["shortfall"] is None, research
     assert run["prospects_count"] == len(saved) == research["level_found"] + 1, (run, research)
     assert run["progress_message"].startswith(f"Done — {len(saved)} saved"), run
@@ -272,8 +274,9 @@ async def a_short_first_wave_searches_again_until_the_goal() -> None:
     assert "pat.lee@amazon.com" not in emails, emails
     units = {r["email"]: json.loads(r["evidence_json"]).get("group_unit") for r in saved}
     assert units["dana.kim@amazon.com"] == "AWS", units
-    # No query is asked twice, and the run stays inside its search bound.
-    assert len(asked) == len(set(asked)) and len(asked) <= 43, asked
+    # No query is asked twice, and the run stays inside its search bound: the
+    # first wave (17 for one level) and at most 4 rounds of 8.
+    assert len(asked) == len(set(asked)) and len(asked) <= 17 + 32, asked
 
 
 async def dry_sources_end_with_an_exhausted_shortfall() -> None:
@@ -281,7 +284,7 @@ async def dry_sources_end_with_an_exhausted_shortfall() -> None:
     run, saved, asked = await _run(22, 10, first, [])
     research = json.loads(run["research_json"])
     assert len(saved) == 3, saved
-    assert research["shortfall"] == {"target": 10, "found": 3, "reason": "exhausted", "level": "working"}, research
+    assert research["shortfall"] == {"target": 10, "found": 3, "reason": "exhausted", "levels": ["working"]}, research
     assert run["progress_message"].endswith("3 of 10 team leads (no more found)"), run
 
 

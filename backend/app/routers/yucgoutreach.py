@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.auth_deps import get_current_user
 from app.database import get_db, row_to_dict
-from app.services.company_register import FUNCTION_IDS
+from app.services.company_register import DEFAULT_LEVELS, FUNCTION_IDS
 from app.services.yucgoutreach_discovery import (
     YUCG_DEFAULT_PROSPECTS,
     YUCG_MAX_PROSPECTS,
@@ -37,9 +37,12 @@ class YucgOutreachRunCreate(BaseModel):
     entity: dict[str, Any] | None = None
     max_prospects: int = Field(YUCG_DEFAULT_PROSPECTS, ge=1, le=800)  # target count of qualified people, not just a cap
     worker_concurrency: int = Field(4, ge=1, le=16)
-    # Who to look for: team leads (default), senior leaders or board. The goal
-    # counts people at this level; the searches and ranking follow it.
-    level: Literal["working", "executive", "board"] = "working"
+    # Who to look for, any combination: team leads, senior leaders, board, and
+    # people with no title shown. The goal counts people at these levels; the
+    # searches and ranking follow them.
+    levels: list[Literal["working", "executive", "board", "unknown"]] = Field(
+        default_factory=lambda: list(DEFAULT_LEVELS), min_length=1, max_length=4,
+    )
     # What the people do: finance, operations... The first wave of searches asks
     # for that function's titles. Absent means any.
     function: Literal[
@@ -127,7 +130,7 @@ async def create_run(body: YucgOutreachRunCreate, user: dict = Depends(get_curre
             entity=body.entity,
             max_prospects=body.max_prospects,
             worker_concurrency=body.worker_concurrency,
-            level=body.level,
+            levels=body.levels,
             function=body.function,
         )
         await db.commit()
@@ -341,29 +344,6 @@ async def fetch_register_people(register_id: int, user: dict = Depends(get_curre
     from app.services.company_register import fetch_officers_for
 
     return await fetch_officers_for(register_id)
-
-
-class OfficersLookup(BaseModel):
-    company_name: str = Field(..., min_length=1, max_length=500)
-    company_domain: str | None = Field(None, max_length=255)
-    # The EntityProfile resolve-company returned, as for a run: member input,
-    # cut to the contract; only its legal name and mail domain are read.
-    entity: dict[str, Any] | None = None
-
-
-@router.post("/officers")
-async def look_up_officers(body: OfficersLookup, user: dict = Depends(get_current_user)):
-    """Look up a chosen company's officers from its filing and put them on the
-    member's list, no web search: the same people a Find people run would take
-    from the register, imported with the same checks, owned by this member.
-    Whoever else already works an officer's address keeps them (reported as
-    held, never moved)."""
-    from app.services.yucgoutreach_import import import_register_officers
-
-    return await import_register_officers(
-        user_id=user["id"], company_name=body.company_name.strip(),
-        company_domain=body.company_domain, entity=body.entity,
-    )
 
 
 @router.get("/runs/{run_id}")

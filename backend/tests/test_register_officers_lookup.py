@@ -1,36 +1,35 @@
-"""POST /api/yucgoutreach/officers: a company's filed officers become the
-member's people with no web search. From backend/: python tests/test_register_officers_lookup.py
+"""A search reads its company's officers from the company register itself.
+
+There is no separate "Look up officers" action: a Find people run reads the
+officers stored for the company's register entry and, when an entry that
+publishes them (SEC listed, Companies House) has none stored, fetches them
+first. From backend/: python tests/test_register_officers_lookup.py
 """
 import asyncio
+import json
 import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("JWT_SECRET", "officers-test-secret-0123456789abcdef")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()) / 't.db'}"
+os.environ.pop("TAVILY_API_KEY", None)
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-import main  # noqa: E402
 from app.database import get_db, init_db  # noqa: E402
-from app.jwt_utils import create_token  # noqa: E402
+from app.services import roster_email as RE  # noqa: E402
+from app.services import roster_watch as R  # noqa: E402
+from app.services import yucgoutreach_discovery as D  # noqa: E402
 from app.services.register_names import derive  # noqa: E402
-
-ANA, BEN = 2, 3
 
 
 async def seed() -> None:
     await init_db()
     db = await get_db()
     try:
-        for uid, name in ((ANA, "Ana"), (BEN, "Ben")):
-            await db.execute(
-                "INSERT INTO users (id, email, name, role, is_active) VALUES (?, ?, ?, 'standard', 1)",
-                (uid, f"{name.lower()}@yale.edu", name),
-            )
+        await db.execute("INSERT INTO users (id, email, name, role, is_active) VALUES (2, 'ana@yale.edu', 'Ana', 'standard', 1)")
 
         async def company(name: str, source: str, key: str, domain: str | None, people: list[tuple[str, str]]) -> int:
             d = derive(name, "US")
@@ -49,97 +48,45 @@ async def seed() -> None:
             return cur.lastrowid
 
         await company("Harbor Robotics Inc", "sec_form_d", "hr1", "harborrobotics.com",
-                      [("Dana Whitfield", "Chief Executive Officer"), ("Priya Raman", "Chief Financial Officer")])
-        await company("Quiet Holdings Inc", "sec_form_d", "qh1", "quietholdings.com", [])
-        await company("Sitewise Corp", "sec_form_d", "sw1", None, [("Maya Okafor", "Chief Operating Officer")])
+                      [("Dana Whitfield", "Chief Executive Officer")])
         await company("Lookup Pharma Inc", "sec_public", "0000000123", "lookuppharma.com", [])
         await db.commit()
     finally:
         await db.close()
 
 
-def client(uid: int) -> TestClient:
-    c = TestClient(main.app, raise_server_exceptions=False)
-    c.cookies.set("yucg_session", create_token(uid, f"{uid}@yale.edu", None, None, "standard"))
-    return c
-
-
-async def contacts(email: str) -> list[dict]:
+async def store_elena(register_id: int) -> dict:
     db = await get_db()
     try:
-        rows = await (await db.execute("SELECT * FROM contacts WHERE email = ?", (email,))).fetchall()
-        return [dict(r) for r in rows]
+        await db.execute(
+            "INSERT INTO company_register_people (register_id, full_name, relationship, person_level, source_url)"
+            " VALUES (?, 'Elena Voss', 'Chief Financial Officer', 'executive', 'https://sec.example/lp')",
+            (register_id,),
+        )
+        await db.execute("UPDATE company_register SET officer_count = 1 WHERE id = ?", (register_id,))
+        await db.commit()
     finally:
         await db.close()
+    return {"ok": True, "attached": 1, "officer_count": 1}
 
 
-def tests() -> None:
-    asyncio.run(seed())
-    ana, ben = client(ANA), client(BEN)
-    url = "/api/yucgoutreach/officers"
+async def the_fetch_reads_only_registers_that_publish_officers_and_have_none() -> None:
+    fetch = AsyncMock(side_effect=store_elena)
+    with patch("app.services.company_register.fetch_officers_for", fetch):
+        # Officers already stored, a private filer, an unknown company: nothing to read.
+        for name in ("Harbor Robotics", "Nowhere Holdings Corp"):
+            assert await RE.fetch_register_officers(name, None) == []
+        fetch.assert_not_awaited()
+        # A listed company with none stored is read from its register, and found after.
+        assert await RE.fetch_register_officers("Lookup Pharma", None) == []
+        assert fetch.await_count == 1
+        people = await RE.register_officer_contacts("Lookup Pharma", "lookuppharma.com")
+        assert [(p["name"], p["email"]) for p in people] == [("Elena Voss", "elena.voss@lookuppharma.com")], people
+        # Stored now: asking again reads nothing.
+        assert await RE.fetch_register_officers("Lookup Pharma", None) == []
+        assert fetch.await_count == 1
 
-    assert TestClient(main.app, raise_server_exceptions=False).post(url, json={"company_name": "Harbor Robotics"}).status_code == 401
-    assert ana.post(url, json={"company_name": ""}).status_code == 422
-
-    # A company the register has never heard of says so, and creates nothing.
-    unknown = ana.post(url, json={"company_name": "Nowhere Holdings Corp"})
-    assert unknown.status_code == 404 and "No company filing" in unknown.json()["detail"], unknown.text
-
-    # A filing that names nobody is a clear, successful nothing.
-    quiet = ana.post(url, json={"company_name": "Quiet Holdings"})
-    assert quiet.status_code == 200 and quiet.json()["created"] == 0 and "no current officers" in quiet.json()["note"], quiet.text
-
-    # The officers land as the member's own contacts, under the name they chose.
-    first = ana.post(url, json={"company_name": "Harbor Robotics", "company_domain": "harborrobotics.com"})
-    assert first.status_code == 200, first.text
-    body = first.json()
-    assert (body["officers"], body["created"], body["updated"]) == (2, 2, 0), body
-    rows = asyncio.run(contacts("dana.whitfield@harborrobotics.com"))
-    assert len(rows) == 1, rows
-    row = rows[0]
-    assert (row["owner_id"], row["company"], row["title"], row["contact_source"]) == (
-        ANA, "Harbor Robotics", "Chief Executive Officer", "roster_register"), row
-    assert {r["outcome"] for r in body["results"]} == {"created"} and all(r["contact_id"] for r in body["results"])
-
-    # Again is idempotent; the register's own website is used when none is sent.
-    again = ana.post(url, json={"company_name": "Harbor Robotics"}).json()
-    assert (again["created"], again["updated"]) == (0, 2), again
-
-    # An address another member already works stays theirs, and the answer says whose.
-    held = ben.post(url, json={"company_name": "Harbor Robotics"}).json()
-    assert (held["created"], held["updated"], held["skipped"]) == (0, 0, 2), held
-    assert "already worked by Ana" in held["held_by_note"], held
-    assert asyncio.run(contacts("dana.whitfield@harborrobotics.com"))[0]["owner_id"] == ANA
-
-    # Officers with no website to derive an address from are counted, not invented.
-    nosite = ana.post(url, json={"company_name": "Sitewise"})
-    assert nosite.status_code == 200 and nosite.json()["created"] == 0 and nosite.json()["without_address"] == 1, nosite.text
-    assert "no website" in nosite.json()["note"]
-
-    # A listed company with no stored officers is read from its register in the same action.
-    async def fake_fetch(register_id: int) -> dict:
-        db = await get_db()
-        try:
-            await db.execute(
-                "INSERT INTO company_register_people (register_id, full_name, relationship, person_level, source_url)"
-                " VALUES (?, 'Elena Voss', 'Chief Financial Officer', 'executive', 'https://sec.example/lp')",
-                (register_id,),
-            )
-            await db.execute("UPDATE company_register SET officer_count = 1 WHERE id = ?", (register_id,))
-            await db.commit()
-        finally:
-            await db.close()
-        return {"ok": True, "attached": 1, "officer_count": 1}
-
-    with patch("app.services.company_register.fetch_officers_for", fake_fetch):
-        fetched = ana.post(url, json={"company_name": "Lookup Pharma"})
-    assert fetched.status_code == 200 and fetched.json()["created"] == 1, fetched.text
-    assert asyncio.run(contacts("elena.voss@lookuppharma.com"))[0]["owner_id"] == ANA
-
-    # A register that cannot be read is an error with its reason, not an empty list.
-    async def broken(db_id: int) -> dict:
-        return {"ok": False, "error": "SEC did not answer"}
-
+    # A register that cannot be read says why instead of reporting an empty list.
     async def reset() -> None:
         db = await get_db()
         try:
@@ -149,12 +96,64 @@ def tests() -> None:
         finally:
             await db.close()
 
-    asyncio.run(reset())
+    await reset()
+    broken = AsyncMock(return_value={"ok": False, "error": "SEC did not answer"})
     with patch("app.services.company_register.fetch_officers_for", broken):
-        failed = ana.post(url, json={"company_name": "Lookup Pharma"})
-    assert failed.status_code == 502 and "SEC did not answer" in failed.json()["detail"], failed.text
+        assert await RE.fetch_register_officers("Lookup Pharma", None) == ["SEC did not answer"]
+    await reset()
+
+
+async def a_search_includes_the_officers_it_had_to_fetch() -> None:
+    db = await get_db()
+    try:
+        await db.execute(
+            """INSERT INTO yucgoutreach_discovery_runs
+               (id, user_id, company_name, company_domain, max_prospects, status, lease_token, research_json, origin)
+               VALUES (1, 2, 'Lookup Pharma', 'lookuppharma.com', 10, 'running', 'lease-1', ?, 'member')""",
+            (json.dumps({"levels": ["working", "executive"]}),),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    async def verify(rows, **_kw):
+        return [dict(r, ai_verdict="real", email_verification_status="valid") for r in rows], []
+
+    token = D._active_lease.set("lease-1")
+    try:
+        with patch("app.services.company_register.fetch_officers_for", AsyncMock(side_effect=store_elena)), \
+             patch.object(D, "scrape_contacts_from_domain", AsyncMock(return_value=[])), \
+             patch.object(D, "_llm_json", AsyncMock(return_value={})), \
+             patch.object(D, "_company_meta", AsyncMock(return_value={})), \
+             patch.object(D, "_tavily_name_seeds", AsyncMock(return_value=[])), \
+             patch.object(D, "run_contact_verify_pipeline", verify), \
+             patch.object(RE, "cached_roster_contacts", AsyncMock(return_value=[])), \
+             patch.object(RE, "refresh_roster_on_demand", AsyncMock(return_value=[])), \
+             patch.object(RE, "roster_refresh_note", AsyncMock(return_value="")), \
+             patch.object(R, "remember_discovery_people", AsyncMock()):
+            await D.execute_yucgoutreach_run(1)
+    finally:
+        D._active_lease.reset(token)
+    db = await get_db()
+    try:
+        rows = [dict(r) for r in await (await db.execute(
+            "SELECT email, title, contact_source FROM yucgoutreach_prospects WHERE run_id = 1")).fetchall()]
+    finally:
+        await db.close()
+    assert rows == [{"email": "elena.voss@lookuppharma.com", "title": "Chief Financial Officer",
+                     "contact_source": "roster_register"}], rows
+
+
+async def main() -> None:
+    await seed()
+    await the_fetch_reads_only_registers_that_publish_officers_and_have_none()
+    await a_search_includes_the_officers_it_had_to_fetch()
+
+
+def test_register_officers_lookup() -> None:
+    asyncio.run(main())
 
 
 if __name__ == "__main__":
-    tests()
+    asyncio.run(main())
     print("register officers lookup tests passed")
