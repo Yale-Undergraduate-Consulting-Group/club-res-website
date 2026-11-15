@@ -28,7 +28,7 @@ REQUESTS_PER_MEMBER_PER_DAY = 5
 _MENTION = re.compile(r"<@[^>]+>")
 
 NOT_LINKED = (
-    "I do not know which club account this is. Send `/yucg link`, or open YUCG Outreach → "
+    "I do not know which club account this is. Send `/yucg link`, or open YUCG Resources → "
     "Profile → Integrations and press *Connect Slack*, then try again."
 )
 
@@ -75,7 +75,7 @@ def is_admin(member: dict | None) -> bool:
 
 def help_text(member: dict | None) -> str:
     lines = [
-        "*YUCG Outreach in Slack*",
+        "*YUCG Resources in Slack*",
         "*Commands* (only you see the answers)",
         "• `/yucg help`: this list",
         "• `/yucg onboard`: a one-minute tour and your setup checklist",
@@ -93,10 +93,11 @@ def help_text(member: dict | None) -> str:
         "• `/yucg targets`: people on file nobody has written to",
         "",
         "*Ask me anything about your outreach*",
-        "• DM me, mention @YUCG Outreach in a channel, or type `/yucg <question>`",
+        "• DM me, mention me in a channel, or type `/yucg <question>`",
         "• _how are we doing at A24?_ · _what's queued?_ · _follow-ups?_ · _who should I write to next?_",
         "• In a thread: _summarize this thread_",
         "",
+        f"The club's other tools (Survey builder, Market sentiment) are on {_link('YUCG Resources', '/')}.",
         "I only read club data you can already see on the website. I never send mail or change anything.",
     ]
     if not member:
@@ -115,7 +116,7 @@ def link_text(member: dict | None) -> str:
             "To disconnect, send `/yucg unlink`."
         )
     return (
-        "*Link your Slack to YUCG Outreach*\n"
+        "*Link your Slack to YUCG Resources*\n"
         f"1. Open {_link('Profile → Integrations', '/profile?view=integrations')} and sign in.\n"
         "2. Press *Connect Slack* and approve.\n"
         "3. Come back and send `/yucg onboard`.\n"
@@ -154,7 +155,7 @@ async def onboard_text(member: dict | None) -> str:
         return f"{':white_check_mark:' if done else ':white_large_square:'} {_link(label, path)}: {why}"
 
     return "\n".join([
-        "*Welcome to YUCG Outreach* :wave:",
+        "*Welcome to YUCG Resources* :wave:",
         "I'm the club's assistant in Slack. Here's the one-minute tour.",
         "",
         "*1. Your setup*",
@@ -168,7 +169,7 @@ async def onboard_text(member: dict | None) -> str:
         "*2. Try one of these*",
         "• `/yucg how are we doing at A24?`",
         "• DM me _who should I write to next?_",
-        "• In a channel thread: _@YUCG Outreach summarize this thread_",
+        "• In a channel thread: _mention me and ask me to summarize this thread_",
         "",
         "*3. Good to know*",
         "• Answers in channels are visible only to you.",
@@ -299,6 +300,21 @@ async def deliver_request(request_id: int) -> int:
             logger.exception("Could not deliver Slack feature request %s", request_id)
     logger.info("Slack feature request %s delivered to %s/%s admins", request_id, reached, len(admins))
     return reached
+
+
+async def create_tables(db) -> None:
+    """Migration core:2 - `/yucg requests <idea>`, kept even when no admin could be reached."""
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS slack_feature_requests (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               user_id INTEGER NOT NULL REFERENCES users(id),
+               slack_user_id TEXT,
+               text TEXT NOT NULL,
+               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_slack_feature_requests_user ON slack_feature_requests(user_id, created_at)"
+    )
 
 
 # ------------------------------------------------------------------ routing

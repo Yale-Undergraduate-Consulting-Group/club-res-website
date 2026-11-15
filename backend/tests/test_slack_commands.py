@@ -171,7 +171,7 @@ async def the_same_words_work_in_a_direct_message() -> None:
             "type": "message", "channel_type": "im", "channel": "D2", "user": STRANGER_SLACK, "text": "link",
         })
     tour, link = post.await_args_list
-    assert tour.args[0] == "D1" and "Welcome to YUCG Outreach" in tour.args[1]
+    assert tour.args[0] == "D1" and "Welcome to YUCG Resources" in tour.args[1]
     assert ":white_check_mark: <https://outreach.example.org/profile?view=integrations|Link Slack>" in tour.args[1]
     assert link.args[0] == "D2" and "/profile?view=integrations" in link.args[1]
 
