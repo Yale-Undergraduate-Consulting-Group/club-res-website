@@ -1,37 +1,29 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { type Contact } from '../../api';
 import {
-  FUNCTIONS, LEVEL_RANK, type Fn, type Level,
+  FUNCTIONS, type Fn, type Level,
   companyKey, defaultSelection, functionOf, isWritable, levelOf,
 } from '../../lib/recipients';
-import {
-  WANTED_LABEL, foundAsPerson, foundNotOnFile, matchesWanted, sheetOrder, type CompanyStatus, type Wanted,
-} from '../../lib/peopleSheet';
+import { foundAsPerson, sheetOrder, type CompanyStatus, type Wanted } from '../../lib/peopleSheet';
+import { tallyReasons, type Tally } from '../../lib/sendPlan';
 import type { ChosenCompany, CompanyRun, FoundPerson } from '../../lib/useDiscoveryRuns';
 import { PersonHeadline, PersonWhy } from './PersonDetails';
 
 /**
- * Who gets the email - chosen, not inherited.
+ * Who gets the email - chosen, not inherited, and all of it on one list.
  *
- * This step used to list everyone found at the chosen companies and write to
- * all of them unless you clicked "Drop" one at a time. That is the wrong
- * default for this club: a filing names boards, a crawl names whoever the
- * website mentions, and the member's judgement about which of them is worth an
- * email was the one thing the step would not let them express. So recipients
- * are ticked, the tick is the state that matters, and the count is always on
- * screen.
+ * A filing names boards, a crawl names whoever the website mentions, and the
+ * member's judgement about which of them is worth an email is the one thing
+ * this list must let them express. So recipients are ticked, and the page's
+ * one number - how many can be emailed - is the first thing on the sheet,
+ * with the reasons for everyone it leaves out beside it.
  *
- * This is the only list of people on the page. A search's results used to be
- * a second table in another panel, imported wholesale the moment the search
- * finished; here they sit under the company they were found at, marked found
- * and not yet on file, and each one is added on purpose.
- *
- * The same sheet serves every step: before people are chosen it previews
- * what the companies come with, while they are chosen it is where the
- * choosing happens, and afterwards it shows exactly who the message goes to.
+ * Everyone a search finds is on this list as soon as it arrives: a search's
+ * people are added to the club's contacts automatically, ticked by the default
+ * rule (a team lead or filed officer; not a board seat, someone too senior to
+ * answer, or a name that is page text). The filters here only narrow what is
+ * shown - the number above them never changes with them.
  */
-
-export type PickerMode = 'preview' | 'select' | 'review';
 
 export type OfficerLookupState = { busy: boolean; note?: string; error?: string; revealed?: boolean };
 
@@ -49,11 +41,12 @@ const SHORTFALL_REASON: Record<string, string> = {
   search_failed: 'web search was failing, so this is not everyone; try Find more people again shortly',
 };
 
+type Shown = { name?: string | null; title?: string | null; email?: string | null; company?: string | null; person_level?: unknown; person_function?: unknown };
+
 export default function RecipientPicker({
-  mode, companies, focused, people, selected, onSelectedChange, found, runs, statuses, wanted, onFind, onFindEverywhere, onAddFound,
-  officers, onLookUpOfficers, busy,
+  companies, focused, people, selected, onSelectedChange, found, runs, statuses, tally, tallies, held, wanted,
+  onFind, onFindEverywhere, officers, onLookUpOfficers, busy,
 }: {
-  mode: PickerMode;
   companies: ChosenCompany[];
   /** The company the sheet's search action is for: the lane last pointed at. */
   focused: ChosenCompany | null;
@@ -65,27 +58,28 @@ export default function RecipientPicker({
   officers: Record<string, OfficerLookupState>;
   /** Put the officers the company's filing names on the list. */
   onLookUpOfficers: (company: ChosenCompany) => Promise<void>;
-  /** What each company's search found, keyed by canonical company. */
+  /** Found people not on file yet, keyed by canonical company: still arriving,
+   *  or refused by the club's contacts with the reason. */
   found: Record<string, FoundPerson[]>;
   runs: Record<string, CompanyRun>;
   onFind: (company: ChosenCompany) => void;
   /** Search the same company again with no country limit. */
   onFindEverywhere?: (company: ChosenCompany) => void;
-  onAddFound: (companyKey: string, ids: number[] | 'all') => Promise<void>;
   /** What each company's search amounts to, keyed by canonical company. */
   statuses: Record<string, CompanyStatus>;
-  /** Who to look for: the people at this level are shown first, the rest fold. */
+  /** The page's one count, overall and per company. */
+  tally: Tally;
+  tallies: Record<string, Tally>;
+  /** Ticked people the build would not write to, with why. */
+  held: ReadonlyMap<number, string>;
+  /** Who to look for: the people at this level are listed first. */
   wanted: Wanted;
   busy: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState<'all' | Level>('all');
   const [fn, setFn] = useState<'all' | Fn>('all');
-  const [hideWritten, setHideWritten] = useState(true);
-  const [adding, setAdding] = useState<Record<string, true>>({});
-  // Companies whose people at other levels are unfolded (or folded again
-  // after a lookup unfolded them), by key.
-  const [showOthers, setShowOthers] = useState<Record<string, boolean>>({});
+  const [hideWritten, setHideWritten] = useState(false);
   // Folded companies, by key. A fold hides the rows only - the header keeps
   // the count, the tick-all box and the search, so nothing is decided blind.
   const [folded, setFolded] = useState<Record<string, true>>({});
@@ -96,44 +90,33 @@ export default function RecipientPicker({
   });
 
   const chosen = useMemo(() => new Set(selected), [selected]);
+  const term = query.trim().toLowerCase();
+  const filtering = level !== 'all' || fn !== 'all' || Boolean(term) || hideWritten;
+  // Filters narrow the view and nothing else: the tally above is of everyone.
+  const passes = useCallback((p: Shown) => (level === 'all' || levelOf(p) === level)
+    && (fn === 'all' || functionOf(p) === fn)
+    && (!term || `${p.name || ''} ${p.title || ''} ${p.email || ''} ${p.company || ''}`.toLowerCase().includes(term)),
+  [level, fn, term]);
 
-  const visible = useMemo(() => {
-    if (mode === 'review') {
-      return people.filter((p) => isWritable(p) && chosen.has(p.id))
-        .sort((a, b) => LEVEL_RANK[levelOf(a)] - LEVEL_RANK[levelOf(b)]
-          || (a.name || a.email || '').localeCompare(b.name || b.email || ''));
-    }
-    const filtering = mode === 'select';
-    const term = filtering ? query.trim().toLowerCase() : '';
-    return people
-      .filter((p) => (!filtering || level === 'all' ? true : levelOf(p) === level))
-      .filter((p) => (!filtering || fn === 'all' ? true : functionOf(p) === fn))
-      // A person already written to is hidden, never silently unselectable:
-      // the toggle says how many are behind it.
-      .filter((p) => (filtering && hideWritten ? !p.last_sent_at : true))
-      .filter((p) => !term
-        || `${p.name || ''} ${p.title || ''} ${p.email || ''} ${p.company || ''}`.toLowerCase().includes(term))
-      .sort((a, b) => sheetOrder(a, b, wanted)
-        || (a.name || a.email || '').localeCompare(b.name || b.email || ''));
-  }, [mode, people, chosen, query, level, fn, hideWritten, wanted]);
+  const visible = useMemo(() => people
+    .filter(passes)
+    .filter((p) => (hideWritten ? !p.last_sent_at : true))
+    .sort((a, b) => sheetOrder(a, b, wanted)
+      || (a.name || a.email || '').localeCompare(b.name || b.email || '')),
+  [people, passes, hideWritten, wanted]);
 
   const groups = useMemo(() => {
     const map = new Map<string, { company: ChosenCompany; rows: Contact[]; found: FoundPerson[] }>();
     // Every chosen company keeps a group even with nobody on file, because
-    // that group is where its search lives. What a search found leaves its
-    // list once the same person is on file, by address or by name.
+    // that group is where its search lives.
     for (const company of companies) {
       const key = companyKey(company.name);
       if (!map.has(key)) {
-        const fresh = mode === 'review' || !(found[key] || []).length ? [] : foundNotOnFile(people, found[key]);
-        // The function filter narrows what a search found as it does the people
-        // on file; the level filter has never applied to found rows.
-        const shown = mode === 'select' && fn !== 'all'
-          ? fresh.filter((p) => functionOf(foundAsPerson(p)) === fn) : fresh;
+        const pending = (found[key] || []).filter((p) => passes(foundAsPerson(p)));
         map.set(key, {
           company,
           rows: [],
-          found: [...shown].sort((a, b) => sheetOrder(foundAsPerson(a), foundAsPerson(b), wanted)),
+          found: [...pending].sort((a, b) => sheetOrder(foundAsPerson(a), foundAsPerson(b), wanted)),
         });
       }
     }
@@ -142,18 +125,13 @@ export default function RecipientPicker({
       if (!map.has(key)) map.set(key, { company: { name: person.company || 'No company' }, rows: [], found: [] });
       map.get(key)!.rows.push(person);
     }
-    const entries = [...map.entries()];
-    // In review, a company with nobody going to it is not a recipient group.
-    return mode === 'review' ? entries.filter(([, g]) => g.rows.length > 0) : entries;
-  }, [visible, companies, found, people, mode, wanted, fn]);
+    return [...map.entries()];
+  }, [visible, companies, found, wanted, passes]);
 
   const writableVisible = visible.filter(isWritable);
   const hiddenWritten = people.filter((p) => p.last_sent_at).length;
-  const noAddress = people.filter((p) => !isWritable(p)).length;
-  const selectable = mode === 'select';
-  // The sheet's search actions, for the focused company. They used to sit
-  // in every company's group header, small and among the counts, where
-  // members looking at the people a search just brought back missed them.
+  // The sheet's search actions, for the focused company: a search is already
+  // under way for every company, so these are for asking again.
   const focusKey = focused ? companyKey(focused.name) : '';
   const focusRun = focused ? runs[focusKey] : undefined;
   const focusSearching = focusRun && (focusRun.state === 'searching' || focusRun.state === 'queued');
@@ -174,21 +152,11 @@ export default function RecipientPicker({
     setMany([person.id], !chosen.has(person.id));
   };
 
-  const add = async (key: string, ids: number[] | 'all') => {
-    setAdding((prev) => ({ ...prev, [key]: true }));
-    try {
-      await onAddFound(key, ids);
-    } finally {
-      setAdding((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
-  };
+  const reasons = tallyReasons(tally);
+  const listed = visible.length + groups.reduce((n, [, g]) => n + g.found.length, 0);
 
   return (
-    <div className="space-y-3" data-testid="recipient-picker" data-mode={mode}>
+    <div className="space-y-3" data-testid="recipient-picker">
       {/* The count is the first thing on the sheet, because it is the answer
           to the only question it asks. Sticky against the surface, which is
           the one thing that scrolls. */}
@@ -196,36 +164,27 @@ export default function RecipientPicker({
            data-testid="sheet-header">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-sm font-semibold text-deep-navy" data-testid="selected-count">
-            {mode === 'review'
-              ? `${visible.length} recipient${visible.length === 1 ? '' : 's'}`
-              : `${selected.length} of ${people.filter(isWritable).length} selected`}
+            {tally.canEmail} can be emailed
           </span>
-          {mode === 'preview' && (
-            <span className="text-xs text-slate-500">
-              {people.length} on file at {companies.length} compan{companies.length === 1 ? 'y' : 'ies'}
-            </span>
+          {reasons && (
+            <span className="text-xs text-slate-600" data-testid="send-reasons">{reasons}</span>
           )}
-          {selectable && (
-            <>
-              <button type="button" className="text-xs underline text-deep-navy"
-                      onClick={() => setMany(writableVisible.map((p) => p.id), true)}>
-                Select all shown{visible.length !== people.length ? ` (${writableVisible.length})` : ''}
-              </button>
-              <button type="button" className="text-xs underline text-slate-500"
-                      onClick={() => onSelectedChange([])}>
-                Clear
-              </button>
-              <button type="button" className="text-xs underline text-slate-500"
-                      onClick={() => onSelectedChange(defaultSelection(people))}>
-                Reset to suggested
-              </button>
-            </>
-          )}
+          <button type="button" className="text-xs underline text-deep-navy"
+                  onClick={() => setMany(writableVisible.map((p) => p.id), true)}>
+            Select all shown{filtering ? ` (${writableVisible.length})` : ''}
+          </button>
+          <button type="button" className="text-xs underline text-slate-500"
+                  onClick={() => onSelectedChange([])}>
+            Clear
+          </button>
+          <button type="button" className="text-xs underline text-slate-500"
+                  onClick={() => onSelectedChange(defaultSelection(people))}>
+            Reset to suggested
+          </button>
           {busy && <span className="text-xs text-slate-500">Loading…</span>}
-          {focused && mode !== 'review' && (
+          {focused && (
             <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
-              {/* Officers first: they are in the company's filing, cost no
-                  search, and arrive ticked. The search finds the rest. */}
+              {/* Both ran when the company was added; these ask again. */}
               <button
                 type="button"
                 disabled={Boolean(focusOfficers?.busy)}
@@ -253,54 +212,52 @@ export default function RecipientPicker({
         </div>
       </div>
 
-      {selectable && (
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-slate-600">
-            Search these people
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Name, title or address"
-              className="mt-1 block w-56 border border-pale-sky px-3 py-2 text-sm text-deep-navy"
-            />
-          </label>
-          <label className="text-xs text-slate-600">
-            Seniority
-            <select
-              value={level}
-              onChange={(e) => setLevel(e.target.value as 'all' | Level)}
-              className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
-            >
-              <option value="all">Anyone found</option>
-              <option value="working">Working level (the people who answer)</option>
-              <option value="executive">Executives</option>
-              <option value="board">Board seats</option>
-              <option value="unknown">Role unclear</option>
-            </select>
-          </label>
-          <label className="text-xs text-slate-600">
-            Function
-            <select
-              value={fn}
-              onChange={(e) => setFn(e.target.value as 'all' | Fn)}
-              className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
-              data-testid="function-filter"
-            >
-              <option value="all">Any function</option>
-              {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 pb-2 text-xs text-slate-600">
-            <input type="checkbox" checked={hideWritten} onChange={(e) => setHideWritten(e.target.checked)} />
-            Hide the {hiddenWritten} already written to
-          </label>
-          {noAddress > 0 && (
-            <span className="pb-2 text-xs text-deep-navy">
-              {noAddress} without an address cannot be written to
-            </span>
-          )}
-        </div>
-      )}
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-slate-600">
+          Search these people
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Name, title or address"
+            className="mt-1 block w-56 border border-pale-sky px-3 py-2 text-sm text-deep-navy"
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          Seniority
+          <select
+            value={level}
+            onChange={(e) => setLevel(e.target.value as 'all' | Level)}
+            className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+          >
+            <option value="all">Anyone found</option>
+            <option value="working">Working level (the people who answer)</option>
+            <option value="executive">Executives</option>
+            <option value="board">Board seats</option>
+            <option value="unknown">Role unclear</option>
+          </select>
+        </label>
+        <label className="text-xs text-slate-600">
+          Function
+          <select
+            value={fn}
+            onChange={(e) => setFn(e.target.value as 'all' | Fn)}
+            className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+            data-testid="function-filter"
+          >
+            <option value="all">Any function</option>
+            {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-xs text-slate-600">
+          <input type="checkbox" checked={hideWritten} onChange={(e) => setHideWritten(e.target.checked)} />
+          Hide the {hiddenWritten} already written to
+        </label>
+        {filtering && (
+          <span className="pb-2 text-xs text-deep-navy" data-testid="filter-note">
+            Showing {listed} of {tally.total}; the filters only narrow the list, not who is sent to
+          </span>
+        )}
+      </div>
 
       {groups.map(([key, group]) => {
         const { company, rows } = group;
@@ -308,25 +265,9 @@ export default function RecipientPicker({
         const allOn = writable.length > 0 && writable.every((p) => chosen.has(p.id));
         const run = runs[key];
         const searching = run && (run.state === 'searching' || run.state === 'queued');
-        // Who matches what the member is looking for comes first; everyone
-        // else - another level, the very senior, a name that is page text -
-        // folds behind one count. A search at a large company otherwise opens
-        // on its CEO, CFO and COO. A narrowed list or a typed search is the
-        // member asking to see more, so nothing folds then. Looking up a
-        // company's officers unfolds it once: they are the people asked for
-        // by name, and what the lookup ticked must be on screen.
-        const collapsing = mode !== 'review' && level === 'all' && fn === 'all' && !query.trim();
-        const open = showOthers[key] ?? Boolean(officers[key]?.revealed);
-        const restRows = collapsing ? rows.filter((p) => !matchesWanted(p, wanted)) : [];
-        const restFound = collapsing ? group.found.filter((p) => !matchesWanted(foundAsPerson(p), wanted)) : [];
-        const foldedAway = new Set<unknown>([...restRows, ...restFound]);
-        const shownRows = open ? rows : rows.filter((p) => !foldedAway.has(p));
-        const shownFound = open ? group.found : group.found.filter((p) => !foldedAway.has(p));
-        const restTicked = restRows.filter((p) => chosen.has(p.id)).length;
-        const addable = group.found.filter((p) => !p.skippedReason && matchesWanted(foundAsPerson(p), wanted));
-        const addableAll = group.found.filter((p) => !p.skippedReason);
-        const hiddenFound = open ? 0 : restFound.length;
+        const settled = run?.state === 'done' || run?.state === 'failed';
         const status = statuses[key];
+        const companyTally = tallies[key];
         const peopleHere = rows.length + group.found.length;
         // The run's own words are progress while it works, and the skipped
         // note afterwards; once it is over, the status line says what it came to.
@@ -353,40 +294,34 @@ export default function RecipientPicker({
                           strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-                {selectable ? (
-                  <label className="flex items-center gap-2 text-sm font-semibold text-deep-navy">
-                    <input
-                      type="checkbox"
-                      checked={allOn}
-                      disabled={writable.length === 0}
-                      ref={(el) => {
-                        if (el) el.indeterminate = !allOn && writable.some((p) => chosen.has(p.id));
-                      }}
-                      onChange={() => setMany(writable.map((p) => p.id), !allOn)}
-                      aria-label={`Select everyone at ${company.name}`}
-                    />
-                    {company.name}
-                  </label>
-                ) : (
-                  <span className="text-sm font-semibold text-deep-navy">{company.name}</span>
-                )}
+                <label className="flex items-center gap-2 text-sm font-semibold text-deep-navy">
+                  <input
+                    type="checkbox"
+                    checked={allOn}
+                    disabled={writable.length === 0}
+                    ref={(el) => {
+                      if (el) el.indeterminate = !allOn && writable.some((p) => chosen.has(p.id));
+                    }}
+                    onChange={() => setMany(writable.map((p) => p.id), !allOn)}
+                    aria-label={`Select everyone at ${company.name}`}
+                  />
+                  {company.name}
+                </label>
               </span>
-              <span className="text-xs text-slate-500">
-                {mode === 'review'
-                  ? `${rows.length} recipient${rows.length === 1 ? '' : 's'}`
-                  : `${rows.length} on file · ${writable.filter((p) => chosen.has(p.id)).length} selected${
-                    group.found.length ? ` · ${group.found.length} found` : ''}`}
+              <span className="text-xs text-slate-500" data-testid="group-count">
+                {companyTally ? `${companyTally.canEmail} can be emailed` : ''}
+                {companyTally ? ` · ${companyTally.total} listed` : ''}
               </span>
             </div>
 
-            {mode !== 'review' && status && (
+            {status && (
               <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${status.tone === 'paused' ? 'text-deep-navy' : 'text-slate-600'}`}
                  data-testid="company-status" data-tone={status.tone}>
                 {status.long}
               </p>
             )}
 
-            {mode !== 'review' && (officers[key]?.note || officers[key]?.error) && (
+            {(officers[key]?.note || officers[key]?.error) && (
               <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${officers[key]?.error ? 'text-deep-navy' : 'text-slate-600'}`}
                  role="status" data-testid="officers-note" data-tone={officers[key]?.error ? 'error' : 'info'}>
                 {officers[key]?.error || officers[key]?.note}
@@ -395,7 +330,7 @@ export default function RecipientPicker({
 
             {/* A teammate's recent search stands in for a new one: say whose it
                 is, and let the member run their own. */}
-            {mode !== 'review' && run?.state === 'done' && run.sharedFrom && (
+            {run?.state === 'done' && run.sharedFrom && (
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-pale-sky px-3 py-1.5 text-xs text-slate-600"
                  data-testid="shared-run">
                 <span>
@@ -408,7 +343,7 @@ export default function RecipientPicker({
               </p>
             )}
 
-            {mode !== 'review' && run && run.state !== 'idle'
+            {run && run.state !== 'idle'
               && (showRunMessage || (run.state === 'done' && run.shortfall)) && (
               <div className="border-t border-pale-sky px-3 py-2" role="status">
                 {showRunMessage && (
@@ -416,7 +351,7 @@ export default function RecipientPicker({
                     {run.message}
                     {/* A search that skipped people for being elsewhere offers
                         them back in one click, rather than hiding a choice. */}
-                    {selectable && onFindEverywhere && run.state === 'done' && /skipped/i.test(run.message || '')
+                    {onFindEverywhere && run.state === 'done' && /skipped/i.test(run.message || '')
                       && company.targetCountry !== '*' && (
                       <button type="button" onClick={() => onFindEverywhere(company)}
                               className="ml-2 underline text-deep-navy">
@@ -444,30 +379,29 @@ export default function RecipientPicker({
 
             {/* Hidden, not unmounted: unfolding is instant and loses nothing. */}
             <div id={bodyId} hidden={isFolded}>
-              {peopleHere === 0 && !searching && mode !== 'review' && (
+              {peopleHere === 0 && !searching && (
                 <p className="px-3 py-2 text-sm text-slate-500">
-                  {selectable && (query.trim() || level !== 'all' || fn !== 'all')
+                  {filtering
                     ? 'Nobody matches your filters. Widen them above.'
-                    : 'Nobody on file here yet. Use Look up officers or Find people, or import a list.'}
+                    : 'Nobody here yet. Use Look up officers or Find people, or import a list.'}
                 </p>
               )}
 
               <ul className="divide-y divide-pale-sky">
-                {shownRows.map((person) => {
+                {rows.map((person) => {
                   const writableRow = isWritable(person);
                   const on = chosen.has(person.id);
+                  const holdReason = on ? held.get(person.id) : undefined;
                   return (
                     <li key={person.id} className="flex items-start gap-3 px-3 py-2 text-sm">
-                      {mode !== 'review' && (
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={on}
-                          disabled={!selectable || !writableRow}
-                          onChange={() => toggleOne(person)}
-                          aria-label={`Write to ${person.name || person.email}`}
-                        />
-                      )}
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={on}
+                        disabled={!writableRow}
+                        onChange={() => toggleOne(person)}
+                        aria-label={`Write to ${person.name || person.email}`}
+                      />
                       <span className="min-w-0 flex-1">
                         <PersonHeadline name={person.name || person.email} person={person} company={company.name} />
                         <PersonWhy person={person} wanted={wanted}>
@@ -478,6 +412,9 @@ export default function RecipientPicker({
                             <span>written {shortDate(person.last_sent_at)}
                               {person.last_campaign_name ? ` · ${person.last_campaign_name}` : ''}</span>
                           )}
+                          {holdReason && (
+                            <span className="text-deep-navy" data-testid="held-reason">held: {holdReason}</span>
+                          )}
                         </PersonWhy>
                       </span>
                     </li>
@@ -485,98 +422,36 @@ export default function RecipientPicker({
                 })}
               </ul>
 
-              {/* Found, not on file: what an earlier visit's search found, and
-                  anyone a search left for a deliberate add. */}
+              {/* Found and on their way to the list, or refused by the club's
+                  contacts: never dropped, so the count above can be reconciled
+                  with what is here. */}
               {group.found.length > 0 && (
-                <div className="border-t border-pale-sky" data-testid="found-rows">
-                  <div className="flex flex-wrap items-center justify-between gap-2 bg-pale-sky/60 px-3 py-1.5 text-xs text-deep-navy">
-                    <span>
-                      {group.found.length} found · not on file yet
-                      {hiddenFound > 0 && (
-                        <>
-                          {' · '}{group.found.length - hiddenFound} match {WANTED_LABEL[wanted].toLowerCase()}{' · '}
-                          <button type="button" className="underline" data-testid="show-hidden-found"
-                                  onClick={() => setShowOthers((prev) => ({ ...prev, [key]: true }))}>
-                            show the other {hiddenFound}
-                          </button>
-                        </>
-                      )}
-                    </span>
-                    {selectable && (addable.length > 1 || addableAll.length > addable.length) && (
-                      <span className="flex flex-wrap gap-2">
-                        {addable.length > 1 && addable.length < addableAll.length && (
-                          <button
-                            type="button"
-                            disabled={Boolean(adding[key])}
-                            onClick={() => void add(key, addable.map((p) => p.id))}
-                            className="ui-button ui-button--secondary ui-button--sm"
-                          >
-                            {adding[key] ? 'Adding…' : `Add the ${addable.length} who match`}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={Boolean(adding[key])}
-                          onClick={() => void add(key, addableAll.map((p) => p.id))}
-                          className="ui-button ui-button--secondary ui-button--sm"
-                        >
-                          {adding[key] ? 'Adding…' : `Add all ${addableAll.length} found`}
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  <ul className="divide-y divide-pale-sky">
-                    {shownFound.map((person) => {
-                      const name = [person.first_name, person.last_name].filter(Boolean).join(' ') || person.email;
-                      return (
-                        <li key={person.id} className="flex items-start gap-3 px-3 py-2 text-sm" data-found={person.id}>
-                          <span className="min-w-0 flex-1">
-                            <PersonHeadline name={name || ''} person={foundAsPerson(person)} company={company.name} />
-                            <PersonWhy person={foundAsPerson(person)} wanted={wanted}>
-                              <span className="bg-pale-sky/60 px-2 py-0.5 text-deep-navy">found</span>
-                              {person.groupUnit && (
-                                <span className="bg-pale-sky/60 px-2 py-0.5 text-slate-600" data-testid="group-unit"
-                                      title={`Works at ${person.groupUnit}, part of ${company.name}`}>
-                                  {person.groupUnit}
-                                </span>
-                              )}
-                              <span className="truncate" title={person.email ?? undefined}>{person.email}</span>
-                              {person.skippedReason && (
-                                <span className="text-deep-navy">not added: {person.skippedReason}</span>
-                              )}
-                            </PersonWhy>
-                          </span>
-                          {selectable && !person.skippedReason && (
-                            <button
-                              type="button"
-                              disabled={Boolean(adding[key])}
-                              onClick={() => void add(key, [person.id])}
-                              className="ui-button ui-button--secondary ui-button--sm shrink-0"
-                              aria-label={`Add ${name}`}
-                            >
-                              Add
-                            </button>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-
-              {restRows.length + restFound.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowOthers((prev) => ({ ...prev, [key]: !open }))}
-                  aria-expanded={open}
-                  className="w-full border-t border-pale-sky px-3 py-2 text-left text-xs text-slate-600 underline"
-                  data-testid="show-others"
-                >
-                  {open
-                    ? 'Show fewer: only the people who match'
-                    : `Show ${restRows.length + restFound.length} more: other levels, very senior or unclear names${
-                      restTicked ? ` (${restTicked} ticked)` : ''}`}
-                </button>
+                <ul className="divide-y divide-pale-sky border-t border-pale-sky" data-testid="found-rows">
+                  {group.found.map((person) => {
+                    const name = [person.first_name, person.last_name].filter(Boolean).join(' ') || person.email;
+                    return (
+                      <li key={person.id} className="flex items-start gap-3 px-3 py-2 text-sm" data-found={person.id}>
+                        <span className="min-w-0 flex-1">
+                          <PersonHeadline name={name || ''} person={foundAsPerson(person)} company={company.name} />
+                          <PersonWhy person={foundAsPerson(person)} wanted={wanted}>
+                            {person.groupUnit && (
+                              <span className="bg-pale-sky/60 px-2 py-0.5 text-slate-600" data-testid="group-unit"
+                                    title={`Works at ${person.groupUnit}, part of ${company.name}`}>
+                                {person.groupUnit}
+                              </span>
+                            )}
+                            <span className="truncate" title={person.email ?? undefined}>{person.email}</span>
+                            {person.skippedReason
+                              ? <span className="text-deep-navy">held: {person.skippedReason}</span>
+                              : <span className="bg-pale-sky/60 px-2 py-0.5 text-deep-navy">
+                                {settled ? 'adding…' : 'found · added when the search finishes'}
+                              </span>}
+                          </PersonWhy>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           </div>

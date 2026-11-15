@@ -29,7 +29,7 @@ async function mockFlow(page: Page) {
 test('typed titles win over who-to-look-for, and they and the collection size reach the run request', async ({ page }) => {
   const mutations = await mockFlow(page);
   // A link can carry how many people to collect; it fills the "How many people" field.
-  await page.goto('/scraper?view=company&companies=OpenAI,A24&max=120');
+  await page.goto('/scraper?view=company&max=90');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
@@ -40,16 +40,17 @@ test('typed titles win over who-to-look-for, and they and the collection size re
   await expect(titles).toHaveCount(0);
   await expect(rail.getByTestId('role-suggestions')).toHaveCount(0);
   await expect(rail.getByLabel('Function to look for')).toHaveCount(0);
+  await expect(rail.getByLabel('How many people')).toHaveValue('90');
   await rail.getByRole('button', { name: 'Other titles…' }).click();
   await titles.fill('healthcare PMs, VPs');
   await expect(rail.getByText('Searching for: healthcare PMs, VPs')).toBeVisible();
 
-  // The sheet searches the company in focus.
-  await pipeline.locator('[data-lane="A24"]').getByTestId('lane-state').click();
-  await pipeline.getByTestId('sheet-find').click();
+  // Adding a company starts its search with both settings.
+  await rail.getByLabel('Company').fill('A24');
+  await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await expect.poll(() => mutations.filter((m) => m.path === '/api/yucgoutreach/runs').length).toBe(1);
   const run = mutations.find((m) => m.path === '/api/yucgoutreach/runs')?.body as Record<string, unknown>;
   expect(run.company_name).toBe('A24');
   expect(run.title_hints).toBe('healthcare PMs, VPs');
-  expect(run.max_prospects).toBe(120);
+  expect(run.max_prospects).toBe(90);
 });
