@@ -33,9 +33,10 @@ export default function SlackIntegration() {
     }
   };
 
-  // No disconnect here: leaving the workspace is done in Slack, and a member
-  // who reconnects simply reinstalls. Revoking a stored token is a support
-  // action (DELETE /api/auth/slack/disconnect), not a button beside Connect.
+  // No disconnect here: leaving the workspace is done in Slack, and revoking a
+  // stored token is a support action (DELETE /api/auth/slack/disconnect).
+  // Reconnect runs the same install again, which replaces the stored token -
+  // the way a member picks up scopes the app gained since they connected.
 
   // Same shape as the Gmail card beside it: title and status on one row, the
   // explanation under it, then the action only when there is one to take.
@@ -52,9 +53,9 @@ export default function SlackIntegration() {
         Slack. {status?.team_name ? `Connected to ${status.team_name}.` : ''}
       </p>
       {error && <Notice tone="danger" className="mb-3">{error}</Notice>}
-      {!status?.connected && (
-        <Button disabled={busy || status == null} onClick={connect}>
-          {busy ? 'Working…' : 'Connect Slack'}
+      {status != null && (
+        <Button variant={status.connected ? 'secondary' : 'primary'} disabled={busy} onClick={connect}>
+          {busy ? 'Working…' : status.connected ? 'Reconnect Slack' : 'Connect Slack'}
         </Button>
       )}
     </section>
