@@ -292,7 +292,7 @@ export default function Profile() {
         </div>
       )}
 
-      {activeTab === 'integrations' && <><GmailConnection /><SlackIntegration /></>}
+      {activeTab === 'integrations' && <><GmailConnection /><SlackIntegration allowReconnect /></>}
 
       {activeTab === 'settings' && (
         <div className="space-y-8">
