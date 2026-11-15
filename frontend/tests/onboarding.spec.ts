@@ -38,6 +38,31 @@ test('Home shows no checklist once setup is complete', async ({ page }) => {
   await expect(page.getByTestId('getting-started')).toHaveCount(0);
 });
 
+test('a connected member reconnects Slack only from settings, and only after confirming', async ({ page }) => {
+  await mock(page, MEMBER, {
+    '/api/auth/readiness': DONE,
+    '/api/auth/slack/status': { connected: true, team_name: 'YUCG' },
+    '/api/auth/slack/connect': { redirect_url: '/profile?slack=connected' },
+  });
+  // Overview reports the connection and offers nothing to press.
+  await page.goto('/campaigns');
+  const overviewCard = page.locator('section[aria-labelledby="slack-heading"]');
+  await expect(overviewCard.getByText('Connected', { exact: true })).toBeVisible();
+  await expect(overviewCard.getByRole('button')).toHaveCount(0);
+
+  await page.goto('/profile?tab=integrations');
+  const badge = page.getByRole('button', { name: 'Connected. Reconnect Slack' });
+  await badge.click();
+  const dialog = page.getByRole('dialog', { name: "You're already connected" });
+  await expect(dialog).toContainText('already connected to YUCG');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page).toHaveURL(/tab=integrations/);
+
+  await badge.click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Reconnect' }).click();
+  await expect(page).toHaveURL(/slack=connected/);
+});
+
 test('admins see who can send and get a result for every invited address', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'the members table is a desktop admin surface');
   const posted = await mock(page, ADMIN, {
