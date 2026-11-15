@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Contact } from '../api';
 import {
-  FUNCTIONS, companyKey, defaultSelection, functionOf, isTooSenior, levelOf, looksLikePerson, yaleOf,
+  FUNCTIONS, companyKey, defaultSelection, functionOf, isTooSenior, levelOf, levelTitles, looksLikePerson, yaleOf,
+  type Level,
 } from './recipients';
+
+const lv = (...levels: Level[]) => new Set<Level>(levels);
+const TEAM_AND_SENIOR = lv('working', 'executive');
 
 const person = (id: number, fields: Partial<Contact> = {}): Contact => ({
   id, name: 'Jane Smith', email: `p${id}@example.com`, title: 'Director of Strategy', person_level: 'working', ...fields,
 });
 
 describe('defaultSelection', () => {
-  it('ticks only reachable, unsent, working-level people with real names', () => {
+  it('ticks only reachable, unsent people at a chosen level, with real names', () => {
     const people = [
       person(1),
       person(2, { email: '' }),
@@ -18,13 +22,13 @@ describe('defaultSelection', () => {
       person(5, { title: 'SVP, Chief Financial Officer' }),
       person(6, { name: 'Transformation Leader' }),
       person(7, { title: 'Vice President, Marketing', person_level: 'executive' }),
-      person(8, { title: 'Chief of Staff', person_level: 'unknown' }),
+      person(8, { title: 'Chief of Staff', person_level: 'executive' }),
       person(9, { title: 'Member, Compensation and Talent Management Committee', person_level: 'unknown' }),
     ];
-    expect(defaultSelection(people)).toEqual([1, 7, 8]);
+    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([1, 7, 8]);
   });
 
-  it('ticks officers named in the company filing, but not its board seats', () => {
+  it('ticks officers named in the company filing, but not its board seats unless Board is chosen', () => {
     const people = [
       person(1, { title: 'President and CEO', contact_source: 'roster_sec' }),
       person(2, { title: 'Chief Financial Officer', contact_source: 'roster_cache_pattern' }),
@@ -33,7 +37,52 @@ describe('defaultSelection', () => {
       person(5, { title: 'President and CEO', contact_source: 'web_discovery' }),
       person(6, { title: 'Treasurer', contact_source: 'roster_cache', email: '' }),
     ];
-    expect(defaultSelection(people)).toEqual([1, 2]);
+    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([1, 2]);
+    expect(defaultSelection(people, lv('board'))).toEqual([3, 4]);
+  });
+
+  it('follows the chosen levels: only the people at one of them are ticked', () => {
+    const people = [
+      person(1),
+      person(2, { title: 'Vice President, Marketing', person_level: 'executive' }),
+      person(3, { title: 'Trustee', person_level: 'board' }),
+      person(4, { title: '', person_level: 'unknown' }),
+    ];
+    expect(defaultSelection(people, lv('working'))).toEqual([1]);
+    expect(defaultSelection(people, lv('executive', 'board'))).toEqual([2, 3]);
+    expect(defaultSelection(people, lv('working', 'executive', 'board', 'unknown'))).toEqual([1, 2, 3, 4]);
+  });
+
+  // Before levels were chosen, anyone whose role the server could not read was
+  // ticked along with the team leads; now they are ticked only on "No title shown".
+  it('ticks people with no title or no level only when No title shown is chosen', () => {
+    const people = [
+      person(1),
+      person(2, { title: '', person_level: 'unknown' }),
+      person(3, { title: 'Consultant', person_level: 'unknown' }),
+      person(4, { title: '', person_level: 'unknown', email: '' }),
+      person(5, { title: '', person_level: 'unknown', name: 'Choose People' }),
+    ];
+    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([1]);
+    expect(defaultSelection(people, lv('unknown'))).toEqual([2, 3]);
+  });
+
+  it('never ticks someone too senior to answer for Senior leaders, unless their filing names them', () => {
+    const people = [
+      person(1, { title: 'Chief Executive Officer', person_level: 'executive' }),
+      person(2, { title: 'Chief Executive Officer', person_level: 'executive', contact_source: 'roster_sec' }),
+    ];
+    expect(defaultSelection(people, lv('executive'))).toEqual([2]);
+    expect(defaultSelection(people, lv('working'))).toEqual([]);
+  });
+});
+
+describe('levelTitles', () => {
+  it('asks for the titles of every chosen level once, and none for No title shown', () => {
+    expect(levelTitles(lv('working'))).toBe('Director of, Head of, Manager, Lead');
+    expect(levelTitles(lv('working', 'executive'))).toBe('Director of, Head of, Manager, Lead, Chief of Staff, VP, Vice President');
+    expect(levelTitles(lv('unknown'))).toBe('');
+    expect(levelTitles(lv('board', 'unknown'))).toBe('Board member, Trustee, Director');
   });
 });
 
@@ -88,7 +137,7 @@ describe('Yale first', () => {
       person(7, { yale_signal: 'Yale College', last_sent_at: '2026-09-01 10:00:00' }),
       person(8, { yale_signal: 'Yale College', title: 'Chief Executive Officer' }),
     ];
-    expect(defaultSelection(people)).toEqual([2, 4, 1, 3]);
+    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([2, 4, 1, 3]);
   });
 
   it('reads blank evidence as no tie', () => {

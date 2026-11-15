@@ -20,12 +20,11 @@ import { PersonHeadline, PersonWhy } from './PersonDetails';
  *
  * Everyone a search finds is on this list as soon as it arrives: a search's
  * people are added to the club's contacts automatically, ticked by the default
- * rule (a team lead or filed officer; not a board seat, someone too senior to
- * answer, or a name that is page text). The filters here only narrow what is
+ * rule (people at a level asked for, or a filed officer; not a board seat
+ * unless Board is asked for, someone too senior to answer, or a name that is
+ * page text). The filters here only narrow what is
  * shown - the number above them never changes with them.
  */
-
-export type OfficerLookupState = { busy: boolean; note?: string; error?: string; revealed?: boolean };
 
 function shortDate(value?: string | null): string {
   if (!value) return '';
@@ -36,32 +35,26 @@ function shortDate(value?: string | null): string {
 /** Why a finished search stopped short of its target, in plain words. */
 const SHORTFALL_REASON: Record<string, string> = {
   exhausted: 'that is everyone the sources list for them right now',
-  time_budget: 'the search ran out of time; Find more people carries on',
-  round_cap: 'the search used its rounds for this pass; Find more people carries on',
-  search_failed: 'web search was failing, so this is not everyone; try Find more people again shortly',
+  time_budget: 'the search ran out of time; Search again carries on',
+  round_cap: 'the search used its rounds for this pass; Search again carries on',
+  search_failed: 'web search was failing, so this is not everyone; try Search again shortly',
 };
 
 type Shown = { name?: string | null; title?: string | null; email?: string | null; company?: string | null; person_level?: unknown; person_function?: unknown };
 
 export default function RecipientPicker({
-  companies, focused, people, selected, onSelectedChange, found, runs, statuses, tally, tallies, held, wanted,
-  onFind, onFindEverywhere, officers, onLookUpOfficers, busy,
+  companies, people, selected, onSelectedChange, found, runs, statuses, tally, tallies, held, wanted,
+  onFind, onFindEverywhere, busy,
 }: {
   companies: ChosenCompany[];
-  /** The company the sheet's search action is for: the lane last pointed at. */
-  focused: ChosenCompany | null;
   people: Contact[];
   selected: number[];
   onSelectedChange: (ids: number[]) => void;
-  /** Each company's officer lookup, keyed by canonical company: whether it is
-   *  reading the filing, and what it did or why it could not. */
-  officers: Record<string, OfficerLookupState>;
-  /** Put the officers the company's filing names on the list. */
-  onLookUpOfficers: (company: ChosenCompany) => Promise<void>;
   /** Found people not on file yet, keyed by canonical company: still arriving,
    *  or refused by the club's contacts with the reason. */
   found: Record<string, FoundPerson[]>;
   runs: Record<string, CompanyRun>;
+  /** Search a company again: the one search action on the page. */
   onFind: (company: ChosenCompany) => void;
   /** Search the same company again with no country limit. */
   onFindEverywhere?: (company: ChosenCompany) => void;
@@ -72,7 +65,7 @@ export default function RecipientPicker({
   tallies: Record<string, Tally>;
   /** Ticked people the build would not write to, with why. */
   held: ReadonlyMap<number, string>;
-  /** Who to look for: the people at this level are listed first. */
+  /** Who to look for: people at these levels are listed first. */
   wanted: Wanted;
   busy: boolean;
 }) {
@@ -130,14 +123,7 @@ export default function RecipientPicker({
 
   const writableVisible = visible.filter(isWritable);
   const hiddenWritten = people.filter((p) => p.last_sent_at).length;
-  // The sheet's search actions, for the focused company: a search is already
-  // under way for every company, so these are for asking again.
-  const focusKey = focused ? companyKey(focused.name) : '';
-  const focusRun = focused ? runs[focusKey] : undefined;
-  const focusSearching = focusRun && (focusRun.state === 'searching' || focusRun.state === 'queued');
-  const focusOfficers = focused ? officers[focusKey] : undefined;
-  const focusHasPeople = Boolean(focused) && (
-    people.some((p) => companyKey(p.company) === focusKey) || (found[focusKey] || []).length > 0);
+  const chosenKeys = useMemo(() => new Set(companies.map((c) => companyKey(c.name))), [companies]);
 
   const setMany = (ids: number[], on: boolean) => {
     const next = new Set(chosen);
@@ -178,37 +164,10 @@ export default function RecipientPicker({
             Clear
           </button>
           <button type="button" className="text-xs underline text-slate-500"
-                  onClick={() => onSelectedChange(defaultSelection(people))}>
+                  onClick={() => onSelectedChange(defaultSelection(people, wanted))}>
             Reset to suggested
           </button>
           {busy && <span className="text-xs text-slate-500">Loading…</span>}
-          {focused && (
-            <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
-              {/* Both ran when the company was added; these ask again. */}
-              <button
-                type="button"
-                disabled={Boolean(focusOfficers?.busy)}
-                onClick={() => void onLookUpOfficers(focused)}
-                className="ui-button ui-button--secondary ui-button--sm max-w-full truncate"
-                data-testid="sheet-officers"
-                title={`Read ${focused.name}'s company filing and add the officers it names`}
-              >
-                {focusOfficers?.busy ? 'Reading the filing…' : 'Look up officers'}
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(focusSearching)}
-                onClick={() => onFind(focused)}
-                className="ui-button ui-button--primary ui-button--sm max-w-full truncate"
-                data-testid="sheet-find"
-                title={focusHasPeople ? `Search ${focused.name} again for people not on file yet` : `Search ${focused.name} for people`}
-              >
-                {focusSearching
-                  ? (focusRun?.state === 'queued' ? `Queued: ${focused.name}` : `Searching ${focused.name}…`)
-                  : `${focusHasPeople ? 'Find more people' : 'Find people'} at ${focused.name}`}
-              </button>
-            </span>
-          )}
         </div>
       </div>
 
@@ -308,9 +267,25 @@ export default function RecipientPicker({
                   {company.name}
                 </label>
               </span>
-              <span className="text-xs text-slate-500" data-testid="group-count">
-                {companyTally ? `${companyTally.canEmail} can be emailed` : ''}
-                {companyTally ? ` · ${companyTally.total} listed` : ''}
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500" data-testid="group-count">
+                  {companyTally ? `${companyTally.canEmail} can be emailed` : ''}
+                  {companyTally ? ` · ${companyTally.total} listed` : ''}
+                </span>
+                {/* The one way to look people up: a search already ran when the
+                    company was added, so this asks again. */}
+                {chosenKeys.has(key) && (
+                  <button
+                    type="button"
+                    disabled={Boolean(searching)}
+                    onClick={() => onFind(company)}
+                    className="ui-button ui-button--secondary ui-button--sm"
+                    data-testid="company-search"
+                    title={`Search ${company.name} again for people not on file yet`}
+                  >
+                    {run?.state === 'queued' ? 'Queued' : run?.state === 'searching' ? 'Searching…' : 'Search again'}
+                  </button>
+                )}
               </span>
             </div>
 
@@ -321,25 +296,11 @@ export default function RecipientPicker({
               </p>
             )}
 
-            {(officers[key]?.note || officers[key]?.error) && (
-              <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${officers[key]?.error ? 'text-deep-navy' : 'text-slate-600'}`}
-                 role="status" data-testid="officers-note" data-tone={officers[key]?.error ? 'error' : 'info'}>
-                {officers[key]?.error || officers[key]?.note}
-              </p>
-            )}
-
-            {/* A teammate's recent search stands in for a new one: say whose it
-                is, and let the member run their own. */}
+            {/* A teammate's recent search stands in for a new one: say whose it is. */}
             {run?.state === 'done' && run.sharedFrom && (
-              <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-pale-sky px-3 py-1.5 text-xs text-slate-600"
-                 data-testid="shared-run">
-                <span>
-                  Found by {run.sharedFrom.name}
-                  {shortDate(run.sharedFrom.at) ? ` · ${shortDate(run.sharedFrom.at)}` : ''}
-                </span>
-                <button type="button" onClick={() => onFind(company)} className="underline text-deep-navy">
-                  Search again
-                </button>
+              <p className="border-t border-pale-sky px-3 py-1.5 text-xs text-slate-600" data-testid="shared-run">
+                Found by {run.sharedFrom.name}
+                {shortDate(run.sharedFrom.at) ? ` · ${shortDate(run.sharedFrom.at)}` : ''}
               </p>
             )}
 
@@ -383,7 +344,7 @@ export default function RecipientPicker({
                 <p className="px-3 py-2 text-sm text-slate-500">
                   {filtering
                     ? 'Nobody matches your filters. Widen them above.'
-                    : 'Nobody here yet. Use Look up officers or Find people, or import a list.'}
+                    : 'Nobody here yet. The search is on its way, or import a list.'}
                 </p>
               )}
 

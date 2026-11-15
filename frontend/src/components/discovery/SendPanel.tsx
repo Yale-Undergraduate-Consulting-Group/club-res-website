@@ -59,11 +59,20 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
   const [templateId, setTemplateId] = useState<number | ''>('');
   const [mode, setMode] = useState<'template' | 'ai'>('template');
   const [error, setError] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createdId, setCreatedId] = useState<number | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
 
+  // Choosing a template puts its text on screen to read, edit or save under a
+  // new name; choosing nothing clears it.
+  const choose = (t: Template | undefined) => {
+    setTemplateId(t?.id ?? '');
+    setSubject(t?.subject ?? '');
+    setBody(t?.body ?? '');
+  };
   useEffect(() => {
     let live = true;
     api.outreach.templates.list()
@@ -71,28 +80,60 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
         if (!live) return;
         const list = Array.isArray(response) ? response : [];
         setTemplates(list);
-        setTemplateId((current) => current || defaultTemplate(list)?.id || '');
+        choose(defaultTemplate(list));
       })
       .catch((e) => { if (live) { setTemplates([]); setError(message(e, 'Could not load templates')); } });
     return () => { live = false; };
   }, []);
 
+  const [naming, setNaming] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  // Saved through the same endpoint as the Outreach page, so it is the
+  // member's own template; the server says why if it refuses the name or the
+  // text. The saved template is chosen straight away.
+  const saveTemplate = async () => {
+    setSaving(true);
+    setSaveError('');
+    try {
+      const created = await api.outreach.templates.create({ name: templateName.trim(), subject: subject.trim(), body: body.trim() });
+      const list = await api.outreach.templates.list();
+      setTemplates(list);
+      choose(list.find((t) => t.id === created.id));
+      setNaming(false);
+      setTemplateName('');
+    } catch (e) {
+      setSaveError(message(e, 'Could not save the template'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const tickedKey = ticked.map((p) => p.id).join(',');
 
   // --- Template: what the server would render, and hold -------------------
-  const previewKey = `${templateId}|${tickedKey}`;
+  // An edited template is no longer the saved one: the text on screen is what
+  // the server renders and what is sent, until it is saved as a template.
+  const template = templates?.find((t) => t.id === templateId);
+  const hasText = Boolean(subject.trim() && body.trim());
+  const usesTemplate = Boolean(template) && subject === template?.subject && body === template?.body;
+  const previewKey = `${usesTemplate ? templateId : `${subject}\n${body}`}|${tickedKey}`;
   const [settled, setSettled] = useState<{ key: string; result?: BuildResult; error?: string } | null>(null);
-  const wantsPreview = mode === 'template' && templateId !== '' && tickedKey !== '';
+  const wantsPreview = mode === 'template' && (usesTemplate || hasText) && tickedKey !== '';
   useEffect(() => {
     if (!wantsPreview) return;
     let live = true;
     const timer = window.setTimeout(() => {
-      api.campaigns.build({ contact_ids: tickedKey.split(',').map(Number), template_id: Number(templateId), preview_only: true })
+      const ids = tickedKey.split(',').map(Number);
+      api.campaigns.build(usesTemplate
+        ? { contact_ids: ids, template_id: Number(templateId), preview_only: true }
+        : { contact_ids: ids, subject: subject.trim(), body: body.trim(), preview_only: true })
         .then((result) => { if (live) setSettled({ key: previewKey, result }); })
         .catch((e) => { if (live) setSettled({ key: previewKey, error: message(e, 'Could not preview this template') }); });
     }, TYPING_PAUSE_MS);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [wantsPreview, tickedKey, templateId, previewKey]);
+  }, [wantsPreview, tickedKey, templateId, previewKey, usesTemplate, subject, body]);
   const answered = settled?.key === previewKey ? settled : null;
   const previewing = wantsPreview && !answered;
   // The last answer stands while a new one is asked for, so the count does
@@ -156,9 +197,11 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
   const undrafted = mode === 'ai' ? writable.filter((p) => status[p.id] !== 'done' && status[p.id] !== 'failed').length : 0;
   const sampleDraft = mode === 'ai' && firstDraft ? ticked.find((p) => p.id === firstDraft.id) : undefined;
   const count = recipients.length;
-  const template = templates?.find((t) => t.id === templateId);
+  // What is sent: the chosen template as it is, or - once the member has
+  // edited it or written their own - the text on screen.
+  const outgoing = usesTemplate && template ? { template_id: template.id } : hasText ? { subject: subject.trim(), body: body.trim() } : null;
   const ready = count > 0 && !busy && !running && (mode === 'template'
-    ? Boolean(template) && !previewing && !answered?.error
+    ? Boolean(outgoing) && !previewing && !answered?.error
     : undrafted === 0);
 
   const send = async () => {
@@ -167,11 +210,11 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
     setCreatedId(null);
     try {
       const ids = recipients.map((p) => p.id);
-      const name = `${companyLabel}: ${mode === 'ai' ? 'advisory emails' : template?.name ?? 'Outreach'}`;
+      const name = `${companyLabel}: ${mode === 'ai' ? 'advisory emails' : usesTemplate && template ? template.name : 'Outreach'}`;
       let campaignId: number;
       let created: number;
-      if (mode === 'template' && template) {
-        const built = await api.campaigns.build({ contact_ids: ids, template_id: template.id, name });
+      if (mode === 'template' && outgoing) {
+        const built = await api.campaigns.build({ contact_ids: ids, ...outgoing, name });
         campaignId = built.campaign_id;
         created = built.created;
       } else {
@@ -205,22 +248,56 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
 
         {mode === 'template' ? (
           <>
+            <div className="flex items-end gap-2">
+              <label className="block min-w-0 flex-1 text-xs font-medium text-slate-600">
+                Template
+                <select
+                  className="ui-input mt-1 block w-full"
+                  value={templateId}
+                  disabled={busy || templates === null}
+                  onChange={(e) => { setError(''); choose(templates?.find((t) => t.id === Number(e.target.value))); }}
+                >
+                  <option value="">{templates === null ? 'Loading templates…' : 'Choose a template'}</option>
+                  {club.length > 0 && <optgroup label="Club templates">
+                    {club.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </optgroup>}
+                  {own.length > 0 && <optgroup label="My templates">
+                    {own.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </optgroup>}
+                </select>
+              </label>
+              <Button variant="secondary" size="sm" className="shrink-0"
+                      disabled={busy || saving || !hasText} onClick={() => { setSaveError(''); setNaming((v) => !v); }}
+                      data-testid="save-template-open">
+                Save as template
+              </Button>
+            </div>
+            {naming && (
+              <form className="flex flex-wrap items-end gap-2 border border-pale-sky p-2" data-testid="save-template-form"
+                    onSubmit={(e) => { e.preventDefault(); void saveTemplate(); }}>
+                <label className="min-w-0 flex-1 text-xs font-medium text-slate-600">
+                  Name for this template
+                  <input className="ui-input mt-1 block w-full" value={templateName} autoFocus
+                         onChange={(e) => setTemplateName(e.target.value)} />
+                </label>
+                <Button type="submit" size="sm" disabled={saving || !templateName.trim() || !hasText}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={saving} onClick={() => { setNaming(false); setSaveError(''); }}>
+                  Cancel
+                </Button>
+              </form>
+            )}
+            {saveError && <Notice tone="danger">{saveError}</Notice>}
             <label className="block text-xs font-medium text-slate-600">
-              Template
-              <select
-                className="ui-input mt-1 block w-full"
-                value={templateId}
-                disabled={busy || templates === null}
-                onChange={(e) => { setError(''); setTemplateId(e.target.value ? Number(e.target.value) : ''); }}
-              >
-                <option value="">{templates === null ? 'Loading templates…' : 'Choose a template'}</option>
-                {club.length > 0 && <optgroup label="Club templates">
-                  {club.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </optgroup>}
-                {own.length > 0 && <optgroup label="My templates">
-                  {own.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </optgroup>}
-              </select>
+              Subject
+              <input className="ui-input mt-1 block w-full" value={subject} disabled={busy}
+                     onChange={(e) => setSubject(e.target.value)} />
+            </label>
+            <label className="block text-xs font-medium text-slate-600">
+              Message
+              <textarea className="ui-input mt-1 block w-full" rows={6} value={body} disabled={busy}
+                        onChange={(e) => setBody(e.target.value)} />
             </label>
             {templates?.length === 0 && (
               <Notice tone="info">

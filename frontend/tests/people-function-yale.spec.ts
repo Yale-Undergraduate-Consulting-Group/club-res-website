@@ -89,6 +89,6 @@ test('a search sends no function: who to look for is the only thing it is told b
   // The search started when the company was added.
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('A24');
-  expect(runsCreated[0].level).toBe('working');
+  expect(runsCreated[0].levels).toEqual(['working', 'executive']);
   expect(runsCreated[0]).not.toHaveProperty('function');
 });

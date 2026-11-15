@@ -126,7 +126,9 @@ test('a company that is not on file anywhere can still be worked', async ({ page
   await expect(pipeline.locator('[data-lane="Bartik Family Foundation"]')).toBeVisible();
   await expect(pipeline.getByTestId('recipient-picker').locator('[data-company="Bartik Family Foundation"]')).toBeVisible();
   await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation']);
-  await expect(pipeline.getByTestId('sheet-find')).toHaveText('Searching Bartik Family Foundation…');
+  const search = pipeline.getByTestId('recipient-picker').locator('[data-company="Bartik Family Foundation"]').getByTestId('company-search');
+  await expect(search).toHaveText('Searching…');
+  await expect(search).toBeDisabled();
 });
 
 test('the member sets how many people to find, watches the rounds, and is told plainly when a company runs out', async ({ page }) => {

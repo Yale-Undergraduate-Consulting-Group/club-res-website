@@ -22,6 +22,16 @@ export const LEVEL_TITLES: Record<Exclude<Level, 'unknown'>, string> = {
   board: 'Board member, Trustee, Director',
 };
 
+/** The one order levels are listed in wherever the member chooses them. */
+export const LEVEL_CHOICES: Level[] = ['working', 'executive', 'board', 'unknown'];
+
+/** The titles a search asks for when it looks for these levels: each band's
+ *  own, once each. "No title shown" asks for no title at all. */
+export function levelTitles(levels: ReadonlySet<Level>): string {
+  const terms = LEVEL_CHOICES.flatMap((l) => (l !== 'unknown' && levels.has(l) ? LEVEL_TITLES[l].split(', ') : []));
+  return [...new Set(terms)].join(', ');
+}
+
 /** The one spelling of a company that the picker's groups, the lanes and the
  *  step counts all agree on. "A24" and "a24 " are the same company; without
  *  this a found person could land in a group beside their own lane. */
@@ -60,6 +70,14 @@ const BOARD_SEAT = /\b(?:committee|board\s+(?:of\s+directors|member|director)|in
 export function isTooSenior(person: { title?: string | null }): boolean {
   const title = person.title || '';
   return TOP_OFFICER.test(title) || SENIOR_VP.test(title) || BOARD_SEAT.test(title);
+}
+
+/** The level a person counts as for "who to look for". A filing lists a CFO as
+ *  "SVP, Chief Financial Officer", which the server reads as working level; the
+ *  title decides, the same way the default tick does. */
+export function fitLevel(person: { title?: string | null; person_level?: unknown }): Level {
+  const level = levelOf(person);
+  return level !== 'board' && isTooSenior(person) ? 'executive' : level;
 }
 
 /** Words that a scraped page puts where a name should be - a job, a
@@ -115,21 +133,27 @@ export function yaleOf(person: { yale_signal?: unknown }): string {
   return typeof person.yale_signal === 'string' ? person.yale_signal.trim() : '';
 }
 
-/** Named as an officer in the company's own filing: what "Look up officers"
- *  reads. A member who picked a company for its officers means to write to
- *  them, so seniority does not hold them back; a board seat still does. */
+/** Named as an officer in the company's own filing. A member who picked a
+ *  company for its officers means to write to them, so seniority does not hold
+ *  them back; a board seat is ticked only when board was asked for. */
 export function isFiledOfficer(person: { contact_source?: string | null }): boolean {
   return (person.contact_source || '').startsWith('roster');
 }
 
-/** The default tick: people who work there and can be reached, minus anyone
- *  already written to. A board seat, someone too senior to answer (unless the
- *  company's filing names them as an officer), or a row whose name is not a
+/** The default tick: people who can be reached, minus anyone already written
+ *  to, at a level the member chose. Someone too senior to answer (unless the
+ *  company's filing names them as an officer) or a row whose name is not a
  *  person's is never ticked by default - reaching one is a deliberate act
- *  here, not a side effect of pressing "select all". People tied to Yale come
- *  first; the order is otherwise the list's own. */
-export function defaultSelection(people: Contact[]): number[] {
-  const ticked = people.filter((p) => isWritable(p) && !p.last_sent_at && levelOf(p) !== 'board'
-    && !BOARD_SEAT.test(p.title || '') && (isFiledOfficer(p) || !isTooSenior(p)) && looksLikePerson(p));
+ *  here, not a side effect of pressing "select all". A board seat is ticked
+ *  only when Board is chosen, and someone with no title or a title that names
+ *  no level only when "No title shown" is. People tied to Yale come first; the
+ *  order is otherwise the list's own. */
+export function defaultSelection(people: Contact[], levels: ReadonlySet<Level>): number[] {
+  const ticked = people.filter((p) => {
+    if (!isWritable(p) || p.last_sent_at || !looksLikePerson(p)) return false;
+    if (levelOf(p) === 'board' || BOARD_SEAT.test(p.title || '')) return levels.has('board');
+    const level = fitLevel(p);
+    return levels.has(level) && (level !== 'executive' || isFiledOfficer(p) || !isTooSenior(p));
+  });
   return [...ticked.filter((p) => yaleOf(p)), ...ticked.filter((p) => !yaleOf(p))].map((p) => p.id);
 }
