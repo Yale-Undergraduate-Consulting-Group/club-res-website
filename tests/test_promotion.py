@@ -258,6 +258,10 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(self._advance('dev', gate='pending')[0], [])
         self.assertEqual(self._advance('prod', gate='pending')[0], [])
         self.assertEqual(self._advance('integration', token=None)[0], [])
+        # A failed or skipped token step leaves the variable set but empty.
+        with patch.dict(promote.os.environ, {promote.MERGE_TOKEN_ENV: ''}), patch.object(promote, 'api') as api:
+            self.assertFalse(promote.merge(REPO, {'number': 9, 'base': {'ref': 'dev'}}, SHA))
+            api.assert_not_called()
 
     def test_refused_merge_leaves_the_pr_open_without_failing(self):
         def api(path, method='GET', payload=None, token=None):
