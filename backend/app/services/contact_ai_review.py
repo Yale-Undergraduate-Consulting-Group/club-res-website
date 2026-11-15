@@ -141,6 +141,18 @@ async def run_ai_review_agents(
                 "source_note": "heuristic pre-filter",
                 "name_plausible": False,
             }
+        elif (c.get("contact_source") or "").startswith("roster"):
+            # Named in the company's own filing or the club roster: who they
+            # are is already on record, and the name checks above still ran.
+            # Reviewing them took most of a search's wait (69 of 96 people at
+            # Nvidia) and changed nothing.
+            reviews[email] = {
+                "email": email,
+                "verdict": "real",
+                "reason": "Named in a company filing or the club roster",
+                "source_note": "filing",
+                "name_plausible": True,
+            }
         else:
             to_review.append(c)
 

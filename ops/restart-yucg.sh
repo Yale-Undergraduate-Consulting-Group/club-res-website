@@ -81,7 +81,9 @@ install -d -m 0700 /etc/yucg
 # AI_MONTHLY_BUDGET_USD stays below the 20-dollar spending limit on the
 # temporary Anthropic API key, so the site refuses AI calls before the key
 # does (backend/app/services/llm.py). Comments go here, not in the heredoc
-# below: it expands $ and the script runs with set -u.
+# below: it expands $ and the script runs with set -u. AI review runs 12
+# people per call, eight calls at a time: one search's review went from about
+# 40 seconds (20 calls, two at a time) to a few seconds on Anthropic's API.
 {
   printf '%s' "$SECRET_JSON" | jq -r 'to_entries[] | select(.value != null) | "\(.key)=\(.value)"'
   unset SECRET_JSON
@@ -91,7 +93,9 @@ EMAIL_DELIVERY_ENABLED=$EMAIL_DELIVERY_ENABLED
 DATABASE_URL=sqlite:////data/clientreach.db
 LLM_PROVIDER=bedrock
 AI_MONTHLY_BUDGET_USD=15
-AI_REVIEW_WORKERS=2
+AI_REVIEW_WORKERS=8
+AI_REVIEW_BATCH=12
+LLM_INFERENCE_SLOTS=8
 INBOX_VERIFY_MODE=mx
 CATALOG_BUCKET=$(cfg catalog_bucket)
 DOCUMENTS_BUCKET=$(cfg documents_bucket)
