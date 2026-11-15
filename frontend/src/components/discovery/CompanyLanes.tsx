@@ -21,8 +21,10 @@ import type { CompanyRun } from '../../lib/useDiscoveryRuns';
 
 export type Lane = {
   company: string;
+  /** Everyone listed for the company. */
   found: number;
-  ticked: number;
+  /** How many can be emailed there: the page's one number, for this company. */
+  ready: number;
   run: CompanyRun;
   /** What this company's search amounts to, in the words the sheet uses. */
   status: CompanyStatus;
@@ -38,8 +40,10 @@ const TRUNK_X = 10;
 const COL_X = [40, 70, 100];
 const GRAPH_W = 112;
 
-export default function CompanyLanes({ lanes, focused, onFocus, onExport, onDelete }: {
+export default function CompanyLanes({ lanes, emailed, focused, onFocus, onExport, onDelete }: {
   lanes: Lane[];
+  /** The same number across every company: what Send writes to. */
+  emailed: number;
   /** The lane the sheet's actions are about. */
   focused: string | null;
   onFocus: (company: string) => void;
@@ -61,8 +65,8 @@ export default function CompanyLanes({ lanes, focused, onFocus, onExport, onDele
            data-testid="lanes-header">
         <div className="flex items-baseline justify-between">
           <h2 className="text-[15px] font-semibold text-deep-navy">Company progress</h2>
-          <span className="text-xs text-slate-500">
-            {lanes.length} compan{lanes.length === 1 ? 'y' : 'ies'} · {lanes.reduce((n, l) => n + l.ticked, 0)} people ticked
+          <span className="text-xs text-slate-500" data-testid="lanes-total">
+            {lanes.length} compan{lanes.length === 1 ? 'y' : 'ies'} · {emailed} can be emailed
           </span>
         </div>
       </div>
@@ -70,7 +74,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onExport, onDele
       <ul className="m-0 list-none p-0">
         {shown.map((lane, index) => {
           const colour = COLOURS[index % COLOURS.length];
-          const reached = [true, lane.found > 0, lane.ticked > 0];
+          const reached = [true, lane.found > 0, lane.ready > 0];
           const lastX = COL_X[reached.lastIndexOf(true)];
           const active = lane.run.state === 'searching' || lane.run.state === 'queued';
           const runId = active ? undefined : lane.run.runId;
@@ -110,7 +114,7 @@ export default function CompanyLanes({ lanes, focused, onFocus, onExport, onDele
                   fill="none" stroke={colour} strokeWidth={2}
                   strokeDasharray={lane.found > 0 ? undefined : '4 4'}
                 />
-                {lane.ticked > 0 && (
+                {lane.ready > 0 && (
                   <path
                     d={`M ${lastX} ${ROW / 2} C ${lastX - 24} ${ROW / 2 + 10}, ${TRUNK_X} ${ROW / 2 + 12}, ${TRUNK_X} ${ROW}`}
                     fill="none" stroke={colour} strokeWidth={1.5} opacity={0.45}
@@ -135,10 +139,9 @@ export default function CompanyLanes({ lanes, focused, onFocus, onExport, onDele
                   actions after it - in the same place on every row. */}
               <span className={`shrink-0 sm:w-60 truncate text-xs tabular-nums ${
                 lane.status.tone === 'paused' ? 'text-deep-navy' : active ? 'text-deep-navy' : 'text-slate-500'}`}
-                    title={(lane.status.problem || (active && lane.run.message ? lane.run.message : lane.status.long)) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
+                    title={lane.status.problem || (active && lane.run.message ? lane.run.message : lane.status.long)}
                     data-testid="lane-state">
                 {lane.status.text}
-                {lane.ticked > 0 ? ` · ${lane.ticked} ticked` : ''}
               </span>
               {/* The lane reports; it does not search. The one search action
                   is in the sheet under it, so a company never offers two. The

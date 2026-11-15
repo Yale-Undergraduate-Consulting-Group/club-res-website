@@ -71,7 +71,7 @@ test('the function filter narrows who is shown and who select-all reaches', asyn
   // "Select all shown" means the filter, so the send cannot widen by accident.
   await pipeline.getByRole('button', { name: /^Clear$/ }).click();
   await pipeline.getByRole('button', { name: /^Select all shown/ }).click();
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 of 4 selected');
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 can be emailed');
 
   await picker.getByTestId('function-filter').selectOption('legal');
   await expect(picker.getByText('Nobody matches your filters. Widen them above.')).toBeVisible();
@@ -81,15 +81,14 @@ test('the function filter narrows who is shown and who select-all reaches', asyn
 });
 test('a search sends no function: who to look for is the only thing it is told besides titles and size', async ({ page }) => {
   const { runsCreated } = await mock(page);
-  await page.goto('/scraper?view=company&companies=A24,NEON');
+  await page.goto('/scraper?view=company&companies=A24');
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   await expect(pipeline.getByText('Grace Hopper')).toBeVisible();
   await expect(pipeline.locator('[data-rail]').getByLabel('Function to look for')).toHaveCount(0);
 
-  await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
-  await pipeline.getByTestId('sheet-find').click();
+  // The search started when the company was added.
   await expect.poll(() => runsCreated.length).toBe(1);
-  expect(runsCreated[0].company_name).toBe('NEON');
+  expect(runsCreated[0].company_name).toBe('A24');
   expect(runsCreated[0].level).toBe('working');
   expect(runsCreated[0]).not.toHaveProperty('function');
 });

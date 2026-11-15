@@ -44,6 +44,10 @@ class DiscoveryLeaseLost(RuntimeError):
     """This worker no longer owns the durable discovery run."""
 
 YUCG_MAX_PROSPECTS = int(os.getenv("YUCG_MAX_PROSPECTS", "800"))
+#: The goal a search keeps going for when nobody names one: the API's default
+#: and the page's, so a company searched from either looks for the same number
+#: of people. The page restates it (DEFAULT_MAX_PROSPECTS in CampaignPipeline).
+YUCG_DEFAULT_PROSPECTS = 120
 
 # A run's max_prospects is its goal: it keeps searching until that many
 # qualified people are saved, the sources run dry, or its time is spent.
@@ -686,7 +690,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     # The goal counts people at the level asked for. Everyone else who passes
     # is saved too, but a team-lead search does not stop because it found
     # sixty executives.
-    max_prospects = max(1, min(int(spec.get("max_prospects") or 100), YUCG_MAX_PROSPECTS))
+    max_prospects = max(1, min(int(spec.get("max_prospects") or YUCG_DEFAULT_PROSPECTS), YUCG_MAX_PROSPECTS))
     # The entity's mail domain is the only host an address may be built on.
     # The run used to build them on whatever domain it had, which for Barclays
     # included barclays.bank.in, the Indian bank's.

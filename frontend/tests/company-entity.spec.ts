@@ -106,9 +106,8 @@ test('"Not this?" closes on Escape and on a click elsewhere, never trapping the 
   await expect(panel).toHaveCount(0);
   await chip.getByRole('button', { name: 'Not this?' }).click();
   await expect(panel).toBeVisible();
-  await page.locator('h1, [data-step="1"]').first().click();
+  await page.locator('h1, [data-testid="add-companies"] h2').first().click();
   await expect(panel).toHaveCount(0);
-  await rail.getByRole('button', { name: 'Next: tick who gets it' }).click();
 });
 
 test('another group entity is one pick away, with its own country and domain', async ({ page }) => {
@@ -140,7 +139,6 @@ test('"Any country" widens where the search looks', async ({ page }) => {
 test('a search that skipped people elsewhere offers them back in one click', async ({ page }) => {
   const { runsCreated } = await mockEntity(page, { skipped: true });
   await addBarclays(page);
-  await page.getByRole('button', { name: 'Next: tick who gets it' }).click();
 
   const group = page.getByTestId('recipient-picker').locator('[data-company="Barclays"]');
   await expect(group.getByText(/30 skipped \(26 other Barclays entities, 4 outside UK\)/)).toBeVisible({ timeout: 15_000 });

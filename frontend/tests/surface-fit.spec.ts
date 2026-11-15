@@ -21,7 +21,9 @@ async function mockSurface(page: Page) {
       recipients: 2, ready: 2, held: [],
       sample: { email: 'jean.bartik@company1.com', subject: 'A long one', body: LONG_BODY },
     };
-    else if (p === '/api/contacts/companies/summary') body = [];
+    else if (p === '/api/outreach/templates') body = [{ id: 11, name: 'Intro', subject: 'Hello {first}', body: 'Hi {first}', use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false }];
+    else if (p === '/api/yucgoutreach/runs' && route.request().method() === 'POST') body = { id: 5, status: 'queued' };
+    else if (p === '/api/yucgoutreach/runs/5') body = { id: 5, company_name: 'Company 1', status: 'running', progress_pct: 10, progress_message: 'Searching…' };
     else if (p === '/api/yucgoutreach/runs') body = [];
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
@@ -57,7 +59,7 @@ const LANES = '[data-section="campaign-pipeline"] [data-testid="company-lanes"]'
 const SHEET_HEADER = '[data-section="campaign-pipeline"] [data-testid="sheet-header"]';
 
 for (const count of [4, 20, 300]) {
-  test(`lanes and sheet share a 1280×720 screen with ${count} companies at steps 1 to 3`, async ({ page }) => {
+  test(`lanes and sheet share a 1280×720 screen with ${count} companies, and the message and Send are in reach`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await mockSurface(page);
     const companies = Array.from({ length: count }, (_, i) => `Company ${i + 1}`);
@@ -67,20 +69,17 @@ for (const count of [4, 20, 300]) {
     const rail = pipeline.locator('[data-rail]');
     await expect(pipeline.getByText('Jean Bartik')).toBeVisible();
 
-    // Step 2, as arrived.
     expect(await inViewport(page, LANES)).toBe(true);
     expect(await inViewport(page, SHEET_HEADER)).toBe(true);
 
-    // Step 1.
-    await rail.getByRole('button', { name: /Add companies/ }).click();
-    await expect(pipeline.getByTestId('recipient-picker')).toHaveAttribute('data-mode', 'preview');
-    expect(await inViewport(page, LANES)).toBe(true);
-    expect(await inViewport(page, SHEET_HEADER)).toBe(true);
-
-    // Step 3, the hand-off to Drafts.
-    await rail.getByRole('button', { name: 'Next: tick who gets it' }).click();
-    await rail.getByRole('button', { name: /^Write to these/ }).click();
-    await expect(pipeline.getByTestId('recipient-picker')).toHaveAttribute('data-mode', 'review');
+    // The message and Send live in the rail, which scrolls on its own: a
+    // preview this long must not push Send out of reach, so it scrolls inside
+    // its own box.
+    const preview = rail.getByTestId('message-preview');
+    await expect(preview).toBeVisible();
+    expect((await preview.boundingBox())?.height ?? 0).toBeLessThanOrEqual(260);
+    await rail.getByTestId('send-button').scrollIntoViewIfNeeded();
+    expect(await inViewport(page, '[data-testid="send-button"]')).toBe(true);
     expect(await inViewport(page, LANES)).toBe(true);
     expect(await inViewport(page, SHEET_HEADER)).toBe(true);
 

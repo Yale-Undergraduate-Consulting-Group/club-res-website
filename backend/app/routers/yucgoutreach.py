@@ -18,6 +18,7 @@ from app.auth_deps import get_current_user
 from app.database import get_db, row_to_dict
 from app.services.company_register import FUNCTION_IDS
 from app.services.yucgoutreach_discovery import (
+    YUCG_DEFAULT_PROSPECTS,
     YUCG_MAX_PROSPECTS,
     build_yucgoutreach_excel_bytes,
 )
@@ -34,7 +35,7 @@ class YucgOutreachRunCreate(BaseModel):
     # input: enqueue_discovery_run cuts it to the contract and sizes, and the
     # run only uses it to narrow who it keeps and which domain it tries.
     entity: dict[str, Any] | None = None
-    max_prospects: int = Field(60, ge=1, le=800)  # target count of qualified people, not just a cap
+    max_prospects: int = Field(YUCG_DEFAULT_PROSPECTS, ge=1, le=800)  # target count of qualified people, not just a cap
     worker_concurrency: int = Field(4, ge=1, le=16)
     # Who to look for: team leads (default), senior leaders or board. The goal
     # counts people at this level; the searches and ranking follow it.
