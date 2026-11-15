@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { CompanyStatus } from '../../lib/peopleSheet';
 import type { CompanyRun } from '../../lib/useDiscoveryRuns';
-import { Button } from '../ui/Primitives';
 
 /**
  * Company progress, drawn the way a commit graph draws branches.
@@ -13,11 +12,11 @@ import { Button } from '../ui/Primitives';
  * each node a step it has or has not reached, all of them curving into the one
  * trunk that is the campaign.
  *
- * The lanes are also where a company is acted on: a lane with nobody found
- * offers the search, a lane with a finished search offers its export and
- * deletion. They stay on screen at every step, above the sheet of people,
- * and are kept short so the sheet is never pushed below the fold - beyond
- * six companies the rest fold behind a count.
+ * The lanes report each company's search, never start one: a lane with a
+ * finished search offers its export and deletion. They stay on screen at
+ * every step, above the sheet of people where the search lives, and are kept
+ * short so the sheet is never pushed below the fold - beyond six companies
+ * the rest fold behind a count.
  */
 
 export type Lane = {
@@ -39,12 +38,11 @@ const TRUNK_X = 10;
 const COL_X = [40, 70, 100];
 const GRAPH_W = 112;
 
-export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport, onDelete }: {
+export default function CompanyLanes({ lanes, focused, onFocus, onExport, onDelete }: {
   lanes: Lane[];
-  /** The lane whose vocabulary the step's search controls are about. */
+  /** The lane the sheet's actions are about. */
   focused: string | null;
   onFocus: (company: string) => void;
-  onFind: (company: string) => void;
   onExport: (runId: number) => void;
   onDelete: (runId: number) => void;
 }) {
@@ -135,29 +133,20 @@ export default function CompanyLanes({ lanes, focused, onFocus, onFind, onExport
                   a natural-width column shifts left or right with every row's
                   own text. A fixed box keeps the column's left edge - and the
                   actions after it - in the same place on every row. */}
-              <span className={`shrink-0 sm:w-44 truncate text-xs tabular-nums ${
+              <span className={`shrink-0 sm:w-60 truncate text-xs tabular-nums ${
                 lane.status.tone === 'paused' ? 'text-deep-navy' : active ? 'text-deep-navy' : 'text-slate-500'}`}
                     title={(lane.status.problem || (active && lane.run.message ? lane.run.message : lane.status.long)) + (lane.ticked > 0 ? ` · ${lane.ticked} ticked` : '')}
                     data-testid="lane-state">
                 {lane.status.text}
                 {lane.ticked > 0 ? ` · ${lane.ticked} ticked` : ''}
               </span>
-              {/* The search is the lane's main action, so it is always on
-                  screen: hidden until hover it read as a lane with nothing to
-                  do. Only the secondary menu hides until hover or keyboard
-                  focus on a real pointer device (touch has no hover, so below
-                  `sm` it is always visible too). Fixed width and right-aligned
-                  so the menu appearing or not never moves anything left. */}
-              <span className="flex shrink-0 sm:w-48 items-center sm:justify-end gap-1">
-                <Button
-                  variant={lane.found > 0 ? 'secondary' : 'primary'}
-                  size="sm"
-                  disabled={active}
-                  onClick={(e) => { e.stopPropagation(); onFind(lane.company); }}
-                  title={lane.found > 0 ? `Search ${lane.company} again for more people` : `Search ${lane.company} for people`}
-                >
-                  {active ? 'Searching…' : lane.found > 0 ? 'Find more people' : 'Find people'}
-                </Button>
+              {/* The lane reports; it does not search. The one search action
+                  is in the sheet under it, so a company never offers two. The
+                  export and deletion menu stays here, hidden until hover or
+                  keyboard focus on a real pointer device (touch has no hover,
+                  so below `sm` it is always visible). Fixed width and
+                  right-aligned so the menu appearing never moves the status. */}
+              <span className="flex shrink-0 sm:w-10 items-center sm:justify-end gap-1">
                 {runId !== undefined && (
                   <details className="relative sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100 open:opacity-100"
                            onClick={(e) => e.stopPropagation()}>

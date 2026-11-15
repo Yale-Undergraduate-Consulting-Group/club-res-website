@@ -60,7 +60,6 @@ async function mockInput(page: Page, opts: { limited?: boolean } = {}) {
         : { items: [], total: 0, limit: 8, offset: 0 };
     }
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     // Nobody on file anywhere, so a sure company has every reason to search.
     else if (p === '/api/contacts') body = { items: [], total: 0, limit: 800, offset: 0 };
     else if (p === '/api/contacts/companies/summary') body = [];
@@ -199,7 +198,8 @@ test('who to look for sets the titles the search asks for', async ({ page }) => 
   await expect(rail.getByRole('radio', { name: 'Team leads' })).toHaveAttribute('aria-checked', 'false');
   await expect(rail.getByText('Searching for: Board member, Trustee, Director')).toBeVisible();
 
-  await pipeline.locator('[data-lane="NEON"]').getByRole('button', { name: 'Find people' }).click();
+  await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
+  await pipeline.getByTestId('sheet-find').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
   expect(runsCreated[0].title_hints).toBe('Board member, Trustee, Director');
@@ -213,7 +213,8 @@ test('a search refused by the hourly limit pauses with a notice, not an error', 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const lane = pipeline.locator('[data-lane="NEON"]');
 
-  await lane.getByRole('button', { name: 'Find people' }).click();
+  await lane.getByTestId('lane-state').click();
+  await pipeline.getByTestId('sheet-find').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   await expect(pipeline.getByRole('status').filter({ hasText: 'Searches are paused for a few minutes' })).toBeVisible();
   await expect(pipeline.getByRole('alert')).toHaveCount(0);

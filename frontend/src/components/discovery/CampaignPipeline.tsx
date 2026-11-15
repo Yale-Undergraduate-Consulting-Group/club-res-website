@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, type Contact, type ImportOutcome, type ResolvedAlternative, type ResolvedCompany } from '../../api';
 import CompanyAutocomplete from '../CompanyAutocomplete';
-import RecipientPicker, { type PickerMode } from './RecipientPicker';
+import RecipientPicker, { type OfficerLookupState, type PickerMode } from './RecipientPicker';
 import CompanyLanes, { type Lane } from './CompanyLanes';
-import RoleSuggestionBubbles from './RoleSuggestionBubbles';
 import { Button, Chip } from '../ui/Primitives';
-import { FUNCTIONS, LEVEL_TITLES, companyKey, defaultSelection, type Fn } from '../../lib/recipients';
+import { LEVEL_TITLES, companyKey, defaultSelection } from '../../lib/recipients';
 import {
   WANTED_LABEL, companyStatus, dedupePeople, foundAsPerson, foundNotOnFile, matchesWanted,
   type CompanyStatus, type Wanted,
@@ -304,12 +303,10 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   const touchedRef = useRef(false);
 
   // What the search is told. Shared across companies because it is what the
-  // member wants, not what a company calls it; the role bubbles translate it
-  // per company and only add to it when clicked.
+  // member wants, not what a company calls it.
   // Who to look for is one choice; titles in the member's own words are
   // optional and, when given, win. Nobody has to type a title to search.
   const [level, setLevel] = useState<Wanted>('working');
-  const [fn, setFn] = useState<Fn | ''>('');
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
   // The goal a search keeps going for: it stops at this many qualified
@@ -541,23 +538,54 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   }, [step]);
 
 
-  // The company whose vocabulary the search controls are about: the lane
-  // last pointed at, else the first chosen.
+  // The company the sheet's actions are for: the lane last pointed at, else
+  // the first chosen.
   const focused = chosen.find((c) => companyKey(c.name) === focusedKey) ?? chosen[0] ?? null;
   // What a search is told, read when it starts rather than when it was
   // queued: changing who to look for while companies wait changes what all
   // of them look for.
-  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, level, function: fn || undefined });
+  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, level });
   useEffect(() => {
-    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level, function: fn || undefined };
-  }, [searchTitles, maxProspects, level, fn]);
+    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level };
+  }, [searchTitles, maxProspects, level]);
 
-  // One search, from wherever it is asked for: the lane, the sheet header for
-  // the focused company, or on its own when a company arrives with nobody on file.
+  // One search, from wherever it is asked for: the sheet header for the
+  // focused company, a group's own button, or on its own when a company
+  // arrives with nobody on file.
   const findPeople = useCallback((company: ChosenCompany) => {
     setFocusedKey(companyKey(company.name));
     void startRun(company, () => searchOptionsRef.current);
   }, [startRun]);
+
+  // The officers a company's filing names, put on the list without a search.
+  // What it did (or why it did nothing) is said under the company, and the
+  // new people arrive ticked by the same rule a search's do.
+  const [officerLookups, setOfficerLookups] = useState<Record<string, OfficerLookupState>>({});
+  const lookUpOfficers = useCallback(async (company: ChosenCompany) => {
+    const key = companyKey(company.name);
+    setFocusedKey(key);
+    setOfficerLookups((prev) => ({ ...prev, [key]: { busy: true } }));
+    try {
+      const res = await api.yucgoutreach.lookUpOfficers({
+        company_name: company.name, company_domain: company.domain, entity: company.entity,
+      });
+      const parts = [
+        res.created > 0 ? `Added ${res.created} ${res.created === 1 ? 'officer' : 'officers'} from the company filing.` : '',
+        res.created === 0 && res.updated > 0
+          ? `${res.updated} ${res.updated === 1 ? 'officer is' : 'officers are'} already on file.` : '',
+        res.note || '',
+        res.without_address > 0 && res.created + res.updated > 0
+          ? `${res.without_address} named in the filing ${res.without_address === 1 ? 'has' : 'have'} no address yet.` : '',
+        res.held_by_note ? `${res.held_by_note}.` : '',
+      ].filter(Boolean);
+      setOfficerLookups((prev) => ({ ...prev, [key]: { busy: false, note: parts.join(' '), revealed: res.created > 0 } }));
+      await loadPeople(chosenNames, res.results.flatMap((r) => (r.outcome === 'created' && r.contact_id !== null ? [r.contact_id] : [])));
+    } catch (e) {
+      setOfficerLookups((prev) => ({
+        ...prev, [key]: { busy: false, error: e instanceof Error ? e.message : 'Could not look up officers' },
+      }));
+    }
+  }, [loadPeople, chosenNames]);
 
   // A company the member is sure of, with nobody on file and no search yet,
   // is searched as soon as it is added - the search is the reason it was
@@ -583,11 +611,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
     }, 0);
     return () => window.clearTimeout(timer);
   }, [busy, runsReady, peopleFor, chosenKeyString, chosen, lanes, findPeople]);
-
-  const findByName = useCallback((name: string) => {
-    const company = chosen.find((c) => companyKey(c.name) === companyKey(name));
-    if (company) findPeople(company);
-  }, [chosen, findPeople]);
 
   return (
     // 21.625rem is the shell around this grid at xl: header, main padding,
@@ -686,13 +709,13 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
                   ? `Searching for people at ${searchingCount} compan${searchingCount === 1 ? 'y' : 'ies'}…`
                   : lanes.length > 0 && lanes.every((l) => l.run.state === 'done')
                     ? `Nobody found for ${WANTED_LABEL[level]} at these companies. Try another level below, or import a spreadsheet.`
-                    : 'No people on file at these companies yet. Press Find people on a company to search for them.')}
+                    : 'No people on file at these companies yet. Look up officers or find people in the list on the right.')}
             </p>
           )}
 
           {/* Who a search looks for is one choice, not a title the member has
               to guess. Titles in their own words are there for anyone who
-              wants them, and the company's own titles are one click each. */}
+              wants them. */}
           <div>
             <p className="text-xs font-medium text-slate-600" id="who-to-look-for">Who to look for</p>
             <div role="radiogroup" aria-labelledby="who-to-look-for" className="mt-1 flex flex-wrap gap-2">
@@ -702,19 +725,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
                 </Chip>
               ))}
             </div>
-            {/* Optional: asks the first searches for one function's titles. */}
-            <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600">
-              Function
-              <select
-                value={fn}
-                onChange={(e) => setFn(e.target.value as Fn | '')}
-                aria-label="Function to look for"
-                className="border border-pale-sky bg-white px-3 py-1.5 text-sm font-normal text-deep-navy"
-              >
-                <option value="">Any function</option>
-                {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-              </select>
-            </label>
             <p className="mt-1 text-xs text-slate-500">
               Searching for: {searchTitles}{' · '}
               <button type="button" className="underline" onClick={() => setShowOtherTitles((v) => !v)}>
@@ -751,24 +761,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               </span>
             </div>
           </div>
-          {focused && (
-            <div data-testid="focused-company" data-company={focused.name}>
-              <RoleSuggestionBubbles
-                company={focused.name}
-                domain={focused.domain || ''}
-                hints={titleHints}
-                onAdd={(title) => {
-                  setShowOtherTitles(true);
-                  setTitleHints((prev) => {
-                    const parts = prev.split(',').map((p) => p.trim()).filter(Boolean);
-                    if (parts.some((p) => p.toLowerCase() === title.toLowerCase())) return prev;
-                    return [...parts, title].join(', ');
-                  });
-                }}
-              />
-            </div>
-          )}
-
           {/* The other way people arrive: the spreadsheet you already have. */}
           <div className="flex flex-wrap items-center gap-4 text-xs">
             <input
@@ -863,7 +855,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
           lanes={lanes}
           focused={focused?.name ?? null}
           onFocus={(name) => setFocusedKey(companyKey(name))}
-          onFind={findByName}
           onExport={(runId) => void exportRun(runId)}
           onDelete={(runId) => {
             if (window.confirm('Delete this search and everything it found?')) void deleteRun(runId);
@@ -884,6 +875,8 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               wanted={level}
               onFind={findPeople}
               focused={focused}
+              officers={officerLookups}
+              onLookUpOfficers={lookUpOfficers}
               onFindEverywhere={(company) => {
                 setWhere(company.name, '*');
                 findPeople({ ...company, targetCountry: '*' });
