@@ -5,7 +5,7 @@ import {
   companyKey, defaultSelection, functionOf, isWritable, levelOf,
 } from '../../lib/recipients';
 import {
-  foundAsPerson, foundNotOnFile, matchesWanted, sheetOrder, type CompanyStatus, type Wanted,
+  WANTED_LABEL, foundAsPerson, foundNotOnFile, matchesWanted, sheetOrder, type CompanyStatus, type Wanted,
 } from '../../lib/peopleSheet';
 import type { ChosenCompany, CompanyRun, FoundPerson } from '../../lib/useDiscoveryRuns';
 import { PersonHeadline, PersonWhy } from './PersonDetails';
@@ -324,6 +324,8 @@ export default function RecipientPicker({
         const shownFound = open ? group.found : group.found.filter((p) => !foldedAway.has(p));
         const restTicked = restRows.filter((p) => chosen.has(p.id)).length;
         const addable = group.found.filter((p) => !p.skippedReason && matchesWanted(foundAsPerson(p), wanted));
+        const addableAll = group.found.filter((p) => !p.skippedReason);
+        const hiddenFound = open ? 0 : restFound.length;
         const status = statuses[key];
         const peopleHere = rows.length + group.found.length;
         // The run's own words are progress while it works, and the skipped
@@ -487,17 +489,40 @@ export default function RecipientPicker({
                   anyone a search left for a deliberate add. */}
               {group.found.length > 0 && (
                 <div className="border-t border-pale-sky" data-testid="found-rows">
-                  <div className="flex items-center justify-between gap-2 bg-pale-sky/60 px-3 py-1.5 text-xs text-deep-navy">
-                    <span>{group.found.length} found · not on file yet</span>
-                    {selectable && addable.length > 1 && (
-                      <button
-                        type="button"
-                        disabled={Boolean(adding[key])}
-                        onClick={() => void add(key, addable.map((p) => p.id))}
-                        className="ui-button ui-button--secondary ui-button--sm"
-                      >
-                        {adding[key] ? 'Adding…' : `Add all ${addable.length} found`}
-                      </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-pale-sky/60 px-3 py-1.5 text-xs text-deep-navy">
+                    <span>
+                      {group.found.length} found · not on file yet
+                      {hiddenFound > 0 && (
+                        <>
+                          {' · '}{group.found.length - hiddenFound} match {WANTED_LABEL[wanted].toLowerCase()}{' · '}
+                          <button type="button" className="underline" data-testid="show-hidden-found"
+                                  onClick={() => setShowOthers((prev) => ({ ...prev, [key]: true }))}>
+                            show the other {hiddenFound}
+                          </button>
+                        </>
+                      )}
+                    </span>
+                    {selectable && (addable.length > 1 || addableAll.length > addable.length) && (
+                      <span className="flex flex-wrap gap-2">
+                        {addable.length > 1 && addable.length < addableAll.length && (
+                          <button
+                            type="button"
+                            disabled={Boolean(adding[key])}
+                            onClick={() => void add(key, addable.map((p) => p.id))}
+                            className="ui-button ui-button--secondary ui-button--sm"
+                          >
+                            {adding[key] ? 'Adding…' : `Add the ${addable.length} who match`}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={Boolean(adding[key])}
+                          onClick={() => void add(key, addableAll.map((p) => p.id))}
+                          className="ui-button ui-button--secondary ui-button--sm"
+                        >
+                          {adding[key] ? 'Adding…' : `Add all ${addableAll.length} found`}
+                        </button>
+                      </span>
                     )}
                   </div>
                   <ul className="divide-y divide-pale-sky">
