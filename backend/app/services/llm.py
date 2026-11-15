@@ -72,7 +72,10 @@ BEDROCK_ANTHROPIC: list[dict[str, str]] = [
 ]
 _ALLOWED = {model for chain in TIERS.values() for model in chain}
 
-INFERENCE_SLOTS = 2
+#: Model calls in flight at once. Bedrock throttled above 2; Anthropic's own
+#: API does not, so the deploy sets LLM_INFERENCE_SLOTS=4 while its key is
+#: used, which lets AI review of a search run four batches side by side.
+INFERENCE_SLOTS = max(1, min(int(os.getenv("LLM_INFERENCE_SLOTS", "2") or 2), 8))
 _inference_slots = threading.BoundedSemaphore(INFERENCE_SLOTS)
 #: How long a call waits for a free slot before answering 429. Failing at
 #: once turned a discovery run's AI review into 58 calls of which 48 were
