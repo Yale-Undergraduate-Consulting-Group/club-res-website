@@ -31,6 +31,7 @@ async function mockPipeline(page: Page) {
     let body: unknown = {};
     if (p === '/api/auth/me') body = { authenticated: true, user };
     else if (p === '/api/contacts') body = { items: PEOPLE, total: PEOPLE.length, limit: 400, offset: 0 };
+    else if (p === '/api/outreach/templates') body = [{ id: 11, name: 'Intro', subject: 'Hello {first}', body: 'Hi {first}', use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false }];
     else if (p === '/api/campaigns/build') {
       const payload = route.request().postDataJSON();
       // The server renders; the mock mirrors its contract so the spec covers
@@ -81,34 +82,32 @@ async function mockPipeline(page: Page) {
   return { built, sequences, runsCreated };
 }
 
-test('companies to people, then each person handed to Drafts', async ({ page }) => {
+test('companies to people on one screen, and the same people can still be taken to Drafts', async ({ page }) => {
   await mockPipeline(page);
   await page.goto('/scraper?view=company');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
 
-  // 1. Companies are a multiple choice, not one at a time.
+  // Adding the company is the whole of choosing it: its people are on the list
+  // at once, the message and Send are in the same rail, and there is no step
+  // to move on to.
   await rail.getByLabel('Company').fill('A24');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  await rail.getByRole('button', { name: 'Next: tick who gets it' }).click();
-
-  // 2. The people found, grouped by company, with the option to drop one.
   await expect(pipeline.getByText('Jean Bartik')).toBeVisible();
   await expect(pipeline.getByText('Klara Dan')).toBeVisible();
-  await rail.getByRole('button', { name: /^Write to these/ }).click();
+  await expect(rail.getByTestId('message-panel')).toBeVisible();
+  await expect(rail.getByTestId('send-button')).toHaveText('Send to 2');
+  await expect(rail.getByRole('button', { name: /Next: tick who gets it|^Write to these/ })).toHaveCount(0);
 
-  // 3. No shared template: the exact people ticked go to Drafts, where each
-  //    gets an email of their own.
-  await expect(rail.getByText(/advisory note on two\s+or three projects/)).toBeVisible();
-  await expect(rail.getByLabel('Subject')).toHaveCount(0);
-  await rail.getByRole('button', { name: /^Write to these \d+ in Drafts/ }).click();
+  // Someone who wants to read each email first takes exactly the same people to Drafts.
+  await rail.getByRole('link', { name: /^Open these 2 in Drafts/ }).click();
   await expect(page).toHaveURL(/\/studio\?companies=A24&contact_ids=\d+(%2C\d+)*$/);
 });
 
 test('a company that is not on file anywhere can still be worked', async ({ page }) => {
-  await mockPipeline(page);
+  const { runsCreated } = await mockPipeline(page);
   await page.goto('/scraper?view=company');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
@@ -123,13 +122,11 @@ test('a company that is not on file anywhere can still be worked', async ({ page
   await expect(rail.locator('[data-company-chip="Bartik Family Foundation"]')).toBeVisible();
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
 
-  // And it carries into the next step rather than being dropped as unknown.
-  await rail.getByRole('button', { name: 'Next: tick who gets it' }).click();
+  // It keeps its lane and its group, and its search starts by itself.
   await expect(pipeline.locator('[data-lane="Bartik Family Foundation"]')).toBeVisible();
-  // With nobody on file the company keeps its group, and the sheet offers
-  // the search that would fill it rather than silently dropping it.
   await expect(pipeline.getByTestId('recipient-picker').locator('[data-company="Bartik Family Foundation"]')).toBeVisible();
-  await expect(pipeline.getByTestId('sheet-find')).toHaveText('Find people at Bartik Family Foundation');
+  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation']);
+  await expect(pipeline.getByTestId('sheet-find')).toHaveText('Searching Bartik Family Foundation…');
 });
 
 test('the member sets how many people to find, watches the rounds, and is told plainly when a company runs out', async ({ page }) => {
@@ -157,16 +154,18 @@ test('the member sets how many people to find, watches the rounds, and is told p
   await page.route('**/api/yucgoutreach/runs/9/import-contacts', route => route.fulfill({
     json: { created: 0, updated: 0, skipped: 1, results: [{ prospect_id: 501, contact_id: null, outcome: 'skipped', reason: 'held for review' }] },
   }));
-  await page.goto('/scraper?view=company&companies=A24&max=120');
+  await page.goto('/scraper?view=company&max=100');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
-  // A link's ?max= is the starting goal; the field is where it is changed.
+  // A link's ?max= is the starting goal; the field is where it is changed -
+  // before a company is added, because adding one starts its search.
   const goal = rail.getByLabel('How many people');
-  await expect(goal).toHaveValue('120');
+  await expect(goal).toHaveValue('100');
   await goal.fill('80');
+  await rail.getByLabel('Company').fill('A24');
+  await rail.getByRole('button', { name: 'Add', exact: true }).click();
 
-  await pipeline.getByTestId('sheet-find').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].max_prospects).toBe(80);
 
@@ -179,16 +178,18 @@ test('the member sets how many people to find, watches the rounds, and is told p
   await expect(group.locator('[data-found="501"]').getByTestId('group-unit')).toHaveText('A24 Music');
 });
 
-test('the goal is clamped to what the server accepts', async ({ page }) => {
+test('the goal defaults to what the API defaults to, and is clamped to what the server accepts', async ({ page }) => {
   const { runsCreated } = await mockPipeline(page);
-  await page.goto('/scraper?view=company&companies=A24');
+  await page.goto('/scraper?view=company');
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
-  const goal = pipeline.locator('[data-rail]').getByLabel('How many people');
-  await expect(goal).toHaveValue('60');
+  const rail = pipeline.locator('[data-rail]');
+  const goal = rail.getByLabel('How many people');
+  await expect(goal).toHaveValue('120');
   await goal.fill('5000');
   await goal.blur();
   await expect(goal).toHaveValue('800');
-  await pipeline.getByTestId('sheet-find').click();
+  await rail.getByLabel('Company').fill('A24');
+  await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].max_prospects).toBe(800);
 });
@@ -200,8 +201,6 @@ test('a large company selection stays a count and a screenful, not a wall of chi
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
-  await rail.getByRole('button', { name: /Add companies/ }).click();
-
   // Every chosen company used to become a DOM node. A selection this size is
   // a count plus the ones being worked on, with the rest one click away.
   await expect(rail.getByTestId('chosen-count')).toContainText('300 companies added');
@@ -214,7 +213,7 @@ test('a large company selection stays a count and a screenful, not a wall of chi
   // And the step says the campaign ceiling before the server refuses it.
   await page.goto(`/scraper?view=company&companies=${encodeURIComponent(
     Array.from({ length: 501 }, (_, i) => `Big ${i + 1}`).join(','))}`);
-  await rail.getByRole('button', { name: /Add companies/ }).click();
+  await expect(rail.getByTestId('chosen-count')).toContainText('501 companies added');
   await expect(rail.getByText(/at most 500/)).toBeVisible();
 });
 
@@ -238,9 +237,10 @@ test('a best guess is corrected from its chip by pasting the company\'s LinkedIn
   await expect(fixed.getByRole('button', { name: 'Not this?', exact: true })).toBeVisible();
   await expect(guess).toHaveCount(0);
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  // Now sure of it, the search starts with the checked website.
-  await expect.poll(() => runsCreated.length).toBe(1);
-  expect(runsCreated[0]).toMatchObject({ company_name: 'Bartik Foundation', company_domain: 'bartik.org' });
+  // Every added company is searched as it is added - the guess was too - and
+  // the corrected one is searched with the checked website.
+  await expect.poll(() => runsCreated.map((r) => r.company_name)).toContain('Bartik Foundation');
+  expect(runsCreated.find((r) => r.company_name === 'Bartik Foundation')).toMatchObject({ company_domain: 'bartik.org' });
 });
 
 test('picking a suggested company adds it with its domain, not the half-typed text, and never removes', async ({ page }) => {

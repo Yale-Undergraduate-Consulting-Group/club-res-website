@@ -143,20 +143,13 @@ async def cached_roster_contacts(
 _REGISTER_RANK = {"roster_sec": 0, "roster_register": 1, "roster_cache": 2}
 
 
-async def register_officer_contacts(
+async def register_entity_keys(
     company_name: str, domain: str | None, *, legal_name: str | None = None
-) -> list[dict[str, Any]]:
-    """Officers stored in company_register_people for the register entity this
-    company is, as contact dicts (contact_source 'roster_register').
-
-    The company is the register's entity when its name derives the same
-    entity_key the register stored (US or GB, as register_names.derive reads
-    it), or when a register row carries the run's domain. Nothing is fetched:
-    these are the officers a bulk ingest or the member's "Look up officers"
-    already stored. Addresses are derived on ``domain`` only, through the
-    gates roster people pass; with no domain the person has none.
-    """
-    from app.services.company_register import register_entity_people
+) -> set[str]:
+    """The register entities this company is: those whose entity_key its name
+    (or legal name) derives, as register_names.derive reads it for the US and
+    GB, plus any entity with a register row on the company's domain. Only keys
+    the register actually holds are returned."""
     from app.services.register_names import derive
 
     names = [n.strip() for n in (company_name, legal_name) if n and n.strip()]
@@ -179,6 +172,25 @@ async def register_officer_contacts(
             keys = {r["entity_key"] for r in rows}
     finally:
         await db.close()
+    return keys
+
+
+async def register_officer_contacts(
+    company_name: str, domain: str | None, *, legal_name: str | None = None
+) -> list[dict[str, Any]]:
+    """Officers stored in company_register_people for the register entity this
+    company is (see register_entity_keys), as contact dicts (contact_source
+    'roster_register').
+
+    Nothing is fetched: these are the officers a bulk ingest or the member's
+    "Look up officers" already stored. Addresses are derived on ``domain``
+    only, through the gates roster people pass; with no domain the person has
+    none.
+    """
+    from app.services.company_register import register_entity_people
+
+    dom = normalize_domain(domain or "")
+    keys = await register_entity_keys(company_name, domain, legal_name=legal_name)
 
     people: dict[str, dict[str, Any]] = {}
     for key in sorted(keys):

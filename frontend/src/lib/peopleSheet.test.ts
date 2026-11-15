@@ -122,30 +122,30 @@ describe('what a company says about its search', () => {
   const base = { wanted: 'working' as const };
 
   it('is searching while it works', () => {
-    expect(companyStatus({ ...base, run: run({ state: 'searching', pct: 40 }), total: 0, matching: 0 }))
+    expect(companyStatus({ ...base, run: run({ state: 'searching', pct: 40 }), total: 0, ready: 0, matching: 0 }))
       .toMatchObject({ tone: 'busy', text: 'Searching… 40%', long: 'Searching…' });
   });
 
-  it('counts people, and names the level when the rest are another', () => {
-    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 1, matching: 1 }).text).toBe('1 person found');
-    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 5, matching: 2 }).long)
-      .toBe('5 people found · 2 for Team leads');
-    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 3, matching: 0 }).long)
-      .toBe('3 people found · none for Team leads (try Senior leaders)');
+  it('says how many can be emailed, and names the level when the rest are another', () => {
+    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 1, ready: 1, matching: 1 }).text).toBe('1 can be emailed');
+    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 5, ready: 2, matching: 2 }).long)
+      .toBe('2 can be emailed · 5 people found · 2 for Team leads');
+    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 3, ready: 0, matching: 0 }).long)
+      .toBe('0 can be emailed · 3 people found · none for Team leads (try Senior leaders)');
   });
 
   it('says nobody was found only when a search ran and found nobody', () => {
-    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 0, matching: 0 }))
+    expect(companyStatus({ ...base, run: run({ state: 'done' }), total: 0, ready: 0, matching: 0 }))
       .toMatchObject({ tone: 'empty', long: 'Nobody found for Team leads (try Senior leaders)' });
-    expect(companyStatus({ ...base, run: run(), total: 0, matching: 0 }).tone).toBe('idle');
+    expect(companyStatus({ ...base, run: run(), total: 0, ready: 0, matching: 0 }).tone).toBe('idle');
   });
 
   it('says the search is paused, never nobody found, when it could not run', () => {
     const paused = 'People search is paused: the search service is out of credit. A maintainer needs to top it up.';
-    const status = companyStatus({ ...base, run: run({ state: 'done', paused }), total: 0, matching: 0 });
+    const status = companyStatus({ ...base, run: run({ state: 'done', paused }), total: 0, ready: 0, matching: 0 });
     expect(status).toMatchObject({ tone: 'paused', text: 'Search paused', problem: paused });
     expect(`${status.text} ${status.long}`).not.toMatch(/nobody/i);
-    expect(companyStatus({ ...base, run: run({ state: 'done', paused }), total: 4, matching: 4 }).text)
-      .toBe('4 people found · search paused');
+    expect(companyStatus({ ...base, run: run({ state: 'done', paused }), total: 4, ready: 3, matching: 4 }).text)
+      .toBe('3 can be emailed · search paused');
   });
 });

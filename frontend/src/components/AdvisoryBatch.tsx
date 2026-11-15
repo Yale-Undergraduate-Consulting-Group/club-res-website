@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type Contact } from '../api';
 import { looksLikePerson } from '../lib/recipients';
-import { aiDraftingUnavailable } from '../lib/aiDrafting';
+import { BUDGET_NOTE, draftEach, type DraftStatus } from '../lib/aiDrafts';
 import AiUnavailableNotice from './campaigns/AiUnavailableNotice';
 
 /**
@@ -16,14 +16,7 @@ import AiUnavailableNotice from './campaigns/AiUnavailableNotice';
  * the campaign is built from those saved drafts.
  */
 
-type Status = 'waiting' | 'drafting' | 'done' | 'failed';
-
-/** Drafts written at once. The server runs two model calls for the whole
- *  club and refuses a third as busy, so a batch takes one at a time. */
-const WORKERS = 1;
-/** Waits before retrying a person the server was too busy to draft. */
-const BACKOFF_MS = [3000, 6000, 12000];
-const TRANSIENT = /busy|unavailable|please retry shortly/i;
+type Status = DraftStatus;
 
 export default function AdvisoryBatch({ companies, contactIds, tone, model, valueProp, goal, onOpen, onDrafted, onDismiss }: {
   companies: string[];
@@ -80,71 +73,17 @@ export default function AdvisoryBatch({ companies, contactIds, tone, model, valu
     setRunning(true);
     setNote('');
     setAiDown(false);
-    // One citation lookup per company, not per person: it only ever returns
-    // projects an admin marked discussable, so it is safe to reuse.
-    const citations = new Map<string, Promise<string>>();
-    const citeFor = (company: string) => {
-      if (!citations.has(company)) {
-        citations.set(company, api.projects.suggestCitations(company).then((res) => {
-          const clients = (res.projects || []).map((p) => p.client_name).filter(Boolean);
-          return clients.length ? `Past clients we can discuss: ${clients.join(', ')}.` : '';
-        }).catch(() => ''));
-      }
-      return citations.get(company)!;
-    };
-    const queue = [...remaining];
-    const work = async () => {
-      for (let person = queue.shift(); person && !stopRef.current; person = queue.shift()) {
-        const id = person.id;
-        setStatus((s) => ({ ...s, [id]: 'drafting' }));
-        try {
-          const cite = person.company ? await citeFor(person.company) : '';
-          const request = () => api.emails.generate({
-            contact_id: id,
-            angle: 'advisory',
-            // Two or three proposals need the room; "short" cannot hold a list.
-            length: 'standard',
-            tone,
-            model,
-            value_proposition: [valueProp.trim(), cite].filter(Boolean).join('\n\n') || undefined,
-            custom_instructions: goal.trim() ? `Email purpose: ${goal.trim()}` : undefined,
-          });
-          // A busy or throttled model is not a failed draft: wait and ask
-          // again. Nothing is charged when the model was never reached.
-          for (let attempt = 0; ; attempt += 1) {
-            try {
-              await request();
-              break;
-            } catch (e) {
-              const message = e instanceof Error ? e.message : '';
-              if (aiDraftingUnavailable(e) || !TRANSIENT.test(message) || attempt >= BACKOFF_MS.length || stopRef.current) throw e;
-              await new Promise((resolve) => window.setTimeout(resolve, BACKOFF_MS[attempt]));
-            }
-          }
-          setStatus((s) => ({ ...s, [id]: 'done' }));
-        } catch (e) {
-          const message = e instanceof Error ? e.message : 'Draft failed';
-          if (aiDraftingUnavailable(e)) {
-            // The model is off for everyone and the rest would fail the same
-            // way: stop, and offer the way that needs no model.
-            stopRef.current = true;
-            setAiDown(true);
-            setStatus((s) => ({ ...s, [id]: 'waiting' }));
-            continue;
-          }
-          const budgetSpent = /budget for this month is used up/i.test(message);
-          setStatus((s) => ({ ...s, [id]: budgetSpent ? 'waiting' : 'failed' }));
-          setReason((r) => ({ ...r, [id]: message }));
-          // A spent monthly budget fails every later request too: stop rather
-          // than mark the whole remainder failed.
-          if (budgetSpent) {
-            stopRef.current = true;
-            setNote("The club's AI budget for this month is used up. Everything drafted so far is saved; an administrator can raise the budget, or the rest can be drafted next month.");
-          }
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: WORKERS }, work));
+    await draftEach({
+      people: remaining,
+      tone, model, valueProp, goal,
+      stop: stopRef,
+      onEvent: (event) => {
+        setStatus((s) => ({ ...s, [event.id]: event.status }));
+        if (event.status === 'failed') setReason((r) => ({ ...r, [event.id]: event.reason }));
+      },
+      onUnavailable: () => setAiDown(true),
+      onBudgetSpent: () => setNote(BUDGET_NOTE),
+    });
     setRunning(false);
     onDrafted();
   };

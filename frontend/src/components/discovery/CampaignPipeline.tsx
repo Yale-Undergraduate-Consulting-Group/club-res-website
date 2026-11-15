@@ -1,55 +1,55 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, type Contact, type ImportOutcome, type ResolvedAlternative, type ResolvedCompany } from '../../api';
 import CompanyAutocomplete from '../CompanyAutocomplete';
-import RecipientPicker, { type PickerMode } from './RecipientPicker';
+import RecipientPicker, { type OfficerLookupState } from './RecipientPicker';
 import CompanyLanes, { type Lane } from './CompanyLanes';
-import RoleSuggestionBubbles from './RoleSuggestionBubbles';
+import SendPanel, { type Held } from './SendPanel';
 import { Button, Chip } from '../ui/Primitives';
-import { FUNCTIONS, LEVEL_TITLES, companyKey, defaultSelection, type Fn } from '../../lib/recipients';
+import { LEVEL_TITLES, companyKey, defaultSelection } from '../../lib/recipients';
 import {
-  WANTED_LABEL, companyStatus, dedupePeople, foundAsPerson, foundNotOnFile, matchesWanted,
+  WANTED_LABEL, companyStatus, dedupePeople, foundNotOnFile, matchesWanted,
   type CompanyStatus, type Wanted,
 } from '../../lib/peopleSheet';
+import { recipientsOf, tallyPeople, tallyReasons, type Tally } from '../../lib/sendPlan';
 import { type ChosenCompany, type CompanyRun, type SearchOptions, useDiscoveryRuns } from '../../lib/useDiscoveryRuns';
 
 /**
- * Companies to a reviewable campaign, in the order the work is actually done.
+ * From companies to sent emails on one screen.
  *
- * Every step of this already existed and lived on a different screen: pick
- * companies on one page, run Find people on another, write copy in Studio,
- * assemble a campaign in a fourth, define follow-ups in a fifth. Nobody
- * presses that many buttons, so the later steps went unused.
+ * This used to be three steps that ended in other pages: find people here,
+ * write copy in Drafts, assemble and release a campaign in Campaigns - ten
+ * clicks for one company and a serial wait for every draft. Nobody pressed
+ * that many buttons, so the later steps went unused.
  *
- * The steps are numbered rather than tabbed because they are ordered: you
- * cannot write to people you have not found. Each one states what it did, so
- * a member can stop after any of them and still have something real - a
- * campaign here is a draft, and nothing is sent without releasing it.
+ * Now adding a company is the whole of step one: its search starts at once
+ * (its filing's officers and a web search, queued behind the one before it),
+ * everyone it finds is on the list as they arrive, ticked by the default
+ * rule, and the message and the one Send button are in the left rail under
+ * the companies. The campaign page and Drafts stay for members who want
+ * them; this flow does not need either.
  *
- * The left rail holds the steps; the right surface is the same at every
- * step - the lanes that say where each company stands, then the sheet of
- * people - so the flowchart and the list it describes are never apart. A
- * step's controls sit in its rail body and end in the one button that
- * advances it. Everything that acts on a company (search it, add who was
- * found) is on the surface, next to the company.
+ * The right surface is the lanes that say where each company stands, then the
+ * sheet of people. The count in the sheet's header, in each lane and on the
+ * Send button is one number (sendPlan.ts), so they cannot disagree.
  */
 
-type Step = 1 | 2 | 3;
-
-/** Server-side ceilings, restated so the step can warn before the request. */
+/** Server-side ceilings, restated so the page can warn before the request. */
 const MAX_COMPANIES_PER_CAMPAIGN = 500;
 /** Chips drawn before the row collapses to a count. */
 const CHIP_WINDOW = 24;
 /** Qualified people one search keeps going for unless the member says
- *  otherwise. Enough for a team, not the whole payroll. */
-const DEFAULT_MAX_PROSPECTS = 60;
+ *  otherwise: the API's own default (YUCG_DEFAULT_PROSPECTS). */
+const DEFAULT_MAX_PROSPECTS = 120;
 /** The server's ceiling (YUCG_MAX_PROSPECTS), restated for the input. */
 const MAX_PROSPECTS = 800;
+/** People read from the club's contacts for the chosen companies at once:
+ *  the server's page ceiling. */
+const CONTACT_PAGE = 2000;
+/** Times a refused add is asked again before the people are left listed. */
+const IMPORT_TRIES = 3;
+const IMPORT_RETRY_MS = 3000;
 const IDLE: CompanyRun = { state: 'idle', pct: 0, message: '' };
-/** Searches that start by themselves in one sitting. Past this, a lane
- *  offers the search instead: the hourly limit is shared with everything
- *  else the member does. */
-const AUTO_SEARCH_LIMIT = 5;
 /** Who to look for, in the member's words, mapped to the titles a search
  *  asks for. Team leads by default: they are the people who answer. */
 const WHO: { id: Wanted; label: string }[] = [
@@ -104,8 +104,8 @@ function countryLabel(code?: string | null): string {
 }
 const KIND_LABEL: Record<string, string> = { captive: 'service centre', subsidiary: 'subsidiary', region: 'region' };
 
-/** Sure enough to search on its own: the member pasted its LinkedIn page,
- *  the club already works it, or its website was checked. */
+/** Sure enough to say so on its chip: the member pasted its LinkedIn page, the
+ *  club already works it, or its website was checked. */
 function isSure(company: ChosenCompany): boolean {
   return Boolean(company.verified || company.source === 'linkedin' || company.source === 'club');
 }
@@ -216,65 +216,23 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
     </span>
   );
 }
-const PICKER_MODE: Record<Step, PickerMode> = { 1: 'preview', 2: 'select', 3: 'review' };
-
-/** A numbered step header that is also the way back to that step. Defined
- *  outside the component so React keeps one instance rather than remounting
- *  every header on each keystroke in the message box. */
-function StepHeading({ n, title, hint, step, onSelect }: {
-  n: Step; title: string; hint: string; step: Step; onSelect: (n: Step) => void;
-}) {
-  return (
-    <button
-      type="button"
-      data-step={n}
-      onClick={() => onSelect(n)}
-      className={`w-full text-left px-5 py-3 flex items-center gap-3 ${
-        step === n ? 'bg-pale-sky/40' : 'hover:bg-pale-sky/20'}`}
-      aria-current={step === n}
-    >
-      <span className={`grid h-6 w-6 shrink-0 place-items-center text-xs font-semibold ${
-        step > n ? 'bg-[var(--blue-600)] text-white' : step === n ? 'bg-deep-navy text-white' : 'bg-pale-sky text-slate-600'}`}>
-        {step > n ? '✓' : n}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[15px] font-semibold text-deep-navy">{title}</span>
-        <span className="block text-xs text-slate-500">{hint}</span>
-      </span>
-    </button>
-  );
-}
-
-export type StageState = {
-  step: Step;
-  lanes: { company: string; found: number; ticked: number }[];
-};
 
 function clampProspects(raw: number): number {
   return Number.isFinite(raw) && raw > 0 ? Math.min(MAX_PROSPECTS, Math.max(1, Math.round(raw))) : DEFAULT_MAX_PROSPECTS;
 }
 
-export default function CampaignPipeline({ onStage }: { onStage?: (state: StageState) => void }) {
-  const navigate = useNavigate();
+export default function CampaignPipeline() {
   const [params] = useSearchParams();
   // A link that already carries search terms - the register's "Find people
   // here", the assistant's Fill, a bookmarked search - has made the first
-  // choice already, so it opens on the step that acts on it rather than
-  // asking again. Titles alone count: the assistant sends those without a
-  // company when it has asked what roles to target, and hiding the field
-  // behind a step would drop what the member just typed.
+  // choice already: its companies are added and searched as the page opens.
   const linkedCompany = (params.get('company') || '').trim();
   const linkedDomain = (params.get('domain') || '').trim();
-  // Several companies at once, which is how Studio hands over a ticked
-  // selection: there, ticking people only ever offered to delete them.
+  // Several companies at once, which is how the register hands over a
+  // ticked selection.
   const linkedCompanies = (params.get('companies') || '')
     .split(',').map((c) => c.trim()).filter(Boolean);
   const linkedRunId = Number(params.get('run') || '') || undefined;
-  const arrivedWithSearch = Boolean(
-    linkedCompany || linkedCompanies.length || linkedRunId
-    || (params.get('titles') || '').trim() || linkedDomain,
-  );
-  const [step, setStep] = useState<Step>(arrivedWithSearch ? 2 : 1);
 
   // A company is a name and, when something already knows it, a domain: the
   // register hands one over so the search does not re-derive a domain it
@@ -284,7 +242,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
       ? linkedCompanies.map((name) => ({ name }))
       // A company handed over with its website comes from the register,
       // whose websites come from filings: the same trusted record the
-      // resolver accepts, so it is sure enough to search on its own.
+      // resolver accepts.
       : linkedCompany ? [{
         name: linkedCompany,
         domain: linkedDomain || undefined,
@@ -302,14 +260,15 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   // Once the member has touched the ticks, a refresh must not re-decide
   // them: only people who have just been added get the default treatment.
   const touchedRef = useRef(false);
+  // Ticked people the server would not write to, and why: reported by the
+  // message panel, which asks. They are counted out of the one number.
+  const [held, setHeld] = useState<Map<number, string>>(new Map());
 
   // What the search is told. Shared across companies because it is what the
-  // member wants, not what a company calls it; the role bubbles translate it
-  // per company and only add to it when clicked.
+  // member wants, not what a company calls it.
   // Who to look for is one choice; titles in the member's own words are
   // optional and, when given, win. Nobody has to type a title to search.
   const [level, setLevel] = useState<Wanted>('working');
-  const [fn, setFn] = useState<Fn | ''>('');
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
   // The goal a search keeps going for: it stops at this many qualified
@@ -330,8 +289,12 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-
   const chosenNames = useMemo(() => chosen.map((c) => c.name), [chosen]);
+  // Read by work that outlives a render (a lookup that finishes after the
+  // member added another company), so it reloads the people for what is
+  // chosen now rather than when it started.
+  const chosenNamesRef = useRef(chosenNames);
+  useEffect(() => { chosenNamesRef.current = chosenNames; }, [chosenNames]);
 
   // Adding never removes: Add on a company already chosen used to toggle it
   // off again.
@@ -404,15 +367,14 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   const setWhere = (name: string, target: string | undefined) =>
     setChosen((current) => current.map((c) => (companyKey(c.name) === companyKey(name) ? { ...c, targetCountry: target } : c)));
   const autoTried = useRef<Set<string>>(new Set());
-  const autoStarted = useRef(0);
 
   const visibleChips = showAllChips ? chosenNames : chosenNames.slice(0, CHIP_WINDOW);
   const hiddenChips = chosenNames.length - visibleChips.length;
 
   // The people on file at the chosen companies follow the companies: choose
-  // one and its people appear, at whatever step. Debounced so a run of chip
-  // clicks is one request, and stamped so a slow answer to an old choice
-  // cannot overwrite the current one.
+  // one and its people appear. Debounced so a run of chip clicks is one
+  // request, and stamped so a slow answer to an old choice cannot overwrite
+  // the current one.
   const requestRef = useRef(0);
   // Which companies the people list currently answers for: a search that
   // starts by itself must not mistake "not loaded yet" for "nobody on file".
@@ -428,13 +390,22 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
     setBusy(true);
     setError('');
     try {
-      const res = await api.contacts.list({ companies: names.join(','), limit: 800 });
+      const res = await api.contacts.list({ companies: names.join(','), limit: CONTACT_PAGE });
       if (requestId !== requestRef.current) return;
-      // The same person on file twice (two addresses, one name) is one row;
-      // someone already written to is the one kept, so that history shows.
-      const items = dedupePeople(Array.isArray(res?.items) ? res.items : [], (p) => p, (p) => (p.last_sent_at ? 1 : 0));
+      // Only people at the chosen companies are listed, so the header, the
+      // lanes and what Send writes to count the same people. The same person
+      // on file twice (two addresses, one name) is one row; someone already
+      // written to is the one kept, so that history shows.
+      const rows = Array.isArray(res?.items) ? res.items : [];
+      const chosenKeys = new Set(names.map(companyKey));
+      const items = dedupePeople(
+        rows.filter((p) => chosenKeys.has(companyKey(p.company))), (p) => p, (p) => (p.last_sent_at ? 1 : 0),
+      );
       setPeople(items);
       setPeopleFor(names.map(companyKey).sort().join('\n'));
+      if (Number(res?.total) > rows.length) {
+        setError(`Showing the first ${rows.length} of ${res.total} people at these companies. Search for the rest by company.`);
+      }
       setSelected((current) => {
         if (!touchedRef.current) return defaultSelection(items);
         const present = new Set(items.map((p) => p.id));
@@ -457,12 +428,12 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
   const onImported = useCallback(async (outcomes: ImportOutcome[]) => {
     const createdIds = outcomes
       .flatMap((o) => (o.outcome === 'created' && o.contact_id !== null ? [o.contact_id] : []));
-    await loadPeople(chosenNames, createdIds);
-  }, [loadPeople, chosenNames]);
+    await loadPeople(chosenNamesRef.current, createdIds);
+  }, [loadPeople]);
 
   const {
     runs, runsReady, found, linkedRun, notice: runNotice, error: runError,
-    startRun, addFound, exportRun, deleteRun,
+    startRun, addFound, holdFound, exportRun, deleteRun,
   } = useDiscoveryRuns({ chosen, linkedRunId, onImported });
 
   // A link to a run means that run's company: make sure it has a lane, and
@@ -486,108 +457,196 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
     setSelected(ids);
   };
 
-  // Only what was ticked, and only what can be reached: a selection kept from
-  // before an address was removed must not become a silent send failure.
-  const recipients = useMemo(
-    () => people.filter((p) => p.email && selected.includes(p.id)),
-    [people, selected],
-  );
+  // One number, counted once: who is ticked, reachable and not held. The
+  // header, every lane and the Send button read this and nothing else.
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  // Everyone ticked who has an address: who the server is asked about, and
+  // what a selection kept from before an address was removed cannot become.
+  const ticked = useMemo(() => people.filter((p) => p.email && selectedSet.has(p.id)), [people, selectedSet]);
+  const recipients = useMemo(() => recipientsOf(people, selectedSet, held), [people, selectedSet, held]);
 
-  // One lane per company: how many people it has (on file, plus found and
-  // not yet on file), how many of them are ticked, and what its search is
-  // doing.
-  const { lanes, statuses } = useMemo(() => {
+  // One lane per company: how many people can be emailed there, and what
+  // its search is doing.
+  const { lanes, statuses, tally, tallies, heldList } = useMemo(() => {
     const byKey: Record<string, Contact[]> = {};
     for (const person of people) (byKey[companyKey(person.company)] ||= []).push(person);
     const statusByKey: Record<string, CompanyStatus> = {};
+    const tallyByKey: Record<string, Tally> = {};
+    const heldNames: Held[] = [];
+    let refusedTotal = 0;
     const list = chosen.map<Lane>((company) => {
       const key = companyKey(company.name);
       const rows = byKey[key] || [];
-      const foundHere = found[key] || [];
-      const extra = foundHere.length ? foundNotOnFile(people, foundHere) : [];
+      const refused = (found[key] || []).length ? foundNotOnFile(people, found[key]).filter((p) => p.skippedReason) : [];
+      for (const p of refused) {
+        heldNames.push({ name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.email || 'Someone', reason: p.skippedReason! });
+      }
+      refusedTotal += refused.length;
+      const companyTally = tallyPeople(rows, selectedSet, held, refused.length);
+      tallyByKey[key] = companyTally;
       const run = runs[key] || IDLE;
-      const matching = rows.filter((p) => matchesWanted(p, level)).length
-        + extra.filter((p) => matchesWanted(foundAsPerson(p), level)).length;
-      const status = companyStatus({ run, total: rows.length + extra.length, matching, wanted: level });
+      const matching = rows.filter((p) => matchesWanted(p, level)).length;
+      const status = companyStatus({ run, total: companyTally.total, ready: companyTally.canEmail, matching, wanted: level });
       statusByKey[key] = status;
-      return {
-        company: company.name,
-        found: rows.length + extra.length,
-        ticked: rows.filter((p) => selected.includes(p.id) && p.email).length,
-        run,
-        status,
-      };
+      return { company: company.name, found: companyTally.total, ready: companyTally.canEmail, run, status };
     });
-    return { lanes: list, statuses: statusByKey };
-  }, [chosen, people, selected, found, runs, level]);
+    for (const person of people) {
+      const reason = selectedSet.has(person.id) ? held.get(person.id) : undefined;
+      if (reason) heldNames.push({ name: person.name || person.email, reason });
+    }
+    return {
+      lanes: list, statuses: statusByKey, tallies: tallyByKey, heldList: heldNames,
+      tally: tallyPeople(people, selectedSet, held, refusedTotal),
+    };
+  }, [chosen, people, selectedSet, held, found, runs, level]);
 
   // Why a search could not run, once per reason however many companies hit it.
   const pausedNotes = [...new Set(lanes.flatMap((l) => (l.status.problem ? [l.status.problem] : [])))];
   const searchingCount = lanes.filter((l) => l.run.state === 'searching' || l.run.state === 'queued').length;
 
-  useEffect(() => {
-    onStage?.({ step, lanes });
-  }, [onStage, step, lanes]);
-
-  // Moving to a step scrolls it to the top of the column, so the work is
-  // where the eye already is instead of below the fold.
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const heading = rootRef.current?.querySelector(`[data-step="${step}"]`);
-    if (!heading) return;
-    const timer = window.setTimeout(
-      () => heading.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-    return () => window.clearTimeout(timer);
-  }, [step]);
-
-
-  // The company whose vocabulary the search controls are about: the lane
-  // last pointed at, else the first chosen.
+  // The company the sheet's actions are for: the lane last pointed at, else
+  // the first chosen.
   const focused = chosen.find((c) => companyKey(c.name) === focusedKey) ?? chosen[0] ?? null;
   // What a search is told, read when it starts rather than when it was
   // queued: changing who to look for while companies wait changes what all
   // of them look for.
-  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, level, function: fn || undefined });
+  const searchOptionsRef = useRef<SearchOptions>({ titleHints: searchTitles, maxProspects, level });
   useEffect(() => {
-    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level, function: fn || undefined };
-  }, [searchTitles, maxProspects, level, fn]);
+    searchOptionsRef.current = { titleHints: searchTitles, maxProspects, level };
+  }, [searchTitles, maxProspects, level]);
 
-  // One search, from wherever it is asked for: the lane, the sheet header for
-  // the focused company, or on its own when a company arrives with nobody on file.
+  // One search, from wherever it is asked for: the sheet header for the
+  // focused company, a group's own button, or on its own when a company
+  // is added.
   const findPeople = useCallback((company: ChosenCompany) => {
     setFocusedKey(companyKey(company.name));
-    void startRun(company, () => searchOptionsRef.current);
+    startRun(company, () => searchOptionsRef.current);
   }, [startRun]);
 
-  // A company the member is sure of, with nobody on file and no search yet,
-  // is searched as soon as it is added - the search is the reason it was
-  // added. Waits until both the people and the earlier searches are known,
-  // and stops starting searches on its own after AUTO_SEARCH_LIMIT.
+  // The officers a company's filing names, put on the list without a search.
+  // What it did (or why it did nothing) is said under the company, and the
+  // new people arrive ticked by the same rule a search's do. When it runs by
+  // itself (`auto`), a company with no filing is not worth a message: the
+  // search that runs beside it is how that company's people are found.
+  const [officerLookups, setOfficerLookups] = useState<Record<string, OfficerLookupState>>({});
+  const lookUpOfficers = useCallback(async (company: ChosenCompany, auto = false) => {
+    const key = companyKey(company.name);
+    if (!auto) setFocusedKey(key);
+    setOfficerLookups((prev) => ({ ...prev, [key]: { busy: true } }));
+    const forget = () => setOfficerLookups((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      const res = await api.yucgoutreach.lookUpOfficers({
+        company_name: company.name, company_domain: company.domain, entity: company.entity,
+      });
+      const created = Number(res.created) || 0;
+      const updated = Number(res.updated) || 0;
+      const results = Array.isArray(res.results) ? res.results : [];
+      const added = created + updated > 0;
+      const parts = [
+        created > 0 ? `Added ${created} ${created === 1 ? 'officer' : 'officers'} from the company filing.` : '',
+        created === 0 && updated > 0
+          ? `${updated} ${updated === 1 ? 'officer is' : 'officers are'} already on file.` : '',
+        auto && !added ? '' : res.note || '',
+        res.without_address > 0 && added
+          ? `${res.without_address} named in the filing ${res.without_address === 1 ? 'has' : 'have'} no address yet.` : '',
+        res.held_by_note ? `${res.held_by_note}.` : '',
+      ].filter(Boolean);
+      if (auto && parts.length === 0) forget();
+      else setOfficerLookups((prev) => ({ ...prev, [key]: { busy: false, note: parts.join(' '), revealed: created > 0 } }));
+      // The list is read again only when the lookup put someone on it.
+      if (results.length > 0 || !auto) {
+        await loadPeople(chosenNamesRef.current, results.flatMap((r) => (r.outcome === 'created' && r.contact_id !== null ? [r.contact_id] : [])));
+      }
+    } catch (e) {
+      if (auto && e instanceof ApiError && e.status === 404) {
+        forget();
+        return;
+      }
+      setOfficerLookups((prev) => ({
+        ...prev, [key]: { busy: false, error: e instanceof Error ? e.message : 'Could not look up officers' },
+      }));
+    }
+  }, [loadPeople]);
+
+  // Filings are read one company at a time: the public registers behind them
+  // are rate limited, and the club works companies one at a time.
+  const officerQueue = useRef<ChosenCompany[]>([]);
+  const officerBusy = useRef(false);
+  const queueOfficers = useCallback((company: ChosenCompany) => {
+    officerQueue.current.push(company);
+    if (officerBusy.current) return;
+    officerBusy.current = true;
+    void (async () => {
+      for (let next = officerQueue.current.shift(); next; next = officerQueue.current.shift()) {
+        await lookUpOfficers(next, true);
+      }
+      officerBusy.current = false;
+    })();
+  }, [lookUpOfficers]);
+
+  // A company with no search yet is searched as soon as it is added - the
+  // search is the reason it was added - and its filing's officers are read
+  // beside it. Every company is queued, however many: the searches run one
+  // after another, each shown as queued until its turn. Waits until both the
+  // people and the earlier searches are known, or a company searched an hour
+  // ago would look unsearched.
   const chosenKeyString = chosen.map((c) => companyKey(c.name)).sort().join('\n');
   useEffect(() => {
     if (busy || !runsReady || peopleFor !== chosenKeyString) return;
     const due = chosen.filter((c) => {
       const key = companyKey(c.name);
-      if (autoTried.current.has(key) || !isSure(c)) return false;
-      const lane = lanes.find((l) => companyKey(l.company) === key);
-      return Boolean(lane && lane.found === 0 && lane.run.state === 'idle');
+      return !autoTried.current.has(key) && (runs[key] || IDLE).state === 'idle';
     });
     if (!due.length) return;
     const timer = window.setTimeout(() => {
       for (const company of due) {
         autoTried.current.add(companyKey(company.name));
-        if (autoStarted.current >= AUTO_SEARCH_LIMIT) continue;
-        autoStarted.current += 1;
         findPeople(company);
+        queueOfficers(company);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [busy, runsReady, peopleFor, chosenKeyString, chosen, lanes, findPeople]);
+  }, [busy, runsReady, peopleFor, chosenKeyString, chosen, runs, findPeople, queueOfficers]);
 
-  const findByName = useCallback((name: string) => {
-    const company = chosen.find((c) => companyKey(c.name) === companyKey(name));
-    if (company) findPeople(company);
-  }, [chosen, findPeople]);
+  // What a finished search found goes onto the list by itself: everyone, at
+  // their own level, ticked by the default rule. The server decides who it
+  // will take and says why it refuses the rest, which stay listed as held.
+  // A request that fails is tried again a few times, then left listed with
+  // the reason rather than retried forever.
+  const importTries = useRef<Map<number, number>>(new Map());
+  const importingKeys = useRef<Set<string>>(new Set());
+  const [importTick, setImportTick] = useState(0);
+  useEffect(() => {
+    if (busy || peopleFor !== chosenKeyString) return;
+    for (const company of chosen) {
+      const key = companyKey(company.name);
+      const state = runs[key]?.state;
+      if ((state !== 'done' && state !== 'failed') || importingKeys.current.has(key)) continue;
+      const pending = foundNotOnFile(people, found[key] || []).filter((p) => !p.skippedReason);
+      if (!pending.length) continue;
+      const exhausted = pending.filter((p) => (importTries.current.get(p.id) ?? 0) >= IMPORT_TRIES);
+      if (exhausted.length) holdFound(key, exhausted.map((p) => p.id), 'could not be added right now; reload the page to try again');
+      const ids = pending.filter((p) => !exhausted.includes(p)).map((p) => p.id);
+      if (!ids.length) continue;
+      for (const id of ids) importTries.current.set(id, (importTries.current.get(id) ?? 0) + 1);
+      importingKeys.current.add(key);
+      void addFound(key, ids).then((ok) => new Promise<void>((resolve) => {
+        // A refused request waits before the next try; a good one goes on at once.
+        window.setTimeout(resolve, ok ? 0 : IMPORT_RETRY_MS);
+      })).finally(() => {
+        importingKeys.current.delete(key);
+        setImportTick((n) => n + 1);
+      });
+    }
+  }, [busy, peopleFor, chosenKeyString, chosen, runs, found, people, addFound, holdFound, importTick]);
+
+  const companyLabel = chosen.length <= 2
+    ? chosen.map((c) => c.name).join(', ')
+    : `${chosen[0].name}, ${chosen[1].name} +${chosen.length - 2} more`;
 
   return (
     // 21.625rem is the shell around this grid at xl: header, main padding,
@@ -596,12 +655,15 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
     // its own beside the rail's and the surface's.
     <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 xl:h-[calc(100vh-21.625rem)]"
          data-section="campaign-pipeline">
-      <div ref={rootRef}
-           data-rail
+      <div data-rail
            className="xl:col-span-2 min-h-0 xl:max-h-full xl:overflow-y-auto surface-card surface-card--flush overflow-hidden self-start">
-      <StepHeading n={1} title="Add companies" hint={chosen.length ? `${chosen.length} added` : 'A name or its LinkedIn page'} step={step} onSelect={setStep} />
-      {step === 1 && (
-        <div className="px-5 pb-5 space-y-3 border-b border-pale-sky">
+        <div className="px-5 pb-5 pt-4 space-y-3 border-b border-pale-sky" data-testid="add-companies">
+          <div>
+            <h2 className="text-[15px] font-semibold text-deep-navy">Add companies</h2>
+            <p className="text-xs text-slate-500">
+              {chosen.length ? `${chosen.length} added` : 'A name or its LinkedIn page'}
+            </p>
+          </div>
           <div className="flex gap-2 items-end">
             <div className="flex-1">
               <CompanyAutocomplete
@@ -626,7 +688,7 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
           <p className="text-xs text-slate-500">
             {resolving > 0
               ? 'Looking it up…'
-              : 'Paste a LinkedIn company page for an exact match. Several at once work too, one per line.'}
+              : 'Each company is searched as soon as it is added. Paste a list, one per line, or several LinkedIn pages at once.'}
           </p>
 
           {chosen.length > 0 && (
@@ -661,38 +723,20 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
             )}
           </div>
 
-          <Button
-            className="w-full"
-            disabled={chosen.length === 0 || resolving > 0}
-            onClick={() => setStep(2)}
-          >
-            {chosen.length === 0 ? 'Add a company to start' : 'Next: tick who gets it'}
-          </Button>
-        </div>
-      )}
-
-      <StepHeading n={2} title="Tick who gets it" hint={people.length ? `${recipients.length} of ${people.length} ticked` : 'No people yet'} step={step} onSelect={setStep} />
-      {step === 2 && (
-        <div className="px-5 pb-5 space-y-3 border-b border-pale-sky">
-          <p className="text-sm text-deep-navy">
-            <strong>{recipients.length}</strong> of {people.filter((p) => p.email).length} reachable
-            people ticked, at {chosen.length} compan{chosen.length === 1 ? 'y' : 'ies'}. Tick them on
-            the right.
-          </p>
-          {people.length === 0 && !busy && (
+          {chosen.length > 0 && people.length === 0 && !busy && (
             <p className="text-sm text-slate-500" data-testid="no-people-note">
               {pausedNotes[0]
                 ?? (searchingCount > 0
                   ? `Searching for people at ${searchingCount} compan${searchingCount === 1 ? 'y' : 'ies'}…`
                   : lanes.length > 0 && lanes.every((l) => l.run.state === 'done')
                     ? `Nobody found for ${WANTED_LABEL[level]} at these companies. Try another level below, or import a spreadsheet.`
-                    : 'No people on file at these companies yet. Press Find people on a company to search for them.')}
+                    : 'No people on file at these companies yet.')}
             </p>
           )}
 
           {/* Who a search looks for is one choice, not a title the member has
               to guess. Titles in their own words are there for anyone who
-              wants them, and the company's own titles are one click each. */}
+              wants them. */}
           <div>
             <p className="text-xs font-medium text-slate-600" id="who-to-look-for">Who to look for</p>
             <div role="radiogroup" aria-labelledby="who-to-look-for" className="mt-1 flex flex-wrap gap-2">
@@ -702,19 +746,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
                 </Chip>
               ))}
             </div>
-            {/* Optional: asks the first searches for one function's titles. */}
-            <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600">
-              Function
-              <select
-                value={fn}
-                onChange={(e) => setFn(e.target.value as Fn | '')}
-                aria-label="Function to look for"
-                className="border border-pale-sky bg-white px-3 py-1.5 text-sm font-normal text-deep-navy"
-              >
-                <option value="">Any function</option>
-                {FUNCTIONS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-              </select>
-            </label>
             <p className="mt-1 text-xs text-slate-500">
               Searching for: {searchTitles}{' · '}
               <button type="button" className="underline" onClick={() => setShowOtherTitles((v) => !v)}>
@@ -751,24 +782,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               </span>
             </div>
           </div>
-          {focused && (
-            <div data-testid="focused-company" data-company={focused.name}>
-              <RoleSuggestionBubbles
-                company={focused.name}
-                domain={focused.domain || ''}
-                hints={titleHints}
-                onAdd={(title) => {
-                  setShowOtherTitles(true);
-                  setTitleHints((prev) => {
-                    const parts = prev.split(',').map((p) => p.trim()).filter(Boolean);
-                    if (parts.some((p) => p.toLowerCase() === title.toLowerCase())) return prev;
-                    return [...parts, title].join(', ');
-                  });
-                }}
-              />
-            </div>
-          )}
-
           {/* The other way people arrive: the spreadsheet you already have. */}
           <div className="flex flex-wrap items-center gap-4 text-xs">
             <input
@@ -804,51 +817,30 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               {importing ? 'Importing…' : 'Or import a spreadsheet'}
             </button>
           </div>
-
-          <button
-            type="button"
-            disabled={recipients.length === 0}
-            onClick={() => setStep(3)}
-            className="ui-button ui-button--primary"
-          >
-            Write to these {recipients.length}
-          </button>
         </div>
-      )}
 
-      <StepHeading n={3} title="Write to each of them" hint="An advisory email per person, in Drafts" step={step} onSelect={setStep} />
-      {step === 3 && (
-        <div className="px-5 pb-5 space-y-3 border-b border-pale-sky">
-          {/* This step used to write one template for everybody, with
-              {first} and {company} as the only parts that changed - which is
-              exactly how it read. Drafts writes to one person at a time, so
-              the chosen people go there and each gets a draft of their own. */}
-          <p className="text-sm text-slate-700">
-            Each of the {recipients.length} gets their own email in Drafts: an advisory note on two
-            or three projects a YUCG team could build for their company, chosen for their role.
-            Every draft is yours to read and edit before anything is sent.
-          </p>
-          <button
-            type="button"
-            disabled={recipients.length === 0}
-            onClick={() => navigate(`/studio?${new URLSearchParams({
-              companies: [...new Set(recipients.map((r) => (r.company || '').trim()).filter(Boolean))].join(','),
-              contact_ids: recipients.map((r) => r.id).join(','),
-            })}`)}
-            className="ui-button ui-button--primary"
-          >
-            Write to these {recipients.length} in Drafts →
-          </button>
-        </div>
-      )}
+        <SendPanel
+          ticked={ticked}
+          recipients={recipients}
+          held={heldList}
+          heldPeople={tally.held}
+          leftOut={tallyReasons({ ...tally, held: 0, canEmail: 0 })}
+          searching={searchingCount}
+          companyLabel={companyLabel || 'Outreach'}
+          draftsHref={recipients.length ? `/studio?${new URLSearchParams({
+            companies: [...new Set(recipients.map((r) => (r.company || '').trim()).filter(Boolean))].join(','),
+            contact_ids: recipients.map((r) => r.id).join(','),
+          })}` : ''}
+          onHeld={setHeld}
+        />
 
-      {error && <p className="ui-notice ui-notice--danger mx-5 mb-4">{error}</p>}
+        {error && <p className="ui-notice ui-notice--danger mx-5 my-4">{error}</p>}
       </div>
 
-      {/* The surface: the same two things at every step, in the same order,
-          so the flowchart and the list it describes are never apart. The
-          aside is the only thing that scrolls; the lanes stay short and the
-          sheet takes whatever is left. */}
+      {/* The surface: the lanes, which say where each company's search
+          stands, then the one sheet of people they describe. The aside is
+          the only thing that scrolls; the lanes stay short and the sheet
+          takes whatever is left. */}
       <aside className="xl:col-span-3 min-h-0 xl:overflow-y-auto space-y-4" data-surface>
         {runNotice && (
           <p className="ui-notice ui-notice--info text-sm" role="status">{runNotice}</p>
@@ -861,9 +853,9 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
         )}
         <CompanyLanes
           lanes={lanes}
+          emailed={tally.canEmail}
           focused={focused?.name ?? null}
           onFocus={(name) => setFocusedKey(companyKey(name))}
-          onFind={findByName}
           onExport={(runId) => void exportRun(runId)}
           onDelete={(runId) => {
             if (window.confirm('Delete this search and everything it found?')) void deleteRun(runId);
@@ -873,7 +865,6 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
         {chosen.length > 0 ? (
           <section className="surface-card surface-card--compact" aria-label="People" data-testid="sheet">
             <RecipientPicker
-              mode={PICKER_MODE[step]}
               companies={chosen}
               people={people}
               selected={selected}
@@ -881,20 +872,24 @@ export default function CampaignPipeline({ onStage }: { onStage?: (state: StageS
               found={found}
               runs={runs}
               statuses={statuses}
+              tally={tally}
+              tallies={tallies}
+              held={held}
               wanted={level}
               onFind={findPeople}
               focused={focused}
+              officers={officerLookups}
+              onLookUpOfficers={lookUpOfficers}
               onFindEverywhere={(company) => {
                 setWhere(company.name, '*');
                 findPeople({ ...company, targetCountry: '*' });
               }}
-              onAddFound={addFound}
               busy={busy}
             />
           </section>
         ) : (
           <section className="surface-card text-sm text-slate-500" aria-label="People">
-            Choose a company and the people on file there appear here.
+            Add a company and the people on file there appear here; its search starts at once.
           </section>
         )}
       </aside>

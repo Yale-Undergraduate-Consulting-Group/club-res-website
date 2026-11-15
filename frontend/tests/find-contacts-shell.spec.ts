@@ -76,10 +76,11 @@ test('every Find contacts surface is a pill, and the company field reaches the p
   // percentages: a format is only useful at the moment an address is missing,
   // so it appears on the contact row that lacks one, and only once confirmed.
   await expect(page.getByText('Company email formats')).toHaveCount(0);
-  // Find people is the campaign itself: a rail of numbered steps, with the
-  // work of the current step in the wide column beside it.
-  await expect(page.getByRole('button', { name: /Add companies/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Tick who gets it/ })).toBeVisible();
+  // Find people is the campaign itself: the companies and the message in a
+  // rail, with the people and where each company stands beside it.
+  await expect(page.getByTestId('add-companies').getByRole('heading', { name: 'Add companies' })).toBeVisible();
+  await expect(page.getByTestId('message-panel')).toBeVisible();
+  await expect(page.getByTestId('send-panel')).toBeVisible();
 
   // Looking up a single named person is gone: it was a company search with
   // one name in it, which Find people already does, and the address guess it
@@ -113,16 +114,15 @@ test('the guide explains the page instead of a chatbot driving it', async ({ pag
   await page.goto('/scraper');
 
   // The assistant existed to translate a sentence into a form fill, which
-  // mattered when the work was spread over six pages. The work is now four
-  // numbered steps on one page, so the help is static, page-specific and
-  // costs nothing to open.
+  // mattered when the work was spread over six pages. The work is now one
+  // screen, so the help is static, page-specific and costs nothing to open.
   await expect(page.getByRole('button', { name: 'Open assistant' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'How this page works' }).click();
   const guide = page.getByRole('dialog', { name: /How Find contacts works/ });
   await expect(guide).toBeVisible();
   await expect(guide).toContainText('200,000 companies');
-  await expect(guide).toContainText('Nothing leaves until you release the campaign');
+  await expect(guide).toContainText('Nothing leaves until you confirm');
 
   // It points at the next thing rather than ending the trail.
   await guide.getByRole('link', { name: /Next: Overview/ }).click();

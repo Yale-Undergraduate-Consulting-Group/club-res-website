@@ -184,30 +184,32 @@ export type CompanyStatus = {
 
 const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`;
 
-export function companyStatus({ run, total, matching, wanted }: {
-  run: CompanyRun; total: number; matching: number; wanted: Wanted;
+/** `ready` is the page's one number - ticked, reachable and not held, the people
+ *  a send writes to - counted for this company; `total` is everyone listed. */
+export function companyStatus({ run, total, ready, matching, wanted }: {
+  run: CompanyRun; total: number; ready: number; matching: number; wanted: Wanted;
 }): CompanyStatus {
   const label = WANTED_LABEL[wanted];
   const next = WANTED_LABEL[WANTED_NEXT[wanted]];
+  const emailed = `${ready} can be emailed`;
   if (run.state === 'searching') return { tone: 'busy', text: `Searching… ${Math.round(run.pct)}%`, long: 'Searching…' };
   if (run.state === 'queued') return { tone: 'busy', text: 'Queued', long: 'Queued: waiting for another search to finish' };
   if (run.paused) {
     return total > 0
-      ? { tone: 'paused', text: `${people(total)} found · search paused`, long: `${people(total)} found · search paused`, problem: run.paused }
+      ? { tone: 'paused', text: `${emailed} · search paused`, long: `${emailed} · ${people(total)} found · search paused`, problem: run.paused }
       : { tone: 'paused', text: 'Search paused', long: 'Search paused', problem: run.paused };
   }
   if (run.state === 'failed') {
     return total > 0
-      ? { tone: 'paused', text: `${people(total)} found · search stopped`, long: `${people(total)} found · the search stopped early; try again` }
+      ? { tone: 'paused', text: `${emailed} · search stopped`, long: `${emailed} · ${people(total)} found · the search stopped early; try again` }
       : { tone: 'paused', text: 'Search stopped', long: 'The search stopped before it found anyone; try again' };
   }
   if (total > 0) {
-    const text = `${people(total)} found`;
     const forLevel = matching === total ? '' : matching === 0 ? ` · none for ${label} (try ${next})` : ` · ${matching} for ${label}`;
-    return { tone: 'ok', text, long: text + forLevel };
+    return { tone: 'ok', text: emailed, long: `${emailed} · ${people(total)} found${forLevel}` };
   }
   if (run.state === 'done') return { tone: 'empty', text: 'Nobody found', long: `Nobody found for ${label} (try ${next})` };
-  return { tone: 'idle', text: 'Not searched yet', long: `Not searched yet. Press Find people to look for ${label}.` };
+  return { tone: 'idle', text: 'Not searched yet', long: `Not searched yet. Find people to look for ${label}.` };
 }
 
 /** Who a search found at a company that is not already on file there, by

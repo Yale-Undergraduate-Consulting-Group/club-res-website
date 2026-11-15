@@ -17,12 +17,13 @@ const OWN_FOUND_SO_FAR = [
 
 async function mockSearch(page: Page) {
   const runsCreated: Record<string, unknown>[] = [];
+  const contacts: Record<string, unknown>[] = [];
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url());
     const p = url.pathname;
     let body: unknown = {};
     if (p === '/api/auth/me') body = { authenticated: true, user };
-    else if (p === '/api/contacts') body = { items: [], total: 0, limit: 400, offset: 0 };
+    else if (p === '/api/contacts') body = { items: contacts, total: contacts.length, limit: 2000, offset: 0 };
     else if (p === '/api/contacts/companies/summary') body = [];
     else if (p === '/api/yucgoutreach/resolve-company') {
       body = { name: 'NVIDIA', domain: 'nvidia.com', domain_verified: true, linkedin_url: null, source: 'register', alternatives: [] };
@@ -37,6 +38,11 @@ async function mockSearch(page: Page) {
     }
     else if (p === '/api/yucgoutreach/runs/9/prospects') body = OWN_FOUND_SO_FAR;
     else if (p === '/api/yucgoutreach/runs/5/prospects') body = ANA_FOUND;
+    // What Ana found is put on the member's list by the page itself.
+    else if (p === '/api/yucgoutreach/runs/5/import-contacts') {
+      contacts.push({ id: 31, name: 'Ada Byron', email: 'ada.byron@nvidia.com', title: 'Engineering Manager', company: 'NVIDIA', person_level: 'working' });
+      body = { created: 1, updated: 0, skipped: 0, results: [{ prospect_id: 51, contact_id: 31, outcome: 'created' }] };
+    }
     else if (p === '/api/yucgoutreach/runs') {
       body = url.searchParams.getAll('companies').includes('nvidia') ? [TEAMMATE_RUN] : [];
     }
@@ -59,7 +65,6 @@ test('a teammate\'s recent search shows at once with who found it, and Search ag
   await rail.getByLabel('Company').fill('NVIDIA');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  await rail.getByRole('button', { name: 'Next: tick who gets it' }).click();
 
   // Ana's people are there without a search of the member's own.
   const attribution = pipeline.getByTestId('shared-run');

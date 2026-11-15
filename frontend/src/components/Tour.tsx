@@ -28,7 +28,7 @@ const STOPS: Stop[] = [
   {
     route: '/campaigns',
     title: 'How YUCG Outreach works',
-    body: 'Four stops, in the order the work happens: pick companies, choose the people there, write each of them their own email, then follow what came back. Nothing is sent to anyone until you release a campaign.',
+    body: 'Three stops, in the order the work happens: pick companies, find the people there and send to them on one screen, then follow what came back. Nothing is sent to anyone until you confirm the send.',
   },
   {
     route: '/scraper?view=register',
@@ -38,33 +38,33 @@ const STOPS: Stop[] = [
   },
   {
     route: '/scraper?view=company',
-    target: '[data-step="1"]',
+    target: '[data-testid="add-companies"]',
     title: '2 · Choose companies',
-    body: 'Or type any company here. Pick it from the list rather than typing the whole name: the list carries the company\'s website, and a search with a website finds far more people.',
+    body: 'Or type any company here, or paste a list, one per line. Pick it from the list rather than typing the whole name: the list carries the company\'s website, and a search with a website finds far more people. Every company is searched as soon as it is added.',
   },
   {
     route: '/scraper?view=company',
-    target: '[data-step="2"]',
+    target: '[data-testid="sheet"]',
     title: '3 · Choose who gets it',
-    body: 'Everyone on file at those companies, grouped by company. Working-level people are ticked for you. Board seats and the very senior - CEO, CFO, President, senior VPs - are not: they rarely answer a student\'s cold email. Nor are rows whose name is page text rather than a person. Tick any of them yourself if you mean to.',
+    body: 'Everyone found at those companies, on one list as they arrive. Working-level people are ticked for you. Board seats and the very senior - CEO, CFO, President, senior VPs - are not: they rarely answer a student\'s cold email. Nor are rows whose name is page text rather than a person. Tick any of them yourself if you mean to. The number at the top is how many can be emailed, with the reasons for everyone left out.',
   },
   {
     route: '/scraper?view=company',
     target: '[data-testid="company-lanes"]',
     title: 'Where each company stands',
-    body: 'One lane per company: people found, people ticked, all merging into one campaign. "Find more people" on a lane, or at the top of the people list for the company you are looking at, searches that company again until it has as many people as you asked for.',
+    body: 'One lane per company: its search, and how many people there can be emailed. "Find more people" at the top of the people list searches the company you are looking at again until it has as many people as you asked for.',
   },
   {
     route: '/scraper?view=company',
-    target: '[data-step="3"]',
-    title: '4 · Write to each of them',
-    body: 'The people you ticked go to Drafts together, and each gets an email of their own - not one template with their name swapped in.',
+    target: '[data-testid="message-panel"]',
+    title: '4 · Write and send',
+    body: 'The club\'s Intro template is already chosen, with a preview of the first email. Switch template, or choose "Write with AI instead" for an email of their own for each person. "Send to N" asks once, then sends from your own Gmail.',
   },
   {
     route: '/studio',
     target: '.email-studio-contacts',
     title: 'Drafts',
-    body: 'Tick people here and press "Write to each of these", or arrive from Find people. "Draft an advisory email for each" writes every person a note proposing two or three projects a YUCG team could build for their company.',
+    body: 'Optional: to read and edit each email before it goes, tick people here and press "Write to each of these", or arrive from "Open these in Drafts" on Find people. "Draft an advisory email for each" writes every person a note proposing two or three projects a YUCG team could build for their company.',
   },
   {
     route: '/studio',

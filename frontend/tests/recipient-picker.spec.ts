@@ -10,26 +10,29 @@ const FOUND = [
   { id: 5, name: 'Grace Hopper', email: '', title: 'Head of Insight', company: 'A24', person_level: 'working' },
 ];
 
-/** What the NEON search finds: two people, one of whom the import refuses,
- *  and a CEO the page leaves for the member to add on purpose. */
+/** What the NEON search finds: two team leads, one of whom the import refuses,
+ *  and a CEO who comes onto the list too but is not ticked. */
 const PROSPECTS = [
   { id: 91, run_id: 9, first_name: 'Margaret', last_name: 'Hamilton', email: 'margaret@neon.com', title: 'Head of Partnerships', person_level: 'working', score: 90 },
   { id: 92, run_id: 9, first_name: 'Dorothy', last_name: 'Vaughan', email: 'dorothy@neon.com', title: 'Programme Lead', person_level: 'working', score: 80 },
   { id: 93, run_id: 9, first_name: 'Grace', last_name: 'Murray', email: 'grace@neon.com', title: 'Chief Executive Officer', person_level: 'executive', score: 70 },
 ];
 
-const AFTER_ADD = {
-  id: 6, name: 'Margaret Hamilton', email: 'margaret@neon.com', title: 'Head of Partnerships',
-  company: 'NEON', person_level: 'working',
-};
+/** What the club's contacts hold once the import has run. */
+const IMPORTED = {
+  91: { id: 6, name: 'Margaret Hamilton', email: 'margaret@neon.com', title: 'Head of Partnerships', company: 'NEON', person_level: 'working' },
+  93: { id: 7, name: 'Grace Murray', email: 'grace@neon.com', title: 'Chief Executive Officer', company: 'NEON', person_level: 'executive' },
+} as const;
+
+/** A24 was searched earlier, so adding it starts nothing by itself. */
+const A24_RUN = { id: 8, company_name: 'A24', status: 'completed', progress_pct: 100, progress_message: 'Done' };
 
 async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boolean; builderRun?: boolean } = {}) {
   const built: Record<string, unknown>[] = [];
-  const drafted: Record<string, unknown>[] = [];
   const runsCreated: Record<string, unknown>[] = [];
   const imported: unknown[] = [];
+  const contacts: Record<string, unknown>[] = [...FOUND];
   let runPolls = 0;
-  let added = false;
   let attempted = false;
 
   await page.route('**/api/**', async route => {
@@ -39,9 +42,9 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
     let body: unknown = {};
     let status = 200;
     if (p === '/api/auth/me') body = { authenticated: true, user };
-    else if (p === '/api/contacts') {
-      const items = added ? [...FOUND, AFTER_ADD] : FOUND;
-      body = { items, total: items.length, limit: 800, offset: 0 };
+    else if (p === '/api/contacts') body = { items: contacts, total: contacts.length, limit: 2000, offset: 0 };
+    else if (p === '/api/outreach/templates') {
+      body = [{ id: 11, name: 'Intro', subject: 'Hello {first}', body: 'Hi {first}', use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false }];
     } else if (p === '/api/yucgoutreach/runs' && method === 'POST') {
       runsCreated.push(route.request().postDataJSON());
       if (opts.busy) {
@@ -54,17 +57,17 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
         body = { id: 9, status: 'queued' };
       }
     } else if (p === '/api/yucgoutreach/runs' && method === 'GET' && opts.earlierRun) {
-      body = [{ id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done' }];
+      body = [A24_RUN, { id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done' }];
     } else if (p === '/api/yucgoutreach/runs' && method === 'GET' && opts.builderRun) {
       // The catalog builder's run comes back only for a company the page
       // asked about, alongside the member's own (here none).
       body = url.searchParams.getAll('companies').includes('neon')
-        ? [{ id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done', origin: 'builder' }]
-        : [];
+        ? [A24_RUN, { id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done', origin: 'builder' }]
+        : [A24_RUN];
     } else if (p === '/api/yucgoutreach/runs' && method === 'GET') {
       body = opts.busy && attempted
-        ? [{ id: 8, company_name: 'Acme Corp', status: 'running', progress_pct: 30, progress_message: 'Website and web search…' }]
-        : [];
+        ? [A24_RUN, { id: 10, company_name: 'Acme Corp', status: 'running', progress_pct: 30, progress_message: 'Website and web search…' }]
+        : [A24_RUN];
     } else if (p === '/api/yucgoutreach/runs/9') {
       runPolls += 1;
       body = runPolls === 1
@@ -72,24 +75,22 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
         : { id: 9, company_name: 'NEON', status: 'completed', progress_pct: 100, progress_message: 'Done — 2 verified prospects saved' };
     } else if (p === '/api/yucgoutreach/runs/9/prospects') {
       body = PROSPECTS;
+    } else if (/^\/api\/yucgoutreach\/runs\/\d+\/prospects$/.test(p)) {
+      body = [];
     } else if (p === '/api/yucgoutreach/runs/9/import-contacts') {
       const payload = route.request().postDataJSON();
       imported.push(payload);
       const ids: number[] = payload.prospect_ids;
-      added = ids.includes(91);
+      const results = ids.map((id) => {
+        const person = IMPORTED[id as keyof typeof IMPORTED];
+        if (!person) return { prospect_id: id, contact_id: null, outcome: 'skipped', reason: 'already worked by Alice' };
+        contacts.push(person);
+        return { prospect_id: id, contact_id: person.id, outcome: 'created' };
+      });
       body = {
-        created: ids.includes(91) ? 1 : 0, updated: 0, skipped: ids.includes(92) ? 1 : 0,
-        results: ids.map((id) => (id === 91
-          ? { prospect_id: 91, contact_id: 6, outcome: 'created' }
-          : { prospect_id: 92, contact_id: null, outcome: 'skipped', reason: 'already worked by Alice' })),
+        created: results.filter((r) => r.outcome === 'created').length, updated: 0,
+        skipped: results.filter((r) => r.outcome === 'skipped').length, results,
       };
-    } else if (p === '/api/campaigns/draft-template') {
-      const payload = route.request().postDataJSON();
-      drafted.push(payload);
-      body = payload.per_company
-        ? { messages: Object.fromEntries((payload.companies || []).map((c: string) => [
-            c, { subject: `${c} and Yale`, body: `Hi {first}, about {company}.` }])), grounded: payload.companies }
-        : { subject: 'One subject', body: 'Hi {first}.' };
     } else if (p === '/api/campaigns/build') {
       const payload = route.request().postDataJSON();
       if (!payload.preview_only) built.push(payload);
@@ -101,17 +102,16 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (/\/sequences$|\/custom-formats$/.test(p)) body = [];
     await route.fulfill({ status, json: body });
   });
-  return { built, drafted, runsCreated, imported };
+  return { built, runsCreated, imported };
 }
 
-test('the campaign is written to the people who were ticked, not to everyone found', async ({ page }) => {
-  await mockPicker(page);
+test('the email is written to the people who were ticked, not to everyone found', async ({ page }) => {
+  const { built } = await mockPicker(page);
   await page.goto('/scraper?view=company&companies=A24');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
@@ -121,13 +121,13 @@ test('the campaign is written to the people who were ticked, not to everyone fou
 
   // Four people have an address. The two who work there are ticked; the board
   // seat and the person already written to are not, because writing to either
-  // is a decision, not a default. The board seat is not what the member is
-  // looking for (Team leads), so it waits behind a count until asked for.
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 of 4 selected');
+  // is a decision, not a default. Nobody is folded away: everyone is on the
+  // list, and the header says why each is out.
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 can be emailed');
+  await expect(pipeline.getByTestId('send-reasons')).toHaveText('1 no address · 1 already written to · 1 not ticked');
   await expect(picker.getByRole('checkbox', { name: 'Write to Jean Bartik' })).toBeChecked();
-  await expect(picker.getByRole('checkbox', { name: 'Write to Ada Lovelace' })).toHaveCount(0);
-  await picker.getByTestId('show-others').click();
   await expect(picker.getByRole('checkbox', { name: 'Write to Ada Lovelace' })).not.toBeChecked();
+  await expect(picker.getByRole('checkbox', { name: 'Write to Alan Turing' })).not.toBeChecked();
 
   // Someone with no address cannot be ticked at all, rather than being ticked
   // and failing at send time.
@@ -136,69 +136,50 @@ test('the campaign is written to the people who were ticked, not to everyone fou
   // Untick one, add the board seat deliberately.
   await picker.getByRole('checkbox', { name: 'Write to Klara Dan' }).uncheck();
   await picker.getByRole('checkbox', { name: 'Write to Ada Lovelace' }).check();
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 of 4 selected');
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 can be emailed');
+  await expect(rail.getByTestId('send-button')).toHaveText('Send to 2');
 
-  await rail.getByRole('button', { name: /^Write to these 2/ }).click();
-  // From here the sheet is the recipients and nothing else: no ticks, no
-  // filters, and nobody who was not chosen.
-  await expect(picker).toHaveAttribute('data-mode', 'review');
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 recipients');
-  await expect(picker.getByText('Klara Dan')).toHaveCount(0);
-  await expect(picker.getByRole('checkbox')).toHaveCount(0);
-
-  // Exactly the ticks, and nothing the member turned off, go to Drafts.
-  await rail.getByRole('button', { name: /^Write to these 2 in Drafts/ }).click();
-  await expect(page).toHaveURL(/contact_ids=1%2C3$/);
+  // Exactly the ticks, and nothing the member turned off, are sent to.
+  await rail.getByTestId('send-button').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Send 2' }).click();
+  await expect(rail.getByTestId('sent-summary')).toContainText('Queued 2 emails');
+  expect(built).toHaveLength(1);
+  expect(built[0]).toMatchObject({ contact_ids: [1, 3], template_id: 11 });
 });
 
-test('a company with nobody on file is searched from its lane, and the people it finds are ticked, not queued for adding', async ({ page }) => {
+test('a company with nobody on file is searched when it is added, and the people it finds are on the list ticked, with no Add step', async ({ page }) => {
   const { runsCreated, imported } = await mockPicker(page);
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
-  const rail = pipeline.locator('[data-rail]');
   const picker = pipeline.getByTestId('recipient-picker');
   const neon = picker.locator('[data-company="NEON"]');
   const neonLane = pipeline.locator('[data-lane="NEON"]');
   // Wait for the people already on file, so the row states are settled.
   await expect(picker.getByText('Jean Bartik')).toBeVisible();
 
-  // Titles the member types win over who-to-look-for, and reach the search
-  // as typed.
-  await rail.getByRole('button', { name: 'Other titles…' }).click();
-  await rail.getByLabel('Other titles').fill('Head of Partnerships');
-
-  // Searching used to mean a second panel with its own company field. The
-  // company that needs people carries the button that finds them, on its lane.
-  await neonLane.hover();
-  await neonLane.getByRole('button', { name: 'Find people' }).click();
+  // NEON has never been searched, so its search starts by itself.
   await expect(neonLane).toHaveAttribute('data-state', 'searching');
-
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
-  expect(runsCreated[0].title_hints).toBe('Head of Partnerships');
-  expect(runsCreated[0].max_prospects).toBe(60);
+  expect(runsCreated[0].max_prospects).toBe(120);
 
-  // A search started here adds the people the default tick would choose as
-  // soon as it finishes, so they are ticked, not waiting under "Add". The
-  // CEO is left under found: reaching one is a deliberate act.
+  // Everyone it finds goes onto the list as soon as it finishes: the default
+  // tick chooses the team leads, and the CEO is there but not ticked.
   await expect(neonLane).toHaveAttribute('data-state', 'done', { timeout: 15000 });
   await expect.poll(() => imported.length).toBe(1);
-  expect(imported[0]).toEqual({ prospect_ids: [91, 92] });
+  expect(imported[0]).toEqual({ prospect_ids: [91, 92, 93] });
   await expect(picker.getByRole('checkbox', { name: 'Write to Margaret Hamilton' })).toBeChecked();
-  await expect(neon.locator('[data-found="91"]')).toHaveCount(0);
+  await expect(picker.getByRole('checkbox', { name: 'Write to Grace Murray' })).not.toBeChecked();
+  await expect(neon.locator('[data-found]')).toHaveCount(1);
+  await expect(pipeline.getByRole('button', { name: /^Add (Margaret|Dorothy|Grace)/ })).toHaveCount(0);
 
-  // A person the server refuses stays listed with the reason, and cannot be
-  // added again.
-  await expect(neon.getByText('not added: already worked by Alice')).toBeVisible();
-  await expect(neon.getByRole('button', { name: 'Add Dorothy Vaughan' })).toHaveCount(0);
-
-  // The CEO is folded away - a large company's search no longer opens on its
-  // chief officers - and still one click from a deliberate add.
-  await expect(neon.getByRole('button', { name: 'Add Grace Murray' })).toHaveCount(0);
-  await neon.getByRole('button', { name: 'Show 1 more: other levels, very senior or unclear names' }).click();
-  await expect(neon.getByRole('button', { name: 'Add Grace Murray' })).toBeVisible();
-
+  // A person the server refuses stays listed with the reason, and is counted
+  // as held rather than dropped.
+  await expect(neon.getByText('held: already worked by Alice')).toBeVisible();
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('3 can be emailed');
+  await expect(pipeline.getByTestId('send-reasons')).toContainText('1 held');
+  await expect(neonLane.getByTestId('lane-state')).toHaveText('1 can be emailed');
 });
 
 test('a second search while one is running waits its turn, and a 409 is never shown as an error', async ({ page }) => {
@@ -207,8 +188,6 @@ test('a second search while one is running waits its turn, and a 409 is never sh
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const neonLane = pipeline.locator('[data-lane="NEON"]');
-  await neonLane.hover();
-  await neonLane.getByRole('button', { name: 'Find people' }).click();
 
   await expect(neonLane).toHaveAttribute('data-state', 'queued');
   await expect(pipeline.getByRole('status').filter({ hasText: 'Already searching Acme Corp' })).toBeVisible();
@@ -229,10 +208,10 @@ test('seniority narrows who is shown and who select-all reaches', async ({ page 
   await expect(pipeline.getByText('Jean Bartik')).toHaveCount(0);
   await pipeline.getByRole('button', { name: /^Clear$/ }).click();
   await pipeline.getByRole('button', { name: /^Select all shown/ }).click();
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('1 of 4 selected');
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('1 can be emailed');
 });
 
-test('the very senior and names that are not people are shown but never ticked by default', async ({ page }) => {
+test('the very senior and names that are not people are listed but never ticked by default', async ({ page }) => {
   await mockPicker(page);
   // Registered after the shared mock, so it answers first.
   await page.route('**/api/contacts?*', route => route.fulfill({ json: {
@@ -246,17 +225,14 @@ test('the very senior and names that are not people are shown but never ticked b
       // A proxy names a director by their committee; it read as unknown and was ticked.
       { id: 11, name: 'Fidji Simo', email: 'fidji@a24films.com', title: 'Compensation and Talent Management Committee', company: 'A24' },
     ],
-    total: 7, limit: 800, offset: 0,
+    total: 7, limit: 2000, offset: 0,
   } }));
   await page.goto('/scraper?view=company&companies=A24');
 
   const picker = page.locator('[data-section="campaign-pipeline"]').getByTestId('recipient-picker');
   const box = (name: string) => picker.getByRole('checkbox', { name: `Write to ${name}` });
   await expect(box('Jean Bartik')).toBeChecked();
-  // Only the people who match Team leads show; everyone else waits behind a
-  // count, with how many of them are ticked.
-  await expect(box('Anat Ashkenazi')).toHaveCount(0);
-  await picker.getByTestId('show-others').click();
+  // Everyone is on the list; only the ones a team lead answers are ticked.
   // A chief officer and a corporate VP: too senior to answer a cold email.
   await expect(box('Anat Ashkenazi')).not.toBeChecked();
   await expect(box('Katy George')).not.toBeChecked();
@@ -273,36 +249,36 @@ test('the very senior and names that are not people are shown but never ticked b
   await expect(box('Anat Ashkenazi')).toBeChecked();
 });
 
-test("what an earlier visit's search found is shown, never added behind the member's back", async ({ page }) => {
-  const { imported } = await mockPicker(page, { earlierRun: true });
+test("what an earlier visit's search found goes onto the list by itself, with no Add step", async ({ page }) => {
+  const { imported, runsCreated } = await mockPicker(page, { earlierRun: true });
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
-  const neon = page.locator('[data-section="campaign-pipeline"]').getByTestId('recipient-picker').locator('[data-company="NEON"]');
-  await expect(neon.getByText('3 found · not on file yet')).toBeVisible();
-  await expect(neon.getByRole('button', { name: 'Add Margaret Hamilton' })).toBeVisible();
-  await page.waitForTimeout(1000);
-  expect(imported).toHaveLength(0);
+  const picker = page.locator('[data-section="campaign-pipeline"]').getByTestId('recipient-picker');
+  await expect.poll(() => imported.length).toBe(1);
+  expect(imported[0]).toEqual({ prospect_ids: [91, 92, 93] });
+  await expect(picker.getByRole('checkbox', { name: 'Write to Margaret Hamilton' })).toBeChecked();
+  await expect(picker.getByText(/not on file yet/)).toHaveCount(0);
+  await expect(picker.getByRole('button', { name: /^Add / })).toHaveCount(0);
+  // It was searched earlier, so it is not searched again.
+  expect(runsCreated).toHaveLength(0);
 });
 
-test('what the catalog builder found is shown to every member, kept only on purpose, and cannot be deleted', async ({ page }) => {
+test('what the catalog builder found is listed for every member, and cannot be deleted', async ({ page }) => {
   const { imported } = await mockPicker(page, { builderRun: true });
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const neon = pipeline.getByTestId('recipient-picker').locator('[data-company="NEON"]');
-  await expect(neon.getByText('3 found · not on file yet')).toBeVisible();
-  await expect(neon.getByRole('button', { name: 'Add Margaret Hamilton' })).toBeVisible();
-  await page.waitForTimeout(1000);
-  expect(imported).toHaveLength(0);
+  // The import is the server's: its rules decide who lands, and it says why
+  // anyone does not.
+  await expect.poll(() => imported.length).toBe(1);
+  expect(imported[0]).toEqual({ prospect_ids: [91, 92, 93] });
+  await expect(neon.getByRole('checkbox', { name: 'Write to Margaret Hamilton' })).toBeChecked();
+  await expect(neon.getByText('held: already worked by Alice')).toBeVisible();
 
   const lane = pipeline.locator('[data-lane="NEON"]');
   await lane.hover();
   await lane.getByLabel('More for NEON').click();
   await expect(lane.getByRole('button', { name: 'Export .xlsx' })).toBeVisible();
   await expect(lane.getByRole('button', { name: 'Delete run' })).toHaveCount(0);
-  await lane.getByLabel('More for NEON').click();
-
-  await neon.getByRole('button', { name: 'Add Margaret Hamilton' }).click();
-  await expect.poll(() => imported.length).toBe(1);
-  expect(imported[0]).toEqual({ prospect_ids: [91] });
 });
