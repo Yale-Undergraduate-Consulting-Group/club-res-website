@@ -101,7 +101,6 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (/\/sequences$|\/custom-formats$/.test(p)) body = [];
@@ -169,9 +168,10 @@ test('a company with nobody on file is searched from its lane, and the people it
   await rail.getByLabel('Other titles').fill('Head of Partnerships');
 
   // Searching used to mean a second panel with its own company field. The
-  // company that needs people carries the button that finds them, on its lane.
-  await neonLane.hover();
-  await neonLane.getByRole('button', { name: 'Find people' }).click();
+  // company that needs people is searched from the sheet, which follows the
+  // lane in focus.
+  await neonLane.getByTestId('lane-state').click();
+  await pipeline.getByTestId('sheet-find').click();
   await expect(neonLane).toHaveAttribute('data-state', 'searching');
 
   await expect.poll(() => runsCreated.length).toBe(1);
@@ -207,8 +207,8 @@ test('a second search while one is running waits its turn, and a 409 is never sh
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const neonLane = pipeline.locator('[data-lane="NEON"]');
-  await neonLane.hover();
-  await neonLane.getByRole('button', { name: 'Find people' }).click();
+  await neonLane.getByTestId('lane-state').click();
+  await pipeline.getByTestId('sheet-find').click();
 
   await expect(neonLane).toHaveAttribute('data-state', 'queued');
   await expect(pipeline.getByRole('status').filter({ hasText: 'Already searching Acme Corp' })).toBeVisible();

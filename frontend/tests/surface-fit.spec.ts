@@ -21,7 +21,6 @@ async function mockSurface(page: Page) {
       recipients: 2, ready: 2, held: [],
       sample: { email: 'jean.bartik@company1.com', subject: 'A long one', body: LONG_BODY },
     };
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     else if (p === '/api/contacts/companies/summary') body = [];
     else if (p === '/api/yucgoutreach/runs') body = [];
     else if (p === '/api/outreach/flows') body = [];

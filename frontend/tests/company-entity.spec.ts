@@ -51,7 +51,6 @@ async function mockEntity(page: Page, opts: { skipped?: boolean } = {}) {
     } else if (/\/runs\/\d+\/prospects$/.test(p)) body = [];
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 8, offset: 0 };
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     else if (p === '/api/contacts') body = { items: [], total: 0, limit: 800, offset: 0 };
     else if (p === '/api/contacts/companies/summary') body = [];
     else if (p === '/api/outreach/flows') body = [];

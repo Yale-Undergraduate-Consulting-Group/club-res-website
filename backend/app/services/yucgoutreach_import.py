@@ -122,14 +122,29 @@ async def import_run_prospects(
                 "prospect_id": pid, "contact_id": None, "outcome": "skipped",
                 "reason": "no usable address" if pid in in_run else "not in this run",
             })
+    return await import_prospect_rows(
+        db, rows, results,
+        company=run.get("company_name") or "",
+        domain=normalize_domain(run.get("company_domain") or ""),
+        user_id=user_id,
+    )
+
+
+async def import_prospect_rows(
+    db, rows: list[dict[str, Any]], results: list[dict[str, Any]], *, company: str, domain: str, user_id: int,
+) -> dict[str, Any]:
+    """Bring prospect-shaped rows (first_name, last_name, email, title,
+    company, contact_source, contact_profile_url, qualification_notes) into
+    the shared contacts table for this member, with the evidence record. One
+    path for a run's prospects and for officers read from a company filing,
+    so both follow the same address checks and ownership rules. ``results``
+    carries outcomes the caller already decided and is extended in place."""
     created = updated = 0
     skipped = len(results)
     held_by: dict[str, int] = {}
     contact_ids: list[int] = []
     for pr in rows:
         pr["mailbox_assessment"] = await assess_address(pr.get("email") or "", actor_id=user_id)
-    company = run.get("company_name") or ""
-    domain = normalize_domain(run.get("company_domain") or "")
 
     def _skip(pr: dict[str, Any], reason: str) -> None:
         nonlocal skipped
@@ -261,3 +276,101 @@ async def import_run_prospects(
             f"{count} already worked by {owner}" for owner, count in sorted(held_by.items())
         ),
     }
+
+
+# Registers that publish a per-company officer list, read on demand when the
+# company has none stored (see company_register.fetch_officers_for).
+_ON_DEMAND_REGISTERS = ("sec_public", "companies_house")
+
+
+async def import_register_officers(
+    *, user_id: int, company_name: str, company_domain: str | None, entity: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Put the officers a company filed on the member's list, with no web
+    search: the register's officers (fetched first when the company has none
+    stored) become contacts through the same import a search run uses, with
+    addresses derived on the company's website the way roster people are.
+
+    Raises 404 when the register holds nothing for the company and 502 when
+    its register could not be read. Officers without an address (no website
+    known) are counted, not imported."""
+    from app.database import get_db
+    from app.services.company_entity import sanitize_entity
+    from app.services.company_register import fetch_officers_for
+    from app.services.roster_email import register_entity_keys, register_officer_contacts
+
+    clean = sanitize_entity(entity) if entity else None
+    legal_name = (clean or {}).get("legal_name") or None
+    domain = normalize_domain(company_domain or "") or normalize_domain((clean or {}).get("mail_domain") or "")
+    keys = await register_entity_keys(company_name, domain, legal_name=legal_name)
+    if not keys:
+        raise HTTPException(
+            404, f"No company filing is on record for {company_name}. Use Find more people to search the web instead.",
+        )
+
+    db = await get_db()
+    try:
+        marks = ",".join("?" * len(keys))
+        records = [row_to_dict(r) for r in await (await db.execute(
+            f"SELECT id, source, officer_count, company_domain FROM company_register WHERE entity_key IN ({marks})",
+            tuple(sorted(keys)),
+        )).fetchall()]
+    finally:
+        await db.close()
+    # The register's own website fills a gap; it never replaces the member's.
+    domain = domain or next((normalize_domain(r["company_domain"] or "") for r in records if r["company_domain"]), "")
+
+    # Fetching holds no connection of ours: it writes through its own.
+    problems: list[str] = []
+    for record in records:
+        if record["source"] in _ON_DEMAND_REGISTERS and not record["officer_count"]:
+            fetched = await fetch_officers_for(int(record["id"]))
+            if not fetched.get("ok"):
+                problems.append(str(fetched.get("error") or "the register did not answer"))
+
+    officers = await register_officer_contacts(company_name, domain, legal_name=legal_name)
+    outcome: dict[str, Any] = {
+        "created": 0, "updated": 0, "skipped": 0, "results": [], "held_by_note": "",
+        "officers": len(officers), "without_address": 0,
+    }
+    if not officers:
+        if problems:
+            raise HTTPException(502, f"Could not read the filing for {company_name}: {problems[0]}")
+        outcome["note"] = f"The filing for {company_name} lists no current officers."
+        return outcome
+
+    prospects = []
+    for index, officer in enumerate(officers, start=1):
+        if not officer.get("email"):
+            outcome["without_address"] += 1
+            continue
+        first, _, last = officer["name"].partition(" ")
+        prospects.append({
+            "id": index,
+            "first_name": first,
+            "last_name": last.strip(),
+            "email": officer["email"],
+            "title": officer.get("title"),
+            # Filed under the name the member chose, so they list under it.
+            "company": company_name,
+            "contact_source": officer.get("contact_source") or "roster_register",
+            "contact_profile_url": officer.get("source_url"),
+            "qualification_notes": officer.get("discovery_context"),
+        })
+    if not prospects:
+        outcome["note"] = (
+            f"The filing for {company_name} names {len(officers)} officers, but no website is known "
+            "to build their addresses from."
+        )
+        return outcome
+
+    db = await get_db()
+    try:
+        result = await import_prospect_rows(
+            db, prospects, [], company=company_name, domain=domain, user_id=user_id,
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    outcome.update({k: result[k] for k in ("created", "updated", "skipped", "results", "held_by_note")})
+    return outcome
