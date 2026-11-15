@@ -65,6 +65,9 @@ const SENIOR_VP = /\b(?:[escg]vp|(?:executive|senior|corporate|group)\s+vice[\s-
  *  committee ("Compensation and Talent Management Committee"), which read as
  *  an unknown role and was ticked. */
 const BOARD_SEAT = /\b(?:committee|board\s+(?:of\s+directors|member|director)|independent\s+director|non-executive|trustee)\b/i;
+/** The single person at the top: the one a student's cold email is least
+ *  likely to reach. Chief officers other than the CEO are not this. */
+const VERY_TOP = /\b(?:ceo|chief\s+executive\s+officer|(?<!vice[\s-])(?<!vice\s)president|chair(?:man|woman|person)?|(?:co-?)?founder)\b/i;
 
 /** Too senior to answer a student's cold email: never ticked by default. */
 export function isTooSenior(person: { title?: string | null }): boolean {
@@ -153,7 +156,10 @@ export function defaultSelection(people: Contact[], levels: ReadonlySet<Level>):
     if (!isWritable(p) || p.last_sent_at || !looksLikePerson(p)) return false;
     if (levelOf(p) === 'board' || BOARD_SEAT.test(p.title || '')) return levels.has('board');
     const level = fitLevel(p);
-    return levels.has(level) && (level !== 'executive' || isFiledOfficer(p) || !isTooSenior(p));
+    // Asking for senior leaders means wanting them: VPs, SVPs and chief
+    // officers are ticked. Only the very top (CEO, president, chair, founder)
+    // still needs a deliberate tick, unless the company's filing names them.
+    return levels.has(level) && (level !== 'executive' || isFiledOfficer(p) || !VERY_TOP.test(p.title || ''));
   });
   return [...ticked.filter((p) => yaleOf(p)), ...ticked.filter((p) => !yaleOf(p))].map((p) => p.id);
 }

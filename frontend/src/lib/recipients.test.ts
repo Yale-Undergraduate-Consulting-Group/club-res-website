@@ -25,7 +25,19 @@ describe('defaultSelection', () => {
       person(8, { title: 'Chief of Staff', person_level: 'executive' }),
       person(9, { title: 'Member, Compensation and Talent Management Committee', person_level: 'unknown' }),
     ];
-    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([1, 7, 8]);
+    // Senior leaders were asked for, so the SVP/CFO is ticked like the VP.
+    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([1, 5, 7, 8]);
+  });
+
+  it('leaves the very top for a deliberate tick, even when senior leaders are chosen', () => {
+    const people = [
+      person(1, { title: 'Chief Executive Officer', person_level: 'executive' }),
+      person(2, { title: 'President and CEO', person_level: 'executive' }),
+      person(3, { title: 'Co-Founder', person_level: 'executive' }),
+      person(4, { title: 'Chief Technology Officer', person_level: 'executive' }),
+      person(5, { title: 'Vice President, Sales', person_level: 'executive' }),
+    ];
+    expect(defaultSelection(people, TEAM_AND_SENIOR)).toEqual([4, 5]);
   });
 
   it('ticks officers named in the company filing, but not its board seats unless Board is chosen', () => {

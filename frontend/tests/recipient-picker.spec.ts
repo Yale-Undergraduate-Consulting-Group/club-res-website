@@ -211,7 +211,7 @@ test('seniority narrows who is shown and who select-all reaches', async ({ page 
   await expect(pipeline.getByTestId('selected-count')).toHaveText('1 can be emailed');
 });
 
-test('the very senior and names that are not people are listed but never ticked by default', async ({ page }) => {
+test('senior leaders are ticked when asked for; the very top, board seats and page text are not', async ({ page }) => {
   await mockPicker(page);
   // Registered after the shared mock, so it answers first.
   await page.route('**/api/contacts?*', route => route.fulfill({ json: {
@@ -224,29 +224,31 @@ test('the very senior and names that are not people are listed but never ticked 
       { id: 10, name: 'Steve Mathias B1a579', email: 'steve@a24films.com', title: 'Account Manager', company: 'A24', person_level: 'working' },
       // A proxy names a director by their committee; it read as unknown and was ticked.
       { id: 11, name: 'Fidji Simo', email: 'fidji@a24films.com', title: 'Compensation and Talent Management Committee', company: 'A24' },
+      { id: 12, name: 'Daniel Katz', email: 'daniel@a24films.com', title: 'Co-Founder and Chief Executive Officer', company: 'A24', person_level: 'executive' },
     ],
-    total: 7, limit: 2000, offset: 0,
+    total: 8, limit: 2000, offset: 0,
   } }));
   await page.goto('/scraper?view=company&companies=A24');
 
   const picker = page.locator('[data-section="campaign-pipeline"]').getByTestId('recipient-picker');
   const box = (name: string) => picker.getByRole('checkbox', { name: `Write to ${name}` });
   await expect(box('Jean Bartik')).toBeChecked();
-  // Everyone is on the list; only the ones a team lead answers are ticked.
-  // A chief officer and a corporate VP: too senior to answer a cold email.
-  await expect(box('Anat Ashkenazi')).not.toBeChecked();
-  await expect(box('Katy George')).not.toBeChecked();
+  // Team leads and senior leaders are chosen by default, so a chief officer
+  // and a corporate VP are ticked; the CEO and a board seat are not.
+  await expect(box('Anat Ashkenazi')).toBeChecked();
+  await expect(box('Katy George')).toBeChecked();
+  await expect(box('Daniel Katz')).not.toBeChecked();
   await expect(box('Fidji Simo')).not.toBeChecked();
-  await expect(picker.getByText('Very senior · rarely replies')).toHaveCount(3);
+  await expect(picker.getByText('Very senior · rarely replies')).toHaveCount(4);
   // A plain vice president is often the right person, and stays.
   await expect(box('Kent Walker')).toBeChecked();
   // Page text stored as a name is flagged; a profile id on a real name is not.
   await expect(box('Transformation Leader')).not.toBeChecked();
   await expect(picker.getByText('Not a person? Check the name')).toHaveCount(1);
   await expect(box('Steve Mathias B1a579')).toBeChecked();
-  // Still a deliberate choice away.
-  await box('Anat Ashkenazi').check();
-  await expect(box('Anat Ashkenazi')).toBeChecked();
+  // The very top is still a deliberate choice away.
+  await box('Daniel Katz').check();
+  await expect(box('Daniel Katz')).toBeChecked();
 });
 
 test("what an earlier visit's search found goes onto the list by itself, with no Add step", async ({ page }) => {
