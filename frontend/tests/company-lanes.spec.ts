@@ -17,7 +17,6 @@ async function mockLanes(page: Page) {
     else if (p === '/api/campaigns/build') body = { recipients: 2, ready: 2, held: [], sample: { email: 'jean.bartik@a24films.com', subject: 'A24', body: 'Hi Jean.' } };
     else if (p === '/api/contacts/companies/summary') body = [];
     else if (p === '/api/yucgoutreach/runs') body = [];
-    else if (p === '/api/yucgoutreach/role-suggestions') body = { company: url.searchParams.get('company'), roles: [], equivalents: [], sources: {} };
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
@@ -134,7 +133,7 @@ test('past six companies the lanes fold behind a count so the sheet stays reacha
   await expect(lanes.locator('[data-lane]')).toHaveCount(6);
 });
 
-test('passing the pointer over a lane does not focus it, and each lane shows its search', async ({ page }, testInfo) => {
+test('passing the pointer over a lane does not focus it, and each lane shows its search status', async ({ page }, testInfo) => {
   // Hover used to focus a lane. Focus re-renders the rail and can raise the
   // domain warning above the panel, so the lanes jumped under the pointer and
   // two rows lit up at once.
@@ -152,10 +151,10 @@ test('passing the pointer over a lane does not focus it, and each lane shows its
   await neon.getByTestId('lane-state').click();
   await expect(neon).toHaveAttribute('data-focused', 'true');
 
-  // The search is visible without hovering, and names what it does.
+  // The status is visible without hovering.
   await page.mouse.move(0, 0);
-  await expect(a24.getByRole('button', { name: 'Find more people' })).toBeVisible();
-  await expect(neon.getByRole('button', { name: 'Find people' })).toBeVisible();
+  await expect(a24.getByTestId('lane-state')).toBeVisible();
+  await expect(neon.getByTestId('lane-state')).toHaveText('Not searched yet');
 });
 
 test('a company in the sheet folds to its header and opens again', async ({ page }) => {
@@ -176,11 +175,11 @@ test('a company in the sheet folds to its header and opens again', async ({ page
   await expect(group.getByText('Jean Bartik')).toBeVisible();
 });
 
-test('Find more people sits on the lane and at the top of the people sheet, once per company', async ({ page }) => {
-  // It used to be a small button inside every company's group header, among
-  // the counts, where members looking at fresh results missed it. Now it is
-  // on each lane and, for the company in focus, in the sheet's pinned header
-  // - on a phone too, where the lanes sit below the steps.
+test('the search and the officer lookup live in the people sheet only, once for the company in focus', async ({ page }) => {
+  // The search used to be a small button inside every company's group header,
+  // then one on each lane as well as the sheet's. Now the lanes only report
+  // and the sheet's pinned header holds the actions - on a phone too, where
+  // the lanes sit below the steps.
   await mockLanes(page);
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
@@ -190,15 +189,69 @@ test('Find more people sits on the lane and at the top of the people sheet, once
   await expect(sheetFind).toBeVisible();
   await expect(sheetFind).toHaveText('Find more people at A24');
   await expect(sheetFind).toHaveClass(/ui-button--primary/);
-  // No second copy inside the group headers.
-  await expect(pipeline.getByTestId('recipient-picker').locator('[data-company]').getByRole('button', { name: /Find (more )?people/ })).toHaveCount(0);
+  await expect(header.getByTestId('sheet-officers')).toHaveText('Look up officers');
+  // Neither action is repeated on a lane or inside a group header.
+  await expect(pipeline.getByTestId('company-lanes').getByRole('button', { name: /Find|officers/ })).toHaveCount(0);
+  await expect(pipeline.getByTestId('recipient-picker').locator('[data-company]').getByRole('button', { name: /Find (more )?people|officers/ })).toHaveCount(0);
 
-  // The sheet's action follows the lane in focus.
+  // The sheet's actions follow the lane in focus.
   await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
   await expect(sheetFind).toHaveText('Find people at NEON');
   const box = await sheetFind.boundingBox();
   const viewport = page.viewportSize();
   expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((viewport?.width ?? 0) + 1);
+});
+
+test('Look up officers puts the filing\'s officers on the list ticked, without a search', async ({ page }) => {
+  await mockLanes(page);
+  const CFO = { id: 9, name: 'Priya Raman', email: 'priya.raman@neon.org', title: 'Chief Financial Officer', company: 'NEON', person_level: 'executive', contact_source: 'roster_register' };
+  let looked = 0;
+  let searches = 0;
+  await page.route('**/api/contacts?*', route => route.fulfill({
+    json: { items: looked ? [...PEOPLE, CFO] : PEOPLE, total: 3, limit: 800, offset: 0 },
+  }));
+  await page.route('**/api/yucgoutreach/officers', async route => {
+    looked += 1;
+    await route.fulfill({ json: {
+      created: 1, updated: 0, skipped: 0, officers: 2, without_address: 1,
+      results: [{ prospect_id: 1, contact_id: 9, outcome: 'created' }],
+    } });
+  });
+  await page.route('**/api/yucgoutreach/runs', route => {
+    if (route.request().method() === 'POST') searches += 1;
+    return route.fulfill({ json: route.request().method() === 'POST' ? { id: 5, status: 'queued' } : [] });
+  });
+  await page.goto('/scraper?view=company&companies=A24,NEON');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  await pipeline.locator('[data-lane="NEON"]').getByTestId('lane-state').click();
+  const neon = pipeline.getByTestId('recipient-picker').locator('[data-company="NEON"]');
+  await expect(neon.getByText('Nobody on file here yet.')).toBeVisible();
+
+  await pipeline.getByTestId('sheet-officers').click();
+  // The officer is listed straight away, ticked, though a chief officer is
+  // above the level asked for; the note says what the filing gave.
+  await expect(neon.getByRole('checkbox', { name: 'Write to Priya Raman' })).toBeChecked();
+  await expect(neon.getByTestId('officers-note')).toContainText('Added 1 officer from the company filing.');
+  await expect(neon.getByTestId('officers-note')).toContainText('1 named in the filing has no address yet.');
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('3 of 3 selected');
+  expect(searches).toBe(0);
+  expect(looked).toBe(1);
+});
+
+test('Look up officers says why when the company has no filing', async ({ page }) => {
+  await mockLanes(page);
+  await page.route('**/api/yucgoutreach/officers', route => route.fulfill({
+    status: 404,
+    json: { detail: 'No company filing is on record for NEON. Use Find more people to search the web instead.' },
+  }));
+  await page.goto('/scraper?view=company&companies=NEON');
+
+  const pipeline = page.locator('[data-section="campaign-pipeline"]');
+  await pipeline.getByTestId('sheet-officers').click();
+  await expect(pipeline.getByTestId('officers-note')).toHaveText(/No company filing is on record for NEON/);
+  await expect(pipeline.getByTestId('officers-note')).toHaveAttribute('data-tone', 'error');
+  await expect(pipeline.getByTestId('sheet-officers')).toBeEnabled();
 });
 
 const PAUSED = 'People search is paused: the search service is out of credit. A maintainer needs to top it up.';
@@ -240,8 +293,8 @@ test('a search that could not run says it is paused, never that nobody was found
   await expect(pipeline.getByText(/Nobody on record|Nobody found/)).toHaveCount(0);
   // No raw provider text or key anywhere on the page.
   await expect(page.locator('body')).not.toContainText(/WALLET|monid_|402/);
-  // The lane still offers the search, so the member can try again.
-  await expect(pipeline.locator('[data-lane="NEON"]').getByRole('button', { name: 'Find people' })).toBeEnabled();
+  // The sheet still offers the search, so the member can try again.
+  await expect(pipeline.getByTestId('sheet-find')).toBeEnabled();
 });
 
 test('a search that ran and found nobody says for whom, and follows who to look for', async ({ page }) => {

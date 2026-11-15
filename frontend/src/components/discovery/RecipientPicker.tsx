@@ -33,6 +33,8 @@ import { PersonHeadline, PersonWhy } from './PersonDetails';
 
 export type PickerMode = 'preview' | 'select' | 'review';
 
+export type OfficerLookupState = { busy: boolean; note?: string; error?: string; revealed?: boolean };
+
 function shortDate(value?: string | null): string {
   if (!value) return '';
   const date = new Date(value.replace(' ', 'T'));
@@ -48,7 +50,8 @@ const SHORTFALL_REASON: Record<string, string> = {
 };
 
 export default function RecipientPicker({
-  mode, companies, focused, people, selected, onSelectedChange, found, runs, statuses, wanted, onFind, onFindEverywhere, onAddFound, busy,
+  mode, companies, focused, people, selected, onSelectedChange, found, runs, statuses, wanted, onFind, onFindEverywhere, onAddFound,
+  officers, onLookUpOfficers, busy,
 }: {
   mode: PickerMode;
   companies: ChosenCompany[];
@@ -57,6 +60,11 @@ export default function RecipientPicker({
   people: Contact[];
   selected: number[];
   onSelectedChange: (ids: number[]) => void;
+  /** Each company's officer lookup, keyed by canonical company: whether it is
+   *  reading the filing, and what it did or why it could not. */
+  officers: Record<string, OfficerLookupState>;
+  /** Put the officers the company's filing names on the list. */
+  onLookUpOfficers: (company: ChosenCompany) => Promise<void>;
   /** What each company's search found, keyed by canonical company. */
   found: Record<string, FoundPerson[]>;
   runs: Record<string, CompanyRun>;
@@ -75,7 +83,8 @@ export default function RecipientPicker({
   const [fn, setFn] = useState<'all' | Fn>('all');
   const [hideWritten, setHideWritten] = useState(true);
   const [adding, setAdding] = useState<Record<string, true>>({});
-  // Companies whose people at other levels are unfolded, by key.
+  // Companies whose people at other levels are unfolded (or folded again
+  // after a lookup unfolded them), by key.
   const [showOthers, setShowOthers] = useState<Record<string, boolean>>({});
   // Folded companies, by key. A fold hides the rows only - the header keeps
   // the count, the tick-all box and the search, so nothing is decided blind.
@@ -142,12 +151,13 @@ export default function RecipientPicker({
   const hiddenWritten = people.filter((p) => p.last_sent_at).length;
   const noAddress = people.filter((p) => !isWritable(p)).length;
   const selectable = mode === 'select';
-  // The sheet's one search action, for the focused company. It used to sit
+  // The sheet's search actions, for the focused company. They used to sit
   // in every company's group header, small and among the counts, where
-  // members looking at the people a search just brought back missed it.
+  // members looking at the people a search just brought back missed them.
   const focusKey = focused ? companyKey(focused.name) : '';
   const focusRun = focused ? runs[focusKey] : undefined;
   const focusSearching = focusRun && (focusRun.state === 'searching' || focusRun.state === 'queued');
+  const focusOfficers = focused ? officers[focusKey] : undefined;
   const focusHasPeople = Boolean(focused) && (
     people.some((p) => companyKey(p.company) === focusKey) || (found[focusKey] || []).length > 0);
 
@@ -213,18 +223,32 @@ export default function RecipientPicker({
           )}
           {busy && <span className="text-xs text-slate-500">Loading…</span>}
           {focused && mode !== 'review' && (
-            <button
-              type="button"
-              disabled={Boolean(focusSearching)}
-              onClick={() => onFind(focused)}
-              className="ui-button ui-button--primary ui-button--sm ml-auto max-w-full truncate"
-              data-testid="sheet-find"
-              title={focusHasPeople ? `Search ${focused.name} again for people not on file yet` : `Search ${focused.name} for people`}
-            >
-              {focusSearching
-                ? (focusRun?.state === 'queued' ? `Queued: ${focused.name}` : `Searching ${focused.name}…`)
-                : `${focusHasPeople ? 'Find more people' : 'Find people'} at ${focused.name}`}
-            </button>
+            <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+              {/* Officers first: they are in the company's filing, cost no
+                  search, and arrive ticked. The search finds the rest. */}
+              <button
+                type="button"
+                disabled={Boolean(focusOfficers?.busy)}
+                onClick={() => void onLookUpOfficers(focused)}
+                className="ui-button ui-button--secondary ui-button--sm max-w-full truncate"
+                data-testid="sheet-officers"
+                title={`Read ${focused.name}'s company filing and add the officers it names`}
+              >
+                {focusOfficers?.busy ? 'Reading the filing…' : 'Look up officers'}
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(focusSearching)}
+                onClick={() => onFind(focused)}
+                className="ui-button ui-button--primary ui-button--sm max-w-full truncate"
+                data-testid="sheet-find"
+                title={focusHasPeople ? `Search ${focused.name} again for people not on file yet` : `Search ${focused.name} for people`}
+              >
+                {focusSearching
+                  ? (focusRun?.state === 'queued' ? `Queued: ${focused.name}` : `Searching ${focused.name}…`)
+                  : `${focusHasPeople ? 'Find more people' : 'Find people'} at ${focused.name}`}
+              </button>
+            </span>
           )}
         </div>
       </div>
@@ -288,9 +312,11 @@ export default function RecipientPicker({
         // else - another level, the very senior, a name that is page text -
         // folds behind one count. A search at a large company otherwise opens
         // on its CEO, CFO and COO. A narrowed list or a typed search is the
-        // member asking to see more, so nothing folds then.
+        // member asking to see more, so nothing folds then. Looking up a
+        // company's officers unfolds it once: they are the people asked for
+        // by name, and what the lookup ticked must be on screen.
         const collapsing = mode !== 'review' && level === 'all' && fn === 'all' && !query.trim();
-        const open = Boolean(showOthers[key]);
+        const open = showOthers[key] ?? Boolean(officers[key]?.revealed);
         const restRows = collapsing ? rows.filter((p) => !matchesWanted(p, wanted)) : [];
         const restFound = collapsing ? group.found.filter((p) => !matchesWanted(foundAsPerson(p), wanted)) : [];
         const foldedAway = new Set<unknown>([...restRows, ...restFound]);
@@ -358,6 +384,13 @@ export default function RecipientPicker({
               </p>
             )}
 
+            {mode !== 'review' && (officers[key]?.note || officers[key]?.error) && (
+              <p className={`border-t border-pale-sky px-3 py-1.5 text-xs ${officers[key]?.error ? 'text-deep-navy' : 'text-slate-600'}`}
+                 role="status" data-testid="officers-note" data-tone={officers[key]?.error ? 'error' : 'info'}>
+                {officers[key]?.error || officers[key]?.note}
+              </p>
+            )}
+
             {/* A teammate's recent search stands in for a new one: say whose it
                 is, and let the member run their own. */}
             {mode !== 'review' && run?.state === 'done' && run.sharedFrom && (
@@ -413,7 +446,7 @@ export default function RecipientPicker({
                 <p className="px-3 py-2 text-sm text-slate-500">
                   {selectable && (query.trim() || level !== 'all' || fn !== 'all')
                     ? 'Nobody matches your filters. Widen them above.'
-                    : 'Nobody on file here yet. Use Find people to search, or import a list.'}
+                    : 'Nobody on file here yet. Use Look up officers or Find people, or import a list.'}
                 </p>
               )}
 
@@ -509,7 +542,7 @@ export default function RecipientPicker({
               {restRows.length + restFound.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setShowOthers((prev) => ({ ...prev, [key]: !prev[key] }))}
+                  onClick={() => setShowOthers((prev) => ({ ...prev, [key]: !open }))}
                   aria-expanded={open}
                   className="w-full border-t border-pale-sky px-3 py-2 text-left text-xs text-slate-600 underline"
                   data-testid="show-others"
