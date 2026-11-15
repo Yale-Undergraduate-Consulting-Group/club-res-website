@@ -82,13 +82,13 @@ This diagram describes the installed rules. They are repository rulesets on `clu
 
 | Setting | Purpose | Bypass |
 |---|---|---|
-| `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role, organization owners, and the promotion GitHub App |
+| `contributor-namespace.org-ruleset.proposed.json` | Restrict creation, update, and deletion of every branch outside `feature/*` | Repository admin role and organization owners (always); the promotion GitHub App (`pull_request` mode: merging a PR only) |
 | `integration.org-ruleset.proposed.json` | Require Intake; no approval | None |
 | `dev.org-ruleset.proposed.json` | Require Dev checks and `review-gate` | None |
 | `prod.org-ruleset.proposed.json` | Require Production checks and `review-gate` | None |
 | Environment proposals | Restrict each environment to its deployment ref | Admin bypass disabled |
 
-A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role or deploy-key bypass; its only automation bypass is the promotion GitHub App, whose token exists only in the Promotion job's default-branch checkout (section 4).
+A repository ruleset does **not** stop a repository admin from editing or deleting the restriction. Organization rulesets would, but they need a paid GitHub plan. The bypass is a role, so adding or removing a maintainer needs no rule edit. The restriction has no write-role or deploy-key bypass; its only automation bypass is the promotion GitHub App, in `pull_request` mode, so it can merge a PR but cannot push, create, or delete a shared branch directly, and its token exists only in the Promotion job's default-branch checkout (section 4).
 
 The quality rulesets do not require the PR to be current with its base (`strict_required_status_checks_policy: false`): merge commits land on the destination and never flow back, so every stage PR is routinely behind. The controller's own check replaces it: a destination that holds file changes the source lacks stops promotion (section 4). PRs into `integration` need no approval, and Promotion merges them once Intake passes; `integration` deploys nothing. PRs into `dev` and `prod` need the required status `review-gate`, which the controller publishes on the exact PR head. GitHub cannot make an approval rule depend on PR size, so the rulesets require no approving review and the gate carries the size rule instead:
 
