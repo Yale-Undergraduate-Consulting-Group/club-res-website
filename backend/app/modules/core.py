@@ -5,6 +5,7 @@ from app import app_access
 from app.migrations import Migration
 from app.modules import Module, Route, Setting
 from app.routers import activity, admin, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
+from app.services import slack_commands
 
 MODULE = Module(
     id="core",
@@ -26,6 +27,7 @@ MODULE = Module(
     ),
     migrations=(
         Migration(1, "app access", app_access.create_tables),
+        Migration(2, "Slack feature requests", slack_commands.create_tables),
     ),
     settings=(
         Setting("JWT_SECRET", "Signs members' sessions", required=True),
