@@ -500,11 +500,13 @@ async def update_my_profile(payload: ProfileUpdate, user: dict = Depends(get_cur
 # them the install succeeds and every DM then fails with missing_scope.
 # app_mentions:read plus im:history/im:read are what make the helper a bot a
 # member can talk to rather than a slash command they must remember.
+# commands installs the app's /yucg slash command: an install without it
+# leaves /yucg missing from Slack even when the command is configured.
 SLACK_SCOPES = (
     "chat:write,im:write,im:history,im:read,app_mentions:read,"
     "users:read,users:read.email,team:read,"
     "channels:history,groups:history,channels:read,groups:read,"
-    "reactions:write"
+    "reactions:write,commands"
 )
 SLACK_STATE_TTL = 600
 
