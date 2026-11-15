@@ -19,6 +19,10 @@ from app.services.discovery_gate import discovery_job
 from app.services.llm import complete_json, rank_model_id
 
 
+# Sites such as Wikipedia refuse a crawler that does not say where it comes from.
+USER_AGENT = 'YUCG-Research/1.0 (+https://github.com/Yale-Undergraduate-Consulting-Group/club-res-website)'
+
+
 class ProviderUnavailable(RuntimeError):
     def __init__(self, state: str, reason: str):
         super().__init__(reason)
@@ -127,8 +131,12 @@ async def search_sources(actor_id: int, query: str) -> list[dict]:
         raise ProviderUnavailable('unavailable', 'Public search could not complete; retry after provider recovery') from None
 
 
-async def fetch_public_page(url: str) -> dict | None:
-    """Resolve and pin every hop, including redirects, so DNS rebinding cannot reach the VPC."""
+async def fetch_public_page(url: str, *, max_bytes: int = 300_000, truncate: bool = False) -> dict | None:
+    """Resolve and pin every hop, including redirects, so DNS rebinding cannot reach the VPC.
+
+    A page larger than ``max_bytes`` is refused, or with ``truncate`` read only
+    up to that size (most news and Wikipedia pages are well over 300 KB of HTML).
+    """
     for _ in range(4):
         if not public_url(url):
             raise ProviderUnavailable('needs_review', 'Source URL is not an allowed public destination')
@@ -145,7 +153,7 @@ async def fetch_public_page(url: str) -> dict | None:
         if parsed.query:
             pinned += '?' + parsed.query
         async with httpx.AsyncClient(timeout=12, follow_redirects=False, trust_env=False) as client:
-            async with client.stream('GET', pinned, headers={'Host': parsed.netloc, 'User-Agent': 'YUCG-Research/1.0'},
+            async with client.stream('GET', pinned, headers={'Host': parsed.netloc, 'User-Agent': USER_AGENT},
                                      extensions={'sni_hostname': host}) as response:
                 if response.status_code in (301, 302, 303, 307, 308):
                     url = urljoin(url, response.headers.get('location', ''))
@@ -155,7 +163,10 @@ async def fetch_public_page(url: str) -> dict | None:
                 content = bytearray()
                 async for chunk in response.aiter_bytes():
                     content.extend(chunk)
-                    if len(content) > 300_000:
+                    if len(content) > max_bytes:
+                        if truncate:
+                            del content[max_bytes:]
+                            break
                         raise ProviderUnavailable('needs_review', 'Source exceeded the public-page size limit')
         soup = BeautifulSoup(bytes(content), 'html.parser')
         for node in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript']):

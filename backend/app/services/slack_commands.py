@@ -98,8 +98,13 @@ def help_text(member: dict | None) -> str:
         "• In a thread: _summarize this thread_",
         "",
         f"The club's other tools (Survey builder, Market sentiment) are on {_link('YUCG Resources', '/')}.",
-        "I only read club data you can already see on the website. I never send mail or change anything.",
+        "I only read club data you can already see on the website, and web pages you link. I never send mail or change anything.",
     ]
+    from app.services.slack_tools import LINKS_PER_QUESTION, link_reading_enabled
+
+    if link_reading_enabled():
+        at = lines.index("• In a thread: _summarize this thread_") + 1
+        lines.insert(at, f"• Paste a link: _summarize https://… for our A24 pitch_ (public pages, {LINKS_PER_QUESTION} per question)")
     if not member:
         lines.insert(0, "_Your Slack is not linked yet. Start with `/yucg link`._\n")
     return "\n".join(lines)
@@ -190,6 +195,7 @@ _COST = (
 
 async def usage_text(member: dict) -> str:
     from app.services.generation_policy import monthly_budget_usd
+    from app.services.slack_tools import LINK_EVENT, link_reading_enabled, links_per_member_per_day
 
     db = await get_db()
     try:
@@ -201,6 +207,14 @@ async def usage_text(member: dict) -> str:
         club = await (await db.execute(
             f"""SELECT COUNT(*) AS calls, COALESCE(SUM({_COST}),0) AS cost
                 FROM usage_events WHERE event_type='bedrock_reserved' AND {_MONTH}"""
+        )).fetchone()
+        links = await (await db.execute(
+            f"""SELECT COALESCE(SUM(CASE WHEN user_id=? AND {_MONTH} THEN 1 ELSE 0 END),0) AS month,
+                       COALESCE(SUM(CASE WHEN user_id=? AND created_at >= datetime('now','-1 day')
+                                         THEN 1 ELSE 0 END),0) AS day,
+                       COALESCE(SUM(CASE WHEN {_MONTH} THEN 1 ELSE 0 END),0) AS club
+                FROM usage_events WHERE event_type=?""",
+            (int(member["id"]), int(member["id"]), LINK_EVENT),
         )).fetchone()
         top = []
         if is_admin(member):
@@ -223,15 +237,24 @@ async def usage_text(member: dict) -> str:
     lines = [
         "*Your AI use this month*",
         f"• {int(mine['calls'] or 0)} AI calls",
-        f"*Club AI budget*: {share} used this month",
     ]
+    if link_reading_enabled() or int(links["month"] or 0):
+        lines.append(
+            f"• {int(links['month'] or 0)} web links read"
+            f" ({int(links['day'] or 0)} of {links_per_member_per_day()} in the last day)"
+        )
+    lines.append(f"*Club AI budget*: {share} used this month")
     if is_admin(member):
         lines[1] += f" (${float(mine['cost'] or 0):.2f})"
         lines.append(f"• ${spent:.2f} of ${budget:.2f} across {int(club['calls'] or 0)} calls")
+        lines.append(f"• {int(links['club'] or 0)} web links read across the club")
         if top:
             lines.append("*By member* (admins only)")
             lines += [f"• {row['who']}: {int(row['calls'])} calls, ${float(row['cost']):.2f}" for row in top]
-    lines.append("_Counts every AI call made for you, on the website and in Slack._")
+    lines.append(
+        "_Counts every AI call made for you, on the website and in Slack. Reading a link has no "
+        "fee of its own; the page text is part of that question's AI cost._"
+    )
     return "\n".join(lines)
 
 
