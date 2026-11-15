@@ -206,7 +206,7 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
     try:
         await db.execute("BEGIN IMMEDIATE")
         cursor = await db.execute(
-            "SELECT id, email, name, picture, google_id, role, is_active, totp_secret FROM users WHERE email = ?",
+            "SELECT id, email, name, picture, google_id, role, is_active, totp_secret FROM users WHERE lower(email) = ?",
             (email,),
         )
         row = await cursor.fetchone()
