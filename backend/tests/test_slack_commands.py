@@ -157,6 +157,25 @@ async def a_request_is_saved_capped_and_sent_to_admins(client) -> None:
     assert saved == slack_commands.REQUESTS_PER_MEMBER_PER_DAY
 
 
+async def listed_builders_also_get_requests_once() -> None:
+    sent: list[str] = []
+
+    async def fake_post(channel, text, thread_ts=None, ephemeral_user=None):
+        sent.append(channel)
+        return True
+
+    # The admin is listed too, and a display name is not a member id.
+    os.environ["SLACK_REQUEST_RECIPIENTS"] = f"{ADMIN_SLACK}, UBUILDER01 ryan.h.kim"
+    try:
+        with patch("app.services.slack_agent.post_reply", fake_post):
+            reached = await slack_commands.deliver_request(1)
+    finally:
+        os.environ.pop("SLACK_REQUEST_RECIPIENTS")
+    assert sorted(sent) == sorted([ADMIN_SLACK, "UBUILDER01"]), sent
+    assert reached == 2
+    assert MEMBER_SLACK not in sent, "a member who is neither admin nor listed gets nothing"
+
+
 async def the_same_words_work_in_a_direct_message() -> None:
     from app.services import slack_agent
 
@@ -255,6 +274,7 @@ async def main() -> None:
             await a_stranger_can_learn_to_link_but_nothing_more(client)
             await usage_dollars_and_names_are_for_admins(client)
             await a_request_is_saved_capped_and_sent_to_admins(client)
+            await listed_builders_also_get_requests_once()
             await the_same_words_work_in_a_direct_message()
             await a_model_question_says_working_then_pings_the_asker()
             await a_token_without_reactions_write_still_answers()

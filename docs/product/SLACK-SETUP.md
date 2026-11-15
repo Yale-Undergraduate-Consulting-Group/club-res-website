@@ -101,7 +101,10 @@ after it, so "link me to A24's contacts" still goes to the assistant.
   dollars and the top ten members.
 - `requests <idea>` stores the idea in `slack_feature_requests` (five per
   member per day, 1,000 characters, `@channel`-style pings removed) and DMs
-  every active admin who has linked Slack.
+  every active admin who has linked Slack. `SLACK_REQUEST_RECIPIENTS` adds
+  people who build the bot but are not admins: comma-separated Slack member
+  ids (profile → ⋮ → Copy member ID, e.g. `U0ABC123`). Each person gets a
+  request once, even when they are an admin and also listed.
 
 No new Slack scope or slash command is needed.
 
