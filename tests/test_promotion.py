@@ -176,7 +176,7 @@ class PromotionTests(unittest.TestCase):
             if path.startswith(f'repos/{REPO}/compare/feature%2Falice...integration'):
                 return destination
             if method == 'POST' and path.endswith('/pulls'):
-                return {'html_url': 'https://github.com/club/site/pull/9'}
+                return {'number': 9, 'html_url': 'https://github.com/club/site/pull/9'}
             return []
         return api
 
@@ -223,6 +223,64 @@ class PromotionTests(unittest.TestCase):
         with patch.object(promote, 'docs_only', return_value=False), patch.object(promote, 'deployment_proven', return_value=False):
             with self.assertRaisesRegex(RuntimeError, 'deployment'):
                 promote.require_dev_deployment(REPO, SHA)
+
+    def _stage_api(self, target, calls):
+        def api(path, method='GET', payload=None, token=None):
+            calls.append((method, path, payload, token))
+            if '/compare/' in path:
+                return {'ahead_by': 1, 'behind_by': 0}
+            if method == 'POST' and path.endswith('/pulls'):
+                return {'number': 9, 'html_url': 'u', 'head': {'sha': SHA}, 'base': {'ref': target}}
+            return []
+        return api
+
+    def _advance(self, target, gate='success', token='app-token'):
+        calls = []
+        env = {promote.MERGE_TOKEN_ENV: token} if token else {}
+        with patch.dict(promote.os.environ, env, clear=False), \
+                patch.object(promote, 'api', side_effect=self._stage_api(target, calls)), \
+                patch.object(promote, 'apply_review_gate', return_value=gate) as review_gate:
+            if not token:
+                promote.os.environ.pop(promote.MERGE_TOKEN_ENV, None)
+            promote.prepare_pr(REPO, run(), target)
+        merges = [(payload, used) for method, path, payload, used in calls if method == 'PUT' and path.endswith('/merge')]
+        return merges, review_gate.called
+
+    def test_passing_gates_merge_the_verified_head_as_the_app(self):
+        merges, gated = self._advance('integration')
+        self.assertEqual(merges, [({'sha': SHA, 'merge_method': 'merge'}, 'app-token')])
+        self.assertFalse(gated)  # integration has no review gate; it deploys nothing
+        merges, gated = self._advance('dev')
+        self.assertEqual(len(merges), 1)
+        self.assertTrue(gated)
+
+    def test_pending_review_gate_or_missing_app_never_merges(self):
+        self.assertEqual(self._advance('dev', gate='pending')[0], [])
+        self.assertEqual(self._advance('prod', gate='pending')[0], [])
+        self.assertEqual(self._advance('integration', token=None)[0], [])
+
+    def test_refused_merge_leaves_the_pr_open_without_failing(self):
+        def api(path, method='GET', payload=None, token=None):
+            if method == 'PUT':
+                raise promote.subprocess.CalledProcessError(1, 'gh', stderr='HTTP 405 Required status check is expected')
+            return {}
+        with patch.dict(promote.os.environ, {promote.MERGE_TOKEN_ENV: 't'}), patch.object(promote, 'api', side_effect=api):
+            self.assertFalse(promote.merge(REPO, {'number': 9, 'base': {'ref': 'dev'}}, SHA))
+
+    def test_approval_merges_dev_but_prod_still_needs_its_dev_deployment(self):
+        review = {'name': 'Review', 'path': promote.REVIEW_WORKFLOW, 'conclusion': 'success',
+                  'head_sha': SHA, 'head_repository': {'full_name': REPO}}
+        pr = {'number': 9, 'head': {'sha': SHA, 'repo': {'full_name': REPO}}, 'labels': []}
+        for deployed, merged_bases in ((False, ['dev']), (True, ['dev', 'prod'])):
+            def api(path, method='GET', payload=None, token=None):
+                base = path.split('base=')[1].split('&')[0]
+                return [dict(pr, base={'ref': base})]
+            with self.subTest(deployed=deployed), patch.object(promote, 'api', side_effect=api), \
+                    patch.object(promote, 'apply_review_gate', return_value='success'), \
+                    patch.object(promote, 'deployment_proven', return_value=deployed), \
+                    patch.object(promote, 'merge') as merge:
+                promote.process(review, REPO)
+                self.assertEqual([call.args[1]['base']['ref'] for call in merge.call_args_list], merged_bases)
 
 
 if __name__ == '__main__':
