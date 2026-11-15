@@ -28,6 +28,7 @@ MODULE = Module(
     migrations=(
         Migration(1, "app access", app_access.create_tables),
         Migration(2, "Slack feature requests", slack_commands.create_tables),
+        Migration(3, "Join sessions (QR sign-up)", invitations.create_join_tables),
     ),
     settings=(
         Setting("JWT_SECRET", "Signs members' sessions", required=True),

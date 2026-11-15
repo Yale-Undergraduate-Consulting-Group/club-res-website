@@ -28,7 +28,8 @@ GOOGLE_REDIRECT_URI = (
 FRONTEND_URL = (os.getenv("FRONTEND_URL") or "http://localhost:5173").strip()
 
 
-async def _start_oauth(purpose: str = "identity", user_id: int | None = None, invitation: str | None = None):
+async def _start_oauth(purpose: str = "identity", user_id: int | None = None, invitation: str | None = None,
+                       join_session_id: int | None = None):
     import time
     from app.routers.invitations import digest
     if not GOOGLE_CLIENT_ID:
@@ -43,7 +44,7 @@ async def _start_oauth(purpose: str = "identity", user_id: int | None = None, in
                 raise HTTPException(400, "Invitation expired, revoked or already accepted")
             invite_id = row["id"]
         await db.execute("DELETE FROM oauth_challenges WHERE expires_at<=?", (int(time.time()),))
-        await db.execute("INSERT INTO oauth_challenges(state_hash,browser_hash,purpose,user_id,invitation_id,expires_at) VALUES (?,?,?,?,?,?)", (digest(state),digest(browser),purpose,user_id,invite_id,int(time.time())+600))
+        await db.execute("INSERT INTO oauth_challenges(state_hash,browser_hash,purpose,user_id,invitation_id,join_session_id,expires_at) VALUES (?,?,?,?,?,?,?)", (digest(state),digest(browser),purpose,user_id,invite_id,join_session_id,int(time.time())+600))
         await db.commit()
     finally:
         await db.close()
@@ -62,7 +63,19 @@ async def _start_oauth(purpose: str = "identity", user_id: int | None = None, in
 
 
 @router.get("/google")
-async def google_login(invitation: str | None = None):
+async def google_login(invitation: str | None = None, join: str | None = None):
+    """Sign-in. ``invitation`` is one person's invitation; ``join`` is the token
+    behind a join QR code (routers/invitations.py, join sessions)."""
+    if join:
+        from app.routers.invitations import open_join_session
+        db = await get_db()
+        try:
+            session = await open_join_session(db, join)
+        finally:
+            await db.close()
+        if not session:
+            return RedirectResponse(f"{FRONTEND_URL}/login?error=join_closed")
+        return await _start_oauth(join_session_id=session["id"])
     return await _start_oauth(invitation=invitation)
 
 
@@ -214,6 +227,12 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             cursor = await db.execute("INSERT INTO users(email,name,role,google_id,picture) VALUES (?,?,?,?,?)",(email,name,'standard',google_id,picture))
             user_id, role = cursor.lastrowid, 'standard'
             row = None
+        elif challenge.get("join_session_id") and challenge["purpose"] == "identity":
+            from app.routers.invitations import admit_through_join_session
+            user_id = await admit_through_join_session(db, challenge["join_session_id"], email, name, google_id, picture)
+            if not user_id:
+                return RedirectResponse(f"{FRONTEND_URL}/login?error=join_closed")
+            role, row = 'standard', None
         else:
             return RedirectResponse(f"{FRONTEND_URL}/login?error=invitation_required")
         if challenge["purpose"] == "gmail":
