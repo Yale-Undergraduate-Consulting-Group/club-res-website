@@ -107,7 +107,7 @@ async def the_answer_states_club_state_and_one_next_step() -> None:
 
     unknown = await slack_agent.handle_message("how are we doing at Nobody Ltd", member)
     assert "nobody on file" in unknown["text"].lower()
-    assert "/scraper?view=company&company=Nobody%20Ltd" in unknown["text"]
+    assert "/yucg help" in unknown["text"], "an empty lookup points at help, not a search page"
 
     queue = await slack_agent.handle_message("what's queued?", member)
     assert "NEON first touch" in queue["text"] and "/campaigns/1" in queue["text"]
