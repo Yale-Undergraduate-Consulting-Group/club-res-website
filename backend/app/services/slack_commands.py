@@ -11,6 +11,7 @@ club account yet: they are how that person finds out how to connect.
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 from app.database import get_db
@@ -26,6 +27,7 @@ MAX_REQUEST_CHARS = 1_000
 REQUESTS_PER_MEMBER_PER_DAY = 5
 
 _MENTION = re.compile(r"<@[^>]+>")
+_SLACK_MEMBER_ID = re.compile(r"[UW][A-Z0-9]{6,}")
 
 NOT_LINKED = (
     "I do not know which club account this is yet. Send `/yucg onboard` and I'll walk you "
@@ -290,8 +292,29 @@ async def save_request(member: dict, slack_user: str, idea: str) -> tuple[str, i
     return f"Thanks! I've saved your request and sent it to the club admins:\n{quoted}", request_id
 
 
+def request_recipients() -> list[str]:
+    """Slack member ids in `SLACK_REQUEST_RECIPIENTS` that also get every request.
+
+    For the people who build the bot but are not club admins. A member id
+    (`U0ABC123`, from Slack profile → ⋮ → Copy member ID) never changes; a
+    display name can. Anything that is not a member id is skipped and logged.
+    """
+    ids = []
+    for item in re.split(r"[\s,]+", os.getenv("SLACK_REQUEST_RECIPIENTS", "")):
+        if not item:
+            continue
+        if _SLACK_MEMBER_ID.fullmatch(item):
+            ids.append(item)
+        else:
+            logger.warning("SLACK_REQUEST_RECIPIENTS: %r is not a Slack member id; skipped", item)
+    return ids
+
+
 async def deliver_request(request_id: int) -> int:
-    """DM every active admin who has linked Slack. Returns how many were reached."""
+    """DM every active admin who has linked Slack, plus `request_recipients()`.
+
+    Each person gets it once, even when listed twice. Returns how many were reached.
+    """
     from app.services.slack_agent import post_reply
 
     db = await get_db()
@@ -313,15 +336,16 @@ async def deliver_request(request_id: int) -> int:
     sender = f"<@{request['slack_user_id']}>" if request["slack_user_id"] else request["who"]
     quoted = "\n".join(f"> {line}" for line in str(request["text"]).splitlines())
     message = f":bulb: *Feature request from {sender}* ({request['who']})\n{quoted}"
+    recipients = list(dict.fromkeys([*(str(a["user_slack_id"]) for a in admins), *request_recipients()]))
     reached = 0
-    for admin in admins:
+    for slack_id in recipients:
         try:
-            # A user id as the channel posts in that admin's DM with the app.
-            if await post_reply(str(admin["user_slack_id"]), message):
+            # A user id as the channel posts in that person's DM with the app.
+            if await post_reply(slack_id, message):
                 reached += 1
         except Exception:
             logger.exception("Could not deliver Slack feature request %s", request_id)
-    logger.info("Slack feature request %s delivered to %s/%s admins", request_id, reached, len(admins))
+    logger.info("Slack feature request %s delivered to %s/%s recipients", request_id, reached, len(recipients))
     return reached
 
 
