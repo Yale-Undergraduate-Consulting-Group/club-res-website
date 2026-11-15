@@ -315,6 +315,12 @@ html:not(.dark) .surface-card.surface-card--compact,
   display: none;
 }
 
+/* The header avatar is the same square as the guide button beside it. */
+.app-shell-header-avatar {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+
 @media (min-width: 768px) {
   .app-shell-header-avatar {
     display: block;
