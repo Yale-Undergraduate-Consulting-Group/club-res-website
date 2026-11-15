@@ -1677,3 +1677,38 @@ html.yucg-brand-redesign.dark .yucg-coordinator-table-wrap {
   .app-shell-header,
   .app-mobile-nav { animation: none; }
 }
+
+/* Join by QR code (components/JoinQr.tsx): full screen for a projector. */
+.join-qr {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+  background: var(--white, #ffffff);
+}
+.join-qr__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 44rem;
+  text-align: center;
+  color: var(--navy-900);
+}
+.join-qr__logo { width: 4rem; height: auto; }
+.join-qr .join-qr__title { margin: 0; font-size: clamp(1.75rem, 4vw, 2.75rem); font-weight: 400; color: var(--navy-900); }
+.join-qr__hint { margin: 0; font-size: 1.125rem; color: var(--ink-muted); }
+.join-qr__code {
+  width: min(70vh, 80vw, 30rem);
+  aspect-ratio: 1;
+  border: 1.5px solid var(--navy-900);
+}
+.join-qr__code--closed { display: grid; place-items: center; font-size: 1.5rem; font-weight: 700; background: var(--mist-100); }
+.join-qr__count { margin: 0; font-size: 1.25rem; }
+.join-qr__count strong { font-size: 2rem; }
+.join-qr__names { margin: 0; font-size: 0.9375rem; color: var(--ink-muted); }
+.join-qr__actions { display: flex; gap: 0.75rem; }
+.join-qr__link { margin: 0; font-size: 0.75rem; color: var(--ink-muted); overflow-wrap: anywhere; }

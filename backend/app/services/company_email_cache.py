@@ -576,7 +576,8 @@ async def discover_company_domain(name: str) -> str:
     for item in results or []:
         host = _registrable_domain(str((item or {}).get("url") or ""))
         candidate = registrable_domain(host) if host else ""
-        if not candidate or candidate in candidates or not _domain_matches_company(company, candidate):
+        evidence = " ".join(str((item or {}).get(k) or "") for k in ("title", "content", "description"))
+        if not candidate or candidate in candidates or not _domain_matches_company(company, candidate, evidence):
             continue
         try:
             mx_ok, _ = await get_mx_cached(candidate, None)

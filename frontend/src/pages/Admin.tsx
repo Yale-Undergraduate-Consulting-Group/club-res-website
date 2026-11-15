@@ -1,5 +1,6 @@
 import PageHeader from '../components/PageHeader';
 import Invitations from '../components/Invitations';
+import JoinQr from '../components/JoinQr';
 import ContactMaintenance from '../components/admin/ContactMaintenance';
 import CatalogBuilderCard from '../components/admin/CatalogBuilderCard';
 import SearchProviderStatus from '../components/admin/SearchProviderStatus';
@@ -265,6 +266,7 @@ export default function Admin() {
 
       {activeTab === 'users' && (
         <div className="space-y-6">
+          <JoinQr onJoined={() => api.admin.users.list().then(setUsers).catch(() => {})} />
           <Invitations />
           <div className="surface-card">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
