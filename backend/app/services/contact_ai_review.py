@@ -164,7 +164,7 @@ async def run_ai_review_agents(
         batch_size=AI_REVIEW_BATCH,
         # More reviewers than model slots only queue behind each other: six
         # workers on two slots had 48 of 58 calls refused in one Barclays run.
-        agents=min(AI_REVIEW_WORKERS, llm.INFERENCE_SLOTS),
+        agents=min(AI_REVIEW_WORKERS, llm.usable_slots()),
         worker=lambda batch: _review_batch(batch, company_name),
         merge=_merge_review_maps,
         on_progress=on_progress,
