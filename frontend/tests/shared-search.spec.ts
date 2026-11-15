@@ -73,7 +73,7 @@ test('a teammate\'s recent search shows at once with who found it, and Search ag
   expect(runsCreated).toHaveLength(0);
 
   // Search again is the member's own search, as Find people always was.
-  await attribution.getByRole('button', { name: 'Search again' }).click();
+  await pipeline.getByTestId('company-search').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0]).toMatchObject({ company_name: 'NVIDIA', company_domain: 'nvidia.com' });
   await expect(attribution).toHaveCount(0);

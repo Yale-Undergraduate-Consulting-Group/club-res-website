@@ -182,28 +182,42 @@ test('× removes a company, and clicking its name does not', async ({ page }) =>
   await expect(pipeline.locator('[data-lane="NEON"]')).toBeVisible();
 });
 
-test('who to look for sets the titles the search asks for', async ({ page }) => {
+test('who to look for is a set of levels that sets the titles and the levels the search asks for', async ({ page }) => {
   const { runsCreated } = await mockInput(page);
   await page.goto('/scraper?view=company');
   const rail = railOf(page);
+  const who = rail.getByRole('group', { name: 'Who to look for' });
+  const level = (name: string) => who.getByRole('button', { name, exact: true });
 
-  // Team leads by default; nobody has to type a title.
-  await expect(rail.getByRole('radio', { name: 'Team leads' })).toHaveAttribute('aria-checked', 'true');
-  await expect(rail.getByText('Searching for: Director of, Head of, Manager, Lead')).toBeVisible();
+  // Team leads and Senior leaders by default; nobody has to type a title.
+  await expect(level('Team leads')).toHaveAttribute('aria-pressed', 'true');
+  await expect(level('Senior leaders')).toHaveAttribute('aria-pressed', 'true');
+  await expect(level('Board')).toHaveAttribute('aria-pressed', 'false');
+  await expect(level('No title shown')).toHaveAttribute('aria-pressed', 'false');
+  await expect(rail.getByText('Searching for: Director of, Head of, Manager, Lead, Chief of Staff, VP, Vice President')).toBeVisible();
 
-  await rail.getByRole('radio', { name: 'Board' }).click();
-  await expect(rail.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
-  await expect(rail.getByRole('radio', { name: 'Team leads' })).toHaveAttribute('aria-checked', 'false');
+  // Levels switch on and off on their own; the last one cannot be switched off.
+  await level('Board').click();
+  await level('Team leads').click();
+  await level('Senior leaders').click();
+  await expect(level('Board')).toHaveAttribute('aria-pressed', 'true');
+  await expect(level('Team leads')).toHaveAttribute('aria-pressed', 'false');
+  await expect(level('Senior leaders')).toHaveAttribute('aria-pressed', 'false');
   await expect(rail.getByText('Searching for: Board member, Trustee, Director')).toBeVisible();
+  await level('Board').click({ force: true });
+  await expect(level('Board')).toHaveAttribute('aria-pressed', 'true');
+  await level('No title shown').click();
+  await expect(level('No title shown')).toHaveAttribute('aria-pressed', 'true');
 
-  // Adding the company starts its search, with who to look for as chosen.
+  // Adding the company starts its search, with every chosen level.
   await rail.getByLabel('Company').fill('NEON');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
   expect(runsCreated[0].title_hints).toBe('Board member, Trustee, Director');
-  // The level reaches the server too: its goal counts board members, not anyone found.
-  expect(runsCreated[0].level).toBe('board');
+  // The levels reach the server too: its goal counts people at any of them.
+  expect(runsCreated[0].levels).toEqual(['board', 'unknown']);
+  expect(runsCreated[0]).not.toHaveProperty('level');
 });
 
 test('a search refused by the hourly limit pauses with a notice, not an error', async ({ page }) => {

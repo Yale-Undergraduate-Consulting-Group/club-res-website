@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { FUNCTIONS, functionOf, isTooSenior, looksLikePerson, yaleOf } from '../../lib/recipients';
-import { fitLevel, matchReason, sourceOf, type PersonLike, type Wanted } from '../../lib/peopleSheet';
+import { FUNCTIONS, fitLevel, functionOf, isTooSenior, looksLikePerson, yaleOf } from '../../lib/recipients';
+import { matchReason, sourceOf, type PersonLike, type Wanted } from '../../lib/peopleSheet';
 
 /**
  * What every person row says, whether they are on file or only found: who
@@ -20,7 +20,7 @@ export function PersonHeadline({ name, person, company }: { name: string; person
 
 export function PersonWhy({ person, wanted, children }: { person: PersonLike; wanted: Wanted; children?: ReactNode }) {
   const source = sourceOf(person);
-  const matches = fitLevel(person) === wanted;
+  const matches = wanted.has(fitLevel(person));
   const yale = yaleOf(person);
   const fn = functionOf(person);
   return (

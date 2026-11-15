@@ -34,16 +34,21 @@ async def slow_search(query, max_results=8, **kwargs):
 
 
 def the_wave_costs_one_query_not_all_of_them() -> None:
-    queries = [f"query {i}" for i in range(14)]
+    # The widest first wave there is: three levels and titles typed in. A
+    # worker cap below its size splits it into batches that wait in turn.
+    queries = web.first_wave_queries(
+        "Hansford Sensors", "hansfordsensors.com", "Head of Operations, Director of Supply Chain", None,
+        ["working", "executive", "board"])
+    assert len(queries) >= 24, len(queries)
     with patch.object(web, "_tavily_search", slow_search):
         started = time.monotonic()
         merged = asyncio.run(web._tavily_parallel(queries))
         elapsed = time.monotonic() - started
 
     assert len(merged) == len(queries), merged
-    # Sequential would be 2.8s. Anything near one query's latency is the whole
+    # Sequential would be 5s. Anything near one query's latency is the whole
     # wave overlapping; the ceiling leaves room for a slow machine.
-    assert elapsed < QUERY_LATENCY * 3, f"searches did not overlap: {elapsed:.2f}s for {len(queries)} queries"
+    assert elapsed < QUERY_LATENCY * 2.5, f"searches did not overlap: {elapsed:.2f}s for {len(queries)} queries"
 
 
 def the_search_asks_where_reachable_people_are_published() -> None:

@@ -269,13 +269,16 @@ async def run() -> None:
                 {"id": 1, "role": "standard"},
             )
             await asyncio.sleep(0)
-            await rejected(
-                create_run(
-                    YucgOutreachRunCreate(company_name="Duplicate", max_prospects=3),
-                    {"id": 1, "role": "standard"},
-                ),
-                409,
-            )
+            # The per-member cap (3 by default) is configuration; at 1 the
+            # second search of one member is refused.
+            with patch.dict(os.environ, {"MEMBER_ACTIVE_RUNS": "1"}):
+                await rejected(
+                    create_run(
+                        YucgOutreachRunCreate(company_name="Duplicate", max_prospects=3),
+                        {"id": 1, "role": "standard"},
+                    ),
+                    409,
+                )
         assert kick.await_count == 1, "a new run waits for the scheduler tick"
 
         guard = AsyncMock()
