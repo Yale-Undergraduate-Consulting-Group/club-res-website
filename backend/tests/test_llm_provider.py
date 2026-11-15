@@ -175,6 +175,39 @@ def test_a_refused_call_is_not_charged_and_reads_unavailable() -> None:
     assert released == [9], "a refused request spends nothing, so its reservation is released"
     _clear_key()
 
+def test_bedrock_never_gets_more_than_two_calls_at_once() -> None:
+    """Eight slots are configured for the Anthropic key; when the key is gone
+    the site falls back to Bedrock, which refused most calls above two."""
+    import threading
+    import time
+    from app.services import generation_policy, llm
+
+    _clear_key()
+    assert llm.usable_slots() <= llm.BEDROCK_SLOTS
+    live, peak, lock = [0], [0], threading.Lock()
+
+    class Client:
+        def converse(self, **_kwargs):
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.1)
+            with lock:
+                live[0] -= 1
+            return {"output": {"message": {"content": [{"text": "ok"}]}}, "usage": {}}
+
+    with patch("boto3.client", lambda *a, **k: Client()), \
+         patch.object(llm, "_inference_slots", threading.BoundedSemaphore(8)), \
+         patch.object(generation_policy, "reserve_bedrock_invocation", lambda *a, **k: 1), \
+         patch.object(generation_policy, "complete_bedrock_invocation", lambda *a: None):
+        threads = [threading.Thread(target=complete_text, args=("hi",)) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    assert peak[0] == llm.BEDROCK_SLOTS, peak[0]
+
+
 if __name__ == "__main__":
     test_bedrock_rank_is_haiku()
     test_explicit_rank_wins()
@@ -184,4 +217,5 @@ if __name__ == "__main__":
     test_key_is_used_through_its_last_day_and_not_after()
     test_tiers_map_to_haiku_and_sonnet_and_tool_calls_round_trip()
     test_a_refused_call_is_not_charged_and_reads_unavailable()
+    test_bedrock_never_gets_more_than_two_calls_at_once()
     print("ok")
