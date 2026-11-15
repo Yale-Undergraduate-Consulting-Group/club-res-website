@@ -127,7 +127,7 @@ async def _company(member: dict, name: str) -> dict:
     if on_file == 0:
         return _ephemeral(
             f"*{name.strip()}* — nobody on file yet.\n"
-            f"Next: {_link('Find people there', f'/scraper?view=company&company={company_param}')}"
+            "Type `/yucg help` to see what I can do."
         )
     if mailed == 0:
         return _ephemeral(

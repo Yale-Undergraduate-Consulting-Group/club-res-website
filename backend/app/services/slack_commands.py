@@ -28,8 +28,8 @@ REQUESTS_PER_MEMBER_PER_DAY = 5
 _MENTION = re.compile(r"<@[^>]+>")
 
 NOT_LINKED = (
-    "I do not know which club account this is. Send `/yucg link`, or open YUCG Resources → "
-    "Profile → Integrations and press *Connect Slack*, then try again."
+    "I do not know which club account this is yet. Send `/yucg onboard` and I'll walk you "
+    "through it: open YUCG Resources → Profile → Integrations, press *Connect Slack*, then try again."
 )
 
 
