@@ -9,7 +9,7 @@ is a new app on this platform, not a new deployment.
 
 | Question | Decision |
 |---|---|
-| First new app | None yet. Build the platform first; the template is proven on the first app chosen later. |
+| First new app | Club Resources: the OneDrive-backed, access-controlled library. |
 | Domain | None for now. Apps share the CloudFront address by path (`/scraper`, `/projects`, …). A domain can be added later without code changes. |
 | Outside users | Clients may use an app later. A client-facing app gets its own reviewed design, likely its own deployment with a hard data boundary (AGENTS.md: client authorization server-side on every read, write, download and job). Nothing in the platform steps exposes data to clients. |
 | Default app access | All active members; an admin can restrict an app to a group. |
@@ -93,8 +93,36 @@ while it is open can join, so close it when the room is done.
 | `projects` | `/api/projects` | (inside Admin) | — |
 | `surveys` | `/api/surveys` | Survey builder | — |
 | `sentiment` | `/api/sentiment` | Market sentiment (Interviews, Reddit, Google reviews) | stale-run reaper (fails runs left `running` by a restart) |
+| `resources` | `/api/resources` | Resources | — |
 
 `/api/health` and `/api/ai/models` belong to the server itself.
+
+### Resources (`resources`)
+
+The club's library of past projects, slide templates, interview and survey
+guides and analytics resources; data rules and decisions in
+[product/RESOURCES-PLAN.md](product/RESOURCES-PLAN.md). Files are register
+documents (`workspace_documents`, owned by the importing admin, private);
+`routers/resources.py` and `services/resources.py` are the only readers, and
+`services/resources.py` is the one place the visibility rules live: the page,
+the visibility-safe facet counts, search and the Slack tool
+(`search_resources`) all call it. Search is two SQLite FTS5 indexes, metadata
+and file text; file text only matches for a member who may open the files. A
+statement of work (file name contains SOW or "statement of work") is
+admin-only, is never text-indexed, and is not mentioned to other members.
+Revenue and client contacts are in `resource_sensitive`, read only on the
+admin branch. Imported SharePoint links are stored from the host on
+(`/:f:/r/sites/...`) and resolve only when `SHAREPOINT_BASE_URL` is set; an
+admin-entered link must be https on exactly that host or on Google Drive.
+Links follow the same access rule as files.
+
+`python backend/scripts/import_resources.py <zip> [--dry-run]` imports the
+OneDrive export (admin-run, idempotent), including the table's hyperlinks
+without overwriting a link an admin edited. Files go to `DOCUMENTS_BUCKET`;
+with no bucket and `APP_ENV` unset, local or beta they go to
+`DOCUMENTS_LOCAL_DIR` (default `/tmp/yucg-documents`), and production without
+a bucket refuses to import. A "Public Disclosure?" answer that is not a clear
+yes is private; a caveat steps the answer down one level.
 
 ### Market sentiment (`sentiment`)
 

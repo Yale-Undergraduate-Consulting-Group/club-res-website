@@ -22,3 +22,5 @@ alembic>=1.14
 sqlalchemy>=2.0
 boto3>=1.35
 pypdf>=6.21.4
+python-pptx>=1.0
+python-docx>=1.1
