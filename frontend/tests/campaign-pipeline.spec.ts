@@ -122,11 +122,13 @@ test('a company that is not on file anywhere can still be worked', async ({ page
   await expect(rail.locator('[data-company-chip="Bartik Family Foundation"]')).toBeVisible();
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
 
-  // It keeps its lane and its group, and its search starts by itself.
+  // It keeps its lane and its group; its search starts when Search is pressed.
   await expect(pipeline.locator('[data-lane="Bartik Family Foundation"]')).toBeVisible();
-  await expect(pipeline.getByTestId('recipient-picker').locator('[data-company="Bartik Family Foundation"]')).toBeVisible();
-  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation']);
   const search = pipeline.getByTestId('recipient-picker').locator('[data-company="Bartik Family Foundation"]').getByTestId('company-search');
+  await expect(search).toHaveText('Search');
+  expect(runsCreated).toHaveLength(0);
+  await rail.getByTestId('search-all').click();
+  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation']);
   await expect(search).toHaveText('Searching…');
   await expect(search).toBeDisabled();
 });
@@ -161,12 +163,13 @@ test('the member sets how many people to find, watches the rounds, and is told p
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
   // A link's ?max= is the starting goal; the field is where it is changed -
-  // before a company is added, because adding one starts its search.
+  // before Search, which asks for that many.
   const goal = rail.getByLabel('How many people');
   await expect(goal).toHaveValue('100');
   await goal.fill('80');
   await rail.getByLabel('Company').fill('A24');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
+  await rail.getByTestId('search-all').click();
 
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].max_prospects).toBe(80);
@@ -192,6 +195,7 @@ test('the goal defaults to what the API defaults to, and is clamped to what the 
   await expect(goal).toHaveValue('800');
   await rail.getByLabel('Company').fill('A24');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].max_prospects).toBe(800);
 });
@@ -239,10 +243,10 @@ test('a best guess is corrected from its chip by pasting the company\'s LinkedIn
   await expect(fixed.getByRole('button', { name: 'Not this?', exact: true })).toBeVisible();
   await expect(guess).toHaveCount(0);
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  // Every added company is searched as it is added - the guess was too - and
-  // the corrected one is searched with the checked website.
-  await expect.poll(() => runsCreated.map((r) => r.company_name)).toContain('Bartik Foundation');
-  expect(runsCreated.find((r) => r.company_name === 'Bartik Foundation')).toMatchObject({ company_domain: 'bartik.org' });
+  // The corrected one is searched with the checked website once Search is pressed.
+  await rail.getByTestId('search-all').click();
+  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Foundation']);
+  expect(runsCreated[0]).toMatchObject({ company_domain: 'bartik.org' });
 });
 
 test('picking a suggested company adds it with its domain, not the half-typed text, and never removes', async ({ page }) => {
@@ -268,7 +272,10 @@ test('picking a suggested company adds it with its domain, not the half-typed te
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
   await expect(chip).toBeVisible();
 
-  // Its domain came with it: the search is told, not left to guess one.
+  // Its domain came with it: the search is told, not left to guess one - and
+  // adding it, twice, searched nothing until Search was pressed.
+  expect(runsCreated).toHaveLength(0);
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0]).toMatchObject({ company_name: 'NVIDIA', company_domain: 'nvidia.com' });
 });

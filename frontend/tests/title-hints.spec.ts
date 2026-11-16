@@ -43,11 +43,12 @@ test('typed titles win over who-to-look-for, and they and the collection size re
   await expect(rail.getByLabel('How many people')).toHaveValue('90');
   await rail.getByRole('button', { name: 'Other titles…' }).click();
   await titles.fill('healthcare PMs, VPs');
-  await expect(rail.getByText('Searching for: healthcare PMs, VPs')).toBeVisible();
+  await expect(rail.getByText(/Searching for:/)).toHaveCount(0);
 
-  // Adding a company starts its search with both settings.
+  // Search starts a company's search with both settings.
   await rail.getByLabel('Company').fill('A24');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => mutations.filter((m) => m.path === '/api/yucgoutreach/runs').length).toBe(1);
   const run = mutations.find((m) => m.path === '/api/yucgoutreach/runs')?.body as Record<string, unknown>;
   expect(run.company_name).toBe('A24');

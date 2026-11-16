@@ -74,10 +74,11 @@ async function addBarclays(page: Page) {
 
 test('the chip names the entity\'s country and the search carries the entity', async ({ page }) => {
   const { runsCreated } = await mockEntity(page);
-  const { chip } = await addBarclays(page);
+  const { rail, chip } = await addBarclays(page);
   await expect(chip.getByTestId('chip-country')).toHaveText('· UK');
 
-  // Sure of it, so it searches by itself, telling the search which Barclays.
+  // Search tells the search which Barclays.
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   const entity = runsCreated[0].entity as Record<string, unknown>;
   expect(entity.legal_name).toBe('Barclays PLC');
@@ -89,7 +90,8 @@ test('the chip names the entity\'s country and the search carries the entity', a
 
 test('"UK only" is a choice the member makes, and the search then enforces it', async ({ page }) => {
   const { runsCreated } = await mockEntity(page);
-  const { chip } = await addBarclays(page);
+  const { rail, chip } = await addBarclays(page);
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   await chip.getByRole('button', { name: 'Not this?' }).click();
   await chip.getByRole('button', { name: 'UK only' }).click();
@@ -113,6 +115,7 @@ test('"Not this?" closes on Escape and on a click elsewhere, never trapping the 
 test('another group entity is one pick away, with its own country and domain', async ({ page }) => {
   const { runsCreated } = await mockEntity(page);
   const { rail, chip } = await addBarclays(page);
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
 
   await chip.getByRole('button', { name: 'Not this?' }).click();
@@ -124,6 +127,7 @@ test('another group entity is one pick away, with its own country and domain', a
   await expect(swapped).toContainText('· IN');
   await expect(swapped).toContainText('barclays.bank.in');
   await expect(rail.locator('[data-company-chip="Barclays"]')).toHaveCount(0);
+  await rail.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(2);
   expect((runsCreated[1].entity as Record<string, unknown>).target_country).toBe('IN');
 });
@@ -138,7 +142,8 @@ test('"Any country" widens where the search looks', async ({ page }) => {
 
 test('a search that skipped people elsewhere offers them back in one click', async ({ page }) => {
   const { runsCreated } = await mockEntity(page, { skipped: true });
-  await addBarclays(page);
+  const { rail } = await addBarclays(page);
+  await rail.getByTestId('search-all').click();
 
   const group = page.getByTestId('recipient-picker').locator('[data-company="Barclays"]');
   await expect(group.getByText(/30 skipped \(26 other Barclays entities, 4 outside UK\)/)).toBeVisible({ timeout: 15_000 });

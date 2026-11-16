@@ -301,7 +301,7 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
       if (e instanceof ApiError && e.status === 429) {
         // The club's search queue or an hourly limit: a pause, not a
         // failure. The company keeps its place and is asked for again.
-        setNotice(`Searches are paused for a few minutes (the hourly limit). ${item.company.name} and anything after it start by themselves; meanwhile you can tick people already found or import a spreadsheet.`);
+        setNotice(`Searches are paused for a few minutes (the hourly limit). ${item.company.name} and anything after it start by themselves; meanwhile you can tick people already found.`);
         window.setTimeout(() => { void startNextRef.current(); }, RETRY_AFTER_LIMIT_MS);
         return 'busy';
       }

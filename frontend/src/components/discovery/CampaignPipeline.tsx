@@ -13,6 +13,7 @@ import {
 } from '../../lib/peopleSheet';
 import { recipientsOf, tallyPeople, tallyReasons, type Tally } from '../../lib/sendPlan';
 import { type ChosenCompany, type CompanyRun, type SearchOptions, useDiscoveryRuns } from '../../lib/useDiscoveryRuns';
+import { companiesFromPaste, companiesFromRows, parseDelimited, type SheetCompany } from '../../lib/companySheet';
 
 /**
  * From companies to sent emails on one screen.
@@ -22,12 +23,13 @@ import { type ChosenCompany, type CompanyRun, type SearchOptions, useDiscoveryRu
  * clicks for one company and a serial wait for every draft. Nobody pressed
  * that many buttons, so the later steps went unused.
  *
- * Now adding a company is the whole of step one: its search starts at once
- * (its filing's officers and a web search; a few run at once, the rest wait),
- * everyone it finds is on the list as they arrive, ticked by the default
- * rule, and the message and the one Send button are in the left rail under
- * the companies. The campaign page and Drafts stay for members who want
- * them; this flow does not need either.
+ * Now step one is: add companies (typed, pasted, or a spreadsheet of them),
+ * say who to look for and how many, press Search. That searches every added
+ * company (its filing's officers and a web search; a few run at once, the
+ * rest wait), and everyone it finds is on the list as they arrive, ticked by
+ * the default rule. The message and the one Send button are in the left rail
+ * under the companies. The campaign page and Drafts stay for members who
+ * want them; this flow does not need either.
  *
  * The right surface is the lanes that say where each company stands, then the
  * sheet of people. The count in the sheet's header, in each lane and on the
@@ -49,6 +51,8 @@ const CONTACT_PAGE = 2000;
 /** Times a refused add is asked again before the people are left listed. */
 const IMPORT_TRIES = 3;
 const IMPORT_RETRY_MS = 3000;
+/** Company lookups in flight at once while a list is added. */
+const RESOLVE_AT_ONCE = 6;
 const IDLE: CompanyRun = { state: 'idle', pct: 0, message: '' };
 
 /** Pasted text as the companies it names: one per line, or several LinkedIn
@@ -214,6 +218,12 @@ function clampProspects(raw: number): number {
   return Number.isFinite(raw) && raw > 0 ? Math.min(MAX_PROSPECTS, Math.max(1, Math.round(raw))) : DEFAULT_MAX_PROSPECTS;
 }
 
+/** What a company's search was told: who to look for, how many, and where.
+ *  A company searched with the same signature has had this search. */
+function searchSignature(company: ChosenCompany, o: SearchOptions): string {
+  return [o.titleHints, o.maxProspects, o.levels.join(','), company.targetCountry ?? ''].join('|');
+}
+
 export default function CampaignPipeline() {
   const [params] = useSearchParams();
   // A link that already carries search terms - the register's "Find people
@@ -280,6 +290,7 @@ export default function CampaignPipeline() {
 
   const [showAllChips, setShowAllChips] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [searchedWith, setSearchedWith] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [busy, setBusy] = useState(false);
@@ -316,26 +327,60 @@ export default function CampaignPipeline() {
       return { name: q, source: 'typed' };
     }
   };
-  const addFromText = async (text: string) => {
-    const items = splitCompanies(text);
+  // Companies named by text or a sheet, resolved a few at a time so a
+  // list of hundreds does not become hundreds of lookups at once, and added
+  // in the order given. A website the sheet gave stands in only when the
+  // resolver could not check one.
+  const addMany = async (items: SheetCompany[]) => {
     if (!items.length) return;
     setError('');
     setResolving((n) => n + items.length);
-    await Promise.all(items.map(async (q) => {
-      try {
-        const company = await resolve(q);
-        if (company) addCompany(company);
-      } finally {
-        setResolving((n) => n - 1);
+    const done: (ChosenCompany | null | undefined)[] = new Array(items.length).fill(undefined);
+    let next = 0;
+    let added = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const at = next++;
+        try {
+          done[at] = await resolve(items[at].name);
+        } finally {
+          done[at] ??= null;
+          setResolving((n) => n - 1);
+        }
+        for (; added < items.length && done[added] !== undefined; added++) {
+          const company = done[added];
+          const { domain } = items[added];
+          if (company) addCompany(domain && !company.domain ? { ...company, domain } : company);
+        }
       }
-    }));
+    };
+    await Promise.all(Array.from({ length: Math.min(RESOLVE_AT_ONCE, items.length) }, worker));
+  };
+  const addFromText = async (text: string) => {
+    await addMany(companiesFromPaste(text) ?? splitCompanies(text).map((name) => ({ name })));
+  };
+  // A CSV or .xlsx of companies: added to the list, not searched.
+  const addFromFile = async (file: File) => {
+    setImporting(true);
+    setError('');
+    try {
+      const lower = file.name.toLowerCase();
+      if (!lower.endsWith('.csv') && !lower.endsWith('.xlsx')) throw new Error('Upload a CSV or Excel (.xlsx) file.');
+      const rows = lower.endsWith('.xlsx') ? (await api.yucgoutreach.companySheet(file)).rows : parseDelimited(await file.text());
+      const items = companiesFromRows(rows);
+      if (!items.length) throw new Error('No companies found. Put one per row in the first column, or under a Company heading.');
+      await addMany(items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read that file');
+    } finally {
+      setImporting(false);
+    }
   };
   const replaceCompany = async (oldName: string, q: string) => {
     setResolving((n) => n + 1);
     try {
       const company = await resolve(q);
       if (!company) return;
-      autoTried.current.delete(companyKey(company.name));
       setChosen((current) => {
         const rest = current.filter((c) => companyKey(c.name) !== companyKey(oldName)
           && companyKey(c.name) !== companyKey(company.name));
@@ -349,7 +394,6 @@ export default function CampaignPipeline() {
   };
   // Put a different, already-resolved company in this chip's place.
   const swapCompany = (oldName: string, company: ChosenCompany) => {
-    autoTried.current.delete(companyKey(company.name));
     setChosen((current) => {
       const at = current.findIndex((c) => companyKey(c.name) === companyKey(oldName));
       const rest = current.filter((c) => companyKey(c.name) !== companyKey(oldName)
@@ -362,7 +406,6 @@ export default function CampaignPipeline() {
   // company run again: its "Search again", or "Search all countries".
   const setWhere = (name: string, target: string | undefined) =>
     setChosen((current) => current.map((c) => (companyKey(c.name) === companyKey(name) ? { ...c, targetCountry: target } : c)));
-  const autoTried = useRef<Set<string>>(new Set());
 
   const visibleChips = showAllChips ? chosenNames : chosenNames.slice(0, CHIP_WINDOW);
   const hiddenChips = chosenNames.length - visibleChips.length;
@@ -522,35 +565,38 @@ export default function CampaignPipeline() {
     searchOptionsRef.current = { titleHints: searchTitles, maxProspects, levels: levelList };
   }, [searchTitles, maxProspects, levelList]);
 
-  // The one search, from the company's own button in the sheet or on its own
-  // when a company is added.
-  const findPeople = useCallback((company: ChosenCompany) => {
-    setFocusedKey(companyKey(company.name));
+  // One company's search, queued: the server runs a few at a time and the
+  // rest show as queued until there is room. What it was searched with is
+  // kept, so Search can tell a company that still needs this search from one
+  // that has had it.
+  const queueSearch = useCallback((company: ChosenCompany) => {
+    setSearchedWith((prev) => ({ ...prev, [companyKey(company.name)]: searchSignature(company, searchOptionsRef.current) }));
     startRun(company, () => searchOptionsRef.current);
   }, [startRun]);
 
-  // A company with no search yet is searched as soon as it is added - the
-  // search is the reason it was added - and its filing's officers come with
-  // it. Every company is queued, however many: the server runs a few at a
-  // time and the rest are shown as queued until there is room. Waits until
-  // both the people and the earlier searches are known, or a company searched
-  // an hour ago would look unsearched.
+  // The company's own button in the sheet.
+  const findPeople = useCallback((company: ChosenCompany) => {
+    setFocusedKey(companyKey(company.name));
+    queueSearch(company);
+  }, [queueSearch]);
+
   const chosenKeyString = chosen.map((c) => companyKey(c.name)).sort().join('\n');
-  useEffect(() => {
-    if (busy || !runsReady || peopleFor !== chosenKeyString) return;
-    const due = chosen.filter((c) => {
-      const key = companyKey(c.name);
-      return !autoTried.current.has(key) && (runs[key] || IDLE).state === 'idle';
-    });
-    if (!due.length) return;
-    const timer = window.setTimeout(() => {
-      for (const company of due) {
-        autoTried.current.add(companyKey(company.name));
-        findPeople(company);
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [busy, runsReady, peopleFor, chosenKeyString, chosen, runs, findPeople]);
+
+  // Adding a company searches nothing: the member sets who to look for and
+  // how many, then presses Search, which queues every company not yet
+  // searched with these settings. Waits for the earlier searches to be
+  // known, or a company searched an hour ago would look unsearched.
+  const due = useMemo(() => chosen.filter((company) => {
+    const key = companyKey(company.name);
+    const state = (runs[key] || IDLE).state;
+    if (state === 'searching' || state === 'queued') return false;
+    const done = searchedWith[key];
+    return done ? done !== searchSignature(company, { titleHints: searchTitles, maxProspects, levels: levelList }) : state === 'idle';
+  }), [chosen, runs, searchedWith, searchTitles, maxProspects, levelList]);
+  const searchAll = () => {
+    if (due[0]) setFocusedKey(companyKey(due[0].name));
+    for (const company of due) queueSearch(company);
+  };
 
   // What a finished search found goes onto the list by itself: everyone, at
   // their own level, ticked by the default rule. The server decides who it
@@ -598,12 +644,7 @@ export default function CampaignPipeline() {
       <div data-rail
            className="xl:col-span-2 min-h-0 xl:max-h-full xl:overflow-y-auto surface-card surface-card--flush overflow-hidden self-start">
         <div className="px-5 pb-5 pt-4 space-y-3 border-b border-pale-sky" data-testid="add-companies">
-          <div>
-            <h2 className="text-[15px] font-semibold text-deep-navy">Add companies</h2>
-            <p className="text-xs text-slate-500">
-              {chosen.length ? `${chosen.length} added` : 'A name or its LinkedIn page'}
-            </p>
-          </div>
+          <h2 className="text-[15px] font-semibold text-deep-navy">Add companies</h2>
           <div className="flex gap-2 items-end">
             <div className="flex-1">
               <CompanyAutocomplete
@@ -625,11 +666,7 @@ export default function CampaignPipeline() {
               Add
             </button>
           </div>
-          <p className="text-xs text-slate-500">
-            {resolving > 0
-              ? 'Looking it up…'
-              : 'Each company is searched as soon as it is added. Paste a list, one per line, or several LinkedIn pages at once.'}
-          </p>
+          {resolving > 0 && <p className="text-xs text-slate-500">Looking it up…</p>}
 
           {chosen.length > 0 && (
             <p className="text-xs text-slate-500" data-testid="chosen-count">
@@ -669,8 +706,10 @@ export default function CampaignPipeline() {
                 ?? (searchingCount > 0
                   ? `Searching for people at ${searchingCount} compan${searchingCount === 1 ? 'y' : 'ies'}…`
                   : lanes.length > 0 && lanes.every((l) => l.run.state === 'done')
-                    ? `Nobody found for ${wantedLabel(levels)} at these companies. Try another level below, or import a spreadsheet.`
-                    : 'No people on file at these companies yet.')}
+                    ? `Nobody found for ${wantedLabel(levels)} at these companies. Try another level.`
+                    : due.length > 0
+                      ? 'No people on file yet. Press Search to look.'
+                      : 'No people on file at these companies yet.')}
             </p>
           )}
 
@@ -688,12 +727,9 @@ export default function CampaignPipeline() {
                 </Chip>
               ))}
             </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Searching for: {searchTitles || 'any title'}{' · '}
-              <button type="button" className="underline" onClick={() => setShowOtherTitles((v) => !v)}>
-                {showOtherTitles ? 'Hide other titles' : 'Other titles…'}
-              </button>
-            </p>
+            <button type="button" className="mt-1 text-xs underline" onClick={() => setShowOtherTitles((v) => !v)}>
+              {showOtherTitles ? 'Hide other titles' : 'Other titles…'}
+            </button>
             {showOtherTitles && (
               <input
                 className="mt-1 w-full border border-pale-sky px-3 py-2 text-sm text-deep-navy"
@@ -716,38 +752,31 @@ export default function CampaignPipeline() {
                 value={maxText}
                 onChange={(e) => setMaxText(e.target.value)}
                 onBlur={() => setMaxText(String(maxProspects))}
-                aria-describedby="pipeline-max-hint"
+                title="Per company. A search keeps going until it has this many, or the company has no more."
                 className="w-24 border border-pale-sky px-3 py-2 text-sm text-deep-navy"
               />
-              <span id="pipeline-max-hint" className="text-xs text-slate-500">
-                per company. A search keeps going until it has this many, or the company has no more.
-              </span>
+              <Button
+                className="shrink-0"
+                disabled={due.length === 0 || !runsReady}
+                onClick={searchAll}
+                data-testid="search-all"
+                title={chosen.length && due.length === 0 ? 'Every company has been searched with these settings' : undefined}
+              >
+                {due.length ? `Search ${due.length} compan${due.length === 1 ? 'y' : 'ies'}` : 'Search'}
+              </Button>
             </div>
           </div>
-          {/* The other way people arrive: the spreadsheet you already have. */}
           <div className="flex flex-wrap items-center gap-4 text-xs">
             <input
               ref={fileRef}
               type="file"
               accept=".csv,.xlsx"
               className="hidden"
+              aria-label="List of companies"
               onChange={async (event) => {
                 const file = event.target.files?.[0];
-                if (!file) return;
-                setImporting(true);
-                setError('');
-                try {
-                  const res = await api.contacts.importFile(file);
-                  await loadPeople(chosenNames);
-                  setError(res.duplicates_skipped
-                    ? `Imported ${res.count}; ${res.duplicates_skipped} already on record.`
-                    : '');
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : 'Could not import that file');
-                } finally {
-                  setImporting(false);
-                  event.target.value = '';
-                }
+                event.target.value = '';
+                if (file) await addFromFile(file);
               }}
             />
             <button
@@ -755,8 +784,9 @@ export default function CampaignPipeline() {
               disabled={importing}
               onClick={() => fileRef.current?.click()}
               className="ui-button ui-button--ghost ui-button--sm"
+              title="A CSV or Excel file with one company per row: names in the first column or under a Company heading, and optionally a Website column. Then press Search."
             >
-              {importing ? 'Importing…' : 'Or import a spreadsheet'}
+              {importing ? 'Reading the list…' : 'Or import a list of companies'}
             </button>
           </div>
         </div>
@@ -828,7 +858,7 @@ export default function CampaignPipeline() {
           </section>
         ) : (
           <section className="surface-card text-sm text-slate-500" aria-label="People">
-            Add a company and the people on file there appear here; its search starts at once.
+            People appear here.
           </section>
         )}
       </aside>
