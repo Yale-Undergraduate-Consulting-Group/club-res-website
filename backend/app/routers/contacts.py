@@ -447,8 +447,9 @@ def _parse_csv(content: bytes) -> list[dict]:
     return rows
 
 
-def _parse_excel(content: bytes) -> list[dict]:
-    """Read bounded XLSX values, rejecting formulas rather than cached results."""
+def xlsx_rows(content: bytes, noun: str = "contact") -> list[tuple]:
+    """The active sheet's rows (header first) from a bounded XLSX; formulas are
+    read as formulas, never as cached results."""
     from zipfile import ZipFile, BadZipFile
     from openpyxl import load_workbook
 
@@ -465,18 +466,26 @@ def _parse_excel(content: bytes) -> list[dict]:
             return []
         if sheet.max_column and sheet.max_column > 50:
             raise HTTPException(400, "Upload a workbook with at most 50 columns.")
-        values = sheet.iter_rows(values_only=True)
-        headers = [str(value or "") for value in next(values, [])]
         rows = []
-        for count, values_row in enumerate(values, 1):
+        for count, values_row in enumerate(sheet.iter_rows(values_only=True)):
             if count > 1000:
-                raise HTTPException(400, "Upload at most 1,000 contact rows at a time.")
-            row = _import_row(dict(zip(headers, values_row)))
-            if row:
-                rows.append(row)
+                raise HTTPException(400, f"Upload at most 1,000 {noun} rows at a time.")
+            rows.append(values_row)
         return rows
     finally:
         workbook.close()
+
+
+def _parse_excel(content: bytes) -> list[dict]:
+    """Read bounded XLSX values into contact rows."""
+    values = xlsx_rows(content)
+    headers = [str(value or "") for value in (values[0] if values else [])]
+    rows = []
+    for values_row in values[1:]:
+        row = _import_row(dict(zip(headers, values_row)))
+        if row:
+            rows.append(row)
+    return rows
 
 
 @router.post("/import")

@@ -174,9 +174,9 @@ test('a company in the sheet folds to its header and opens again', async ({ page
 });
 
 test('the one search action is each company\'s Search again in the people sheet', async ({ page }) => {
-  // Searching starts when a company is added. The one way to ask again is a
-  // button in the company's own heading in the sheet: none on the lanes, in
-  // the sheet's pinned header or the rail, and no separate officer lookup.
+  // Searching starts with the Search button in the rail. The way to ask again
+  // is a button in the company's own heading in the sheet: none on the lanes
+  // or in the sheet's pinned header, and no separate officer lookup.
   await mockLanes(page);
   const posted: Record<string, unknown>[] = [];
   await page.route('**/api/yucgoutreach/runs', route => {
@@ -200,7 +200,9 @@ test('the one search action is each company\'s Search again in the people sheet'
   await expect(pipeline.getByRole('button', { name: 'Search again' })).toHaveCount(2);
   await expect(pipeline.getByTestId('company-lanes').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
   await expect(pipeline.getByTestId('sheet-header').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
-  await expect(pipeline.locator('[data-rail]').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
+  // The rail's one Search button is for companies not yet searched: both have been.
+  await expect(pipeline.locator('[data-rail]').getByRole('button', { name: /search|find|officers/i })).toHaveCount(1);
+  await expect(pipeline.getByTestId('search-all')).toBeDisabled();
   await expect(pipeline.getByText(/Look up officers/)).toHaveCount(0);
 
   // Asking again starts one search for that company and the button waits for it.

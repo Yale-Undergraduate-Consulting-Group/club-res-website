@@ -158,8 +158,10 @@ test('register lists companies by their public name and hands one to Find people
   await expect(pipeline.getByTestId('recipient-picker').locator('[data-company="Gilgamesh Pharma"]')).toBeVisible();
   // The company came with its domain, so the step does not ask for one.
   await expect(pipeline.getByLabel('Company domain')).toHaveCount(0);
-  // Its website came from the register's filings, so its search starts by
-  // itself - no button to press, and exactly one search.
+  // Its website came from the register's filings, and it is searched once
+  // Search is pressed - not before.
+  expect(runsCreated).toHaveLength(0);
+  await pipeline.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('Gilgamesh Pharma');
   expect(runsCreated[0].company_domain).toBe('gilgameshpharma.com');

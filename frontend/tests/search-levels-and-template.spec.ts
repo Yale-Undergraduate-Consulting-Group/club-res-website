@@ -131,9 +131,10 @@ test('who to look for is a set: the counts follow it and the last choice cannot 
   await expect(header).toHaveText('1 can be emailed');
 });
 
-test('three companies added at once start three searches without waiting; the fourth waits for room', async ({ page }) => {
+test('Search on three companies starts three searches without waiting; the fourth waits for room', async ({ page }) => {
   const server = await mock(page);
   await page.goto('/scraper?view=company&companies=Acme,Blue%20Dot,Cedar,Delta');
+  await page.getByTestId('search-all').click();
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
 
   // Three run together while none has finished; the server refuses a fourth
@@ -160,12 +161,14 @@ test('a company is searched again from its own heading in the sheet, and only th
   for (const company of ['A24', 'NEON']) {
     await expect(picker.locator(`[data-company="${company}"]`).getByRole('button', { name: 'Search again' })).toHaveCount(1);
   }
-  // Nowhere else on the screen: not the lanes, the sheet's header or the rail,
+  // Nowhere else on the screen: not the lanes or the sheet's header,
   // and there is no separate officer lookup.
   await expect(pipeline.getByRole('button', { name: 'Search again' })).toHaveCount(2);
   await expect(pipeline.getByTestId('company-lanes').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
   await expect(pipeline.getByTestId('sheet-header').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
-  await expect(pipeline.locator('[data-rail]').getByRole('button', { name: /search|find|officers/i })).toHaveCount(0);
+  // The rail's one Search button is for companies not yet searched: both have been.
+  await expect(pipeline.locator('[data-rail]').getByRole('button', { name: /search|find|officers/i })).toHaveCount(1);
+  await expect(pipeline.getByTestId('search-all')).toBeDisabled();
   await expect(pipeline.getByText(/look up officers/i)).toHaveCount(0);
 
   const search = picker.locator('[data-company="A24"]').getByTestId('company-search');
