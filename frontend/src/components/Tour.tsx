@@ -40,7 +40,7 @@ const STOPS: Stop[] = [
     route: '/scraper?view=company',
     target: '[data-testid="add-companies"]',
     title: '2 · Choose companies',
-    body: 'Or type any company here, or paste a list, one per line. Pick it from the list rather than typing the whole name: the list carries the company\'s website, and a search with a website finds far more people. Every company is searched as soon as it is added.',
+    body: 'Or type any company here, or paste a list, one per line. Pick it from the list rather than typing the whole name: the list carries the company\'s website, and a search with a website finds far more people. Then press Search to look for people at every company you added.',
   },
   {
     route: '/scraper?view=company',

@@ -147,7 +147,7 @@ test('the email is written to the people who were ticked, not to everyone found'
   expect(built[0]).toMatchObject({ contact_ids: [1, 3], template_id: 11 });
 });
 
-test('a company with nobody on file is searched when it is added, and the people it finds are on the list ticked, with no Add step', async ({ page }) => {
+test('Search looks for a company with nobody on file, and the people it finds are on the list ticked, with no Add step', async ({ page }) => {
   const { runsCreated, imported } = await mockPicker(page);
   await page.goto('/scraper?view=company&companies=A24,NEON');
 
@@ -158,7 +158,10 @@ test('a company with nobody on file is searched when it is added, and the people
   // Wait for the people already on file, so the row states are settled.
   await expect(picker.getByText('Jean Bartik')).toBeVisible();
 
-  // NEON has never been searched, so its search starts by itself.
+  // NEON has never been searched, so Search looks for it - and only it.
+  await expect(neonLane).toHaveAttribute('data-state', 'idle');
+  await expect(pipeline.getByTestId('search-all')).toHaveText('Search 1 company');
+  await pipeline.getByTestId('search-all').click();
   await expect(neonLane).toHaveAttribute('data-state', 'searching');
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
@@ -185,6 +188,7 @@ test('a company with nobody on file is searched when it is added, and the people
 test('a second search while one is running waits its turn, and a 409 is never shown as an error', async ({ page }) => {
   await mockPicker(page, { busy: true });
   await page.goto('/scraper?view=company&companies=NEON');
+  await page.getByTestId('search-all').click();
 
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const neonLane = pipeline.locator('[data-lane="NEON"]');

@@ -1455,6 +1455,22 @@ export const api = {
       fetchApi<ResolvedCompany>(
         `/api/yucgoutreach/resolve-company?q=${encodeURIComponent(q)}`, signal ? { signal } : undefined
       ),
+    /** An .xlsx's cells as text rows (header first), to read a list of companies from. */
+    companySheet: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/api/yucgoutreach/company-sheet`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: form,
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null) as { detail?: unknown } | null;
+          throw new Error(typeof body?.detail === 'string' ? body.detail : 'Could not read that file');
+        }
+        return res.json();
+      }) as Promise<{ rows: string[][] }>;
+    },
     domainGuess: (company: string, signal?: AbortSignal) =>
       fetchApi<{ domain: string | null; verified: boolean }>(
         `/api/yucgoutreach/domain-guess?company=${encodeURIComponent(company)}`, signal ? { signal } : undefined
