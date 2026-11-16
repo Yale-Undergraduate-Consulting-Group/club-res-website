@@ -223,32 +223,6 @@ test('a large company selection stays a count and a screenful, not a wall of chi
   await expect(rail.getByText(/at most 500/)).toBeVisible();
 });
 
-test('a best guess is corrected from its chip by pasting the company\'s LinkedIn page', async ({ page }) => {
-  // Replaces the domain-guess warning and its "Use it" button: the resolver
-  // checks websites now, and a guess is fixed on the company itself rather
-  // than in a settings panel.
-  const { runsCreated } = await mockPipeline(page);
-  await page.goto('/scraper?view=company');
-  const rail = page.locator('[data-section="campaign-pipeline"] [data-rail]');
-
-  await rail.getByLabel('Company').fill('Bartik');
-  await rail.getByLabel('Company').press('Enter');
-  const guess = rail.locator('[data-company-chip="Bartik"]');
-  await guess.getByRole('button', { name: 'Best guess · Not this?' }).click();
-  await guess.getByLabel('Their LinkedIn page').fill('https://www.linkedin.com/company/bartik-foundation');
-  await guess.getByRole('button', { name: 'Use', exact: true }).click();
-
-  const fixed = rail.locator('[data-company-chip="Bartik Foundation"]');
-  await expect(fixed).toContainText('bartik.org ✓');
-  await expect(fixed.getByRole('button', { name: 'Not this?', exact: true })).toBeVisible();
-  await expect(guess).toHaveCount(0);
-  await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  // The corrected one is searched with the checked website once Search is pressed.
-  await rail.getByTestId('search-all').click();
-  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Foundation']);
-  expect(runsCreated[0]).toMatchObject({ company_domain: 'bartik.org' });
-});
-
 test('picking a suggested company adds it with its domain, not the half-typed text, and never removes', async ({ page }) => {
   const { runsCreated } = await mockPipeline(page);
   // Registered after the shared mock, so the register answers first.

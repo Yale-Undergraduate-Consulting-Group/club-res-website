@@ -4,8 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
  * Which Barclays a search means. "Barclays" returned only Barclays Global
  * Service Centre (India) staff at @barclays.bank.in, because nothing carried
  * the entity or the country into the search. The resolver now returns an
- * entity profile; the chip shows its country, "Not this?" offers the other
- * group entities and "Any country", and every search sends the profile.
+ * entity profile; the chip shows its country and every search sends the
+ * profile.
  */
 
 const user = { id: 1, email: 'alice@yale.edu', name: 'Alice', role: 'admin', is_active: 1 };
@@ -86,58 +86,6 @@ test('the chip names the entity\'s country and the search carries the entity', a
   // No country chosen: the search skips the excluded entities and their
   // countries, not everyone outside the UK.
   expect(entity.target_country).toBeNull();
-});
-
-test('"UK only" is a choice the member makes, and the search then enforces it', async ({ page }) => {
-  const { runsCreated } = await mockEntity(page);
-  const { rail, chip } = await addBarclays(page);
-  await rail.getByTestId('search-all').click();
-  await expect.poll(() => runsCreated.length).toBe(1);
-  await chip.getByRole('button', { name: 'Not this?' }).click();
-  await chip.getByRole('button', { name: 'UK only' }).click();
-  await expect(chip.getByTestId('chip-country')).toHaveText('· UK only');
-});
-
-test('"Not this?" closes on Escape and on a click elsewhere, never trapping the step', async ({ page }) => {
-  await mockEntity(page);
-  const { rail, chip } = await addBarclays(page);
-  const panel = rail.getByRole('button', { name: /Barclays Global Service Centre/ });
-  await chip.getByRole('button', { name: 'Not this?' }).click();
-  await expect(panel).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(panel).toHaveCount(0);
-  await chip.getByRole('button', { name: 'Not this?' }).click();
-  await expect(panel).toBeVisible();
-  await page.locator('h1, [data-testid="add-companies"] h2').first().click();
-  await expect(panel).toHaveCount(0);
-});
-
-test('another group entity is one pick away, with its own country and domain', async ({ page }) => {
-  const { runsCreated } = await mockEntity(page);
-  const { rail, chip } = await addBarclays(page);
-  await rail.getByTestId('search-all').click();
-  await expect.poll(() => runsCreated.length).toBe(1);
-
-  await chip.getByRole('button', { name: 'Not this?' }).click();
-  const gsc = rail.getByRole('button', { name: /Barclays Global Service Centre · IN · service centre · barclays\.bank\.in/ });
-  await expect(gsc).toBeVisible();
-  await gsc.click();
-
-  const swapped = rail.locator('[data-company-chip="Barclays Global Service Centre"]');
-  await expect(swapped).toContainText('· IN');
-  await expect(swapped).toContainText('barclays.bank.in');
-  await expect(rail.locator('[data-company-chip="Barclays"]')).toHaveCount(0);
-  await rail.getByTestId('search-all').click();
-  await expect.poll(() => runsCreated.length).toBe(2);
-  expect((runsCreated[1].entity as Record<string, unknown>).target_country).toBe('IN');
-});
-
-test('"Any country" widens where the search looks', async ({ page }) => {
-  await mockEntity(page);
-  const { chip } = await addBarclays(page);
-  await chip.getByRole('button', { name: 'Not this?' }).click();
-  await chip.getByRole('button', { name: 'Any country' }).click();
-  await expect(chip.getByTestId('chip-country')).toHaveText('· any country');
 });
 
 test('a search that skipped people elsewhere offers them back in one click', async ({ page }) => {

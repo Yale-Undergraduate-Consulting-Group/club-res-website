@@ -93,7 +93,6 @@ test('a pasted LinkedIn page adds the company with its checked website, and Sear
   await paste(rail.getByLabel('Company'), 'https://www.linkedin.com/company/a24/');
   const chip = rail.locator('[data-company-chip="A24"]');
   await expect(chip).toContainText('a24films.com ✓');
-  await expect(chip.getByRole('button', { name: 'Not this?', exact: true })).toBeVisible();
   expect(resolved).toEqual(['https://www.linkedin.com/company/a24/']);
   // The paste went to the resolver, not into the box.
   await expect(rail.getByLabel('Company')).toHaveValue('');
@@ -123,7 +122,7 @@ test('Enter sends the typed name to the resolver and does not take the top sugge
   await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
 });
 
-test('an unsure company is marked a best guess, is searched like any other, and can be corrected', async ({ page }) => {
+test('an unsure company is searched like any other once Search is pressed', async ({ page }) => {
   const { runsCreated } = await mockInput(page);
   await page.goto('/scraper?view=company');
   const rail = railOf(page);
@@ -133,26 +132,14 @@ test('an unsure company is marked a best guess, is searched like any other, and 
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
 
   const chip = rail.locator('[data-company-chip="Bartik Family Foundation"]');
-  await expect(chip.getByRole('button', { name: 'Best guess · Not this?' })).toBeVisible();
-  // Adding searches nothing; the guess is labelled on its chip so a wrong
-  // one is corrected from there.
+  await expect(chip).toBeVisible();
+  // Adding searches nothing.
   const lane = pipeline.locator('[data-lane="Bartik Family Foundation"]');
   await expect(lane).toHaveAttribute('data-state', 'idle');
   expect(runsCreated).toHaveLength(0);
   await rail.getByTestId('search-all').click();
   await expect(lane).toHaveAttribute('data-state', 'searching');
   await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation']);
-
-  // "Not this?" offers what the words could have meant; choosing one
-  // replaces the guess rather than adding beside it.
-  await chip.getByRole('button', { name: 'Best guess · Not this?' }).click();
-  await chip.getByRole('button', { name: /^Bartik Foundation/ }).click();
-  await expect(rail.locator('[data-company-chip="Bartik Foundation"]')).toContainText('bartik.org ✓');
-  await expect(chip).toHaveCount(0);
-  await expect(rail.getByTestId('chosen-count')).toContainText('1 company added');
-  // The replacement is searched too, once Search is pressed.
-  await rail.getByTestId('search-all').click();
-  await expect.poll(() => runsCreated.map((r) => r.company_name)).toEqual(['Bartik Family Foundation', 'Bartik Foundation']);
 });
 
 test('pasting two lines adds two companies', async ({ page }) => {

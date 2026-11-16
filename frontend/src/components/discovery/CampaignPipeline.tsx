@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ApiError, api, type Contact, type ImportOutcome, type ResolvedAlternative, type ResolvedCompany } from '../../api';
+import { ApiError, api, type Contact, type ImportOutcome, type ResolvedCompany } from '../../api';
 import CompanyAutocomplete from '../CompanyAutocomplete';
 import RecipientPicker from './RecipientPicker';
 import CompanyLanes, { type Lane } from './CompanyLanes';
@@ -79,27 +79,12 @@ function fromResolved(r: ResolvedCompany): ChosenCompany {
   };
 }
 
-/** Another group entity or country picked from "Not this?": it already
- *  carries its own profile, so it needs no second lookup. */
-function fromAlternative(alt: ResolvedAlternative): ChosenCompany {
-  return {
-    name: alt.name,
-    domain: alt.domain || alt.entity?.mail_domain || undefined,
-    verified: Boolean(alt.domain || alt.entity?.mail_domain),
-    source: 'register',
-    country: alt.country || alt.entity?.hq_country || undefined,
-    entity: alt.entity,
-    targetCountry: alt.entity?.target_country || alt.country || undefined,
-  };
-}
-
 /** A country code as people say it: GB is "UK". */
 function countryLabel(code?: string | null): string {
   if (!code) return '';
   if (code === '*') return 'any country';
   return code.toUpperCase() === 'GB' ? 'UK' : code.toUpperCase();
 }
-const KIND_LABEL: Record<string, string> = { captive: 'service centre', subsidiary: 'subsidiary', region: 'region' };
 
 /** Sure enough to say so on its chip: the member pasted its LinkedIn page, the
  *  club already works it, or its website was checked. */
@@ -107,39 +92,13 @@ function isSure(company: ChosenCompany): boolean {
   return Boolean(company.verified || company.source === 'linkedin' || company.source === 'club');
 }
 
-/** One chosen company: its name and website, a way to correct it, and a way
- *  to drop it. Clicking the name no longer removes it - that was a toggle
- *  that lost companies to stray clicks. */
-function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
-  company: ChosenCompany;
-  onRemove: () => void;
-  onReplace: (q: string) => void;
-  /** Another group entity or country, already resolved. */
-  onPick: (alt: ResolvedAlternative) => void;
-  /** Look only in the home country, or anywhere. */
-  onWhere: (target: string | undefined) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [link, setLink] = useState('');
+/** One chosen company: its name and website, and a way to drop it. Clicking
+ *  the name no longer removes it - that was a toggle that lost companies to
+ *  stray clicks. */
+function CompanyChip({ company, onRemove }: { company: ChosenCompany; onRemove: () => void }) {
   const sure = isSure(company);
-  // The panel closes like any popover - Escape, or a click anywhere else -
-  // or it sits over the step's own button with no way out but a choice.
-  const wrapRef = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
-    document.addEventListener('pointerdown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
   return (
-    <span ref={wrapRef} className="relative inline-flex max-w-full" data-company-chip={company.name}>
+    <span className="relative inline-flex max-w-full" data-company-chip={company.name}>
       <span className={`company-chip-body inline-flex h-9 max-w-full items-center gap-2 overflow-hidden border pl-4 pr-0 text-sm ${
         sure ? 'border-deep-navy bg-deep-navy text-white' : 'border-pale-sky bg-pale-sky/60 text-deep-navy'}`}>
         <span className="truncate font-medium" title={company.name}>{company.name}</span>
@@ -153,63 +112,10 @@ function CompanyChip({ company, onRemove, onReplace, onPick, onWhere }: {
         {company.domain && (
           <span className="shrink-0 text-xs opacity-80">· {company.domain}{company.verified ? ' ✓' : ''}</span>
         )}
-        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
-                className="shrink-0 text-xs underline opacity-90">
-          {sure ? 'Not this?' : 'Best guess · Not this?'}
-        </button>
         <Button variant="ghost" size="sm" iconOnly className="shrink-0" onClick={onRemove} aria-label={`Remove ${company.name}`}>
           ×
         </Button>
       </span>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-80 max-w-[90vw] space-y-1 border border-pale-sky bg-white p-2 text-sm text-deep-navy">
-          {company.country && (
-            <div className="flex flex-wrap items-center gap-2 px-2 pb-1">
-              <span className="text-xs text-slate-500">Where:</span>
-              <Chip onClick={() => { setOpen(false); onWhere(undefined); }}
-                    selected={!company.targetCountry}
-                    title={(company.entity?.exclude || []).length
-                      ? `Everywhere except ${(company.entity?.exclude || []).map((x) => x.name).join(', ')}`
-                      : 'Everywhere this company works'}>
-                Default
-              </Chip>
-              <Chip onClick={() => { setOpen(false); onWhere(company.country); }}
-                    selected={Boolean(company.targetCountry) && company.targetCountry === company.country}>
-                {countryLabel(company.country)} only
-              </Chip>
-              <Chip onClick={() => { setOpen(false); onWhere('*'); }}
-                    selected={company.targetCountry === '*'}>
-                Any country
-              </Chip>
-            </div>
-          )}
-          {(company.alternatives || []).length > 0 && <p className="px-2 text-xs text-slate-500">Did you mean</p>}
-          {(company.alternatives || []).map((alt) => (
-            <button key={`${alt.name}-${alt.country || ''}`} type="button"
-                    onClick={() => { setOpen(false); if (alt.entity) onPick(alt); else onReplace(alt.name); }}
-                    title={`${alt.name}${alt.country ? ` · ${countryLabel(alt.country)}` : ''}`}
-                    className="block w-full truncate px-2 py-1.5 text-left hover:bg-pale-sky/40">
-              {alt.name}
-              <span className="text-xs text-slate-500">
-                {alt.country ? ` · ${countryLabel(alt.country)}` : ''}
-                {alt.kind ? ` · ${KIND_LABEL[alt.kind] || alt.kind}` : ''}
-                {alt.domain ? ` · ${alt.domain}` : ''}
-              </span>
-            </button>
-          ))}
-          <form className="flex gap-1 px-1 pt-1" onSubmit={(e) => {
-            e.preventDefault();
-            if (!link.trim()) return;
-            setOpen(false);
-            onReplace(link.trim());
-          }}>
-            <input value={link} onChange={(e) => setLink(e.target.value)} aria-label="Their LinkedIn page"
-                   placeholder="Paste their LinkedIn page instead"
-                   className="min-w-0 flex-1 border border-pale-sky px-2 py-1.5 text-xs" />
-            <button type="submit" className="ui-button ui-button--secondary ui-button--sm">Use</button>
-          </form>
-        </div>
-      )}
     </span>
   );
 }
@@ -312,8 +218,7 @@ export default function CampaignPipeline() {
 
   // Every way a company arrives - typed, picked, pasted, a LinkedIn page -
   // goes through one resolver, which returns the company and a website only
-  // when it could check it. The member never picks a domain; a wrong guess
-  // is corrected from the chip, not from a settings panel.
+  // when it could check it. The member never picks a domain.
   const resolve = async (q: string): Promise<ChosenCompany | null> => {
     try {
       const res = await api.yucgoutreach.resolveCompany(q);
@@ -375,32 +280,6 @@ export default function CampaignPipeline() {
     } finally {
       setImporting(false);
     }
-  };
-  const replaceCompany = async (oldName: string, q: string) => {
-    setResolving((n) => n + 1);
-    try {
-      const company = await resolve(q);
-      if (!company) return;
-      setChosen((current) => {
-        const rest = current.filter((c) => companyKey(c.name) !== companyKey(oldName)
-          && companyKey(c.name) !== companyKey(company.name));
-        const at = current.findIndex((c) => companyKey(c.name) === companyKey(oldName));
-        rest.splice(at < 0 ? rest.length : at, 0, company);
-        return rest;
-      });
-    } finally {
-      setResolving((n) => n - 1);
-    }
-  };
-  // Put a different, already-resolved company in this chip's place.
-  const swapCompany = (oldName: string, company: ChosenCompany) => {
-    setChosen((current) => {
-      const at = current.findIndex((c) => companyKey(c.name) === companyKey(oldName));
-      const rest = current.filter((c) => companyKey(c.name) !== companyKey(oldName)
-        && companyKey(c.name) !== companyKey(company.name));
-      rest.splice(at < 0 ? rest.length : at, 0, company);
-      return rest;
-    });
   };
   // Where a company's search looks. Changing it lets the next search of that
   // company run again: its "Search again", or "Search all countries".
@@ -666,6 +545,29 @@ export default function CampaignPipeline() {
               Add
             </button>
           </div>
+          <div className="text-xs">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx"
+              className="hidden"
+              aria-label="List of companies"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) await addFromFile(file);
+              }}
+            />
+            <button
+              type="button"
+              disabled={importing}
+              onClick={() => fileRef.current?.click()}
+              className="underline"
+              title="A CSV or Excel file with one company per row: names in the first column or under a Company heading, and optionally a Website column. Then press Search."
+            >
+              {importing ? 'Reading the list…' : 'Or import a list of companies'}
+            </button>
+          </div>
           {resolving > 0 && <p className="text-xs text-slate-500">Looking it up…</p>}
 
           {chosen.length > 0 && (
@@ -688,9 +590,6 @@ export default function CampaignPipeline() {
                 key={company.name}
                 company={company}
                 onRemove={() => setChosen((current) => current.filter((c) => companyKey(c.name) !== companyKey(company.name)))}
-                onReplace={(q) => { void replaceCompany(company.name, q); }}
-                onPick={(alt) => swapCompany(company.name, fromAlternative(alt))}
-                onWhere={(target) => setWhere(company.name, target)}
               />
             ))}
             {hiddenChips > 0 && (
@@ -765,29 +664,6 @@ export default function CampaignPipeline() {
                 {due.length ? `Search ${due.length} compan${due.length === 1 ? 'y' : 'ies'}` : 'Search'}
               </Button>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,.xlsx"
-              className="hidden"
-              aria-label="List of companies"
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                event.target.value = '';
-                if (file) await addFromFile(file);
-              }}
-            />
-            <button
-              type="button"
-              disabled={importing}
-              onClick={() => fileRef.current?.click()}
-              className="ui-button ui-button--ghost ui-button--sm"
-              title="A CSV or Excel file with one company per row: names in the first column or under a Company heading, and optionally a Website column. Then press Search."
-            >
-              {importing ? 'Reading the list…' : 'Or import a list of companies'}
-            </button>
           </div>
         </div>
 
