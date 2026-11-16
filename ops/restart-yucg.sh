@@ -106,6 +106,7 @@ FRONTEND_URL=$PUBLIC_URL
 BACKEND_URL=$PUBLIC_URL
 CORS_ORIGINS=$PUBLIC_URL
 GOOGLE_REDIRECT_URI=$PUBLIC_URL/api/auth/google/callback
+SHAREPOINT_BASE_URL=https://yaleedu.sharepoint.com
 ENV
 } > /etc/yucg/app.env.new
 [ ! -f /etc/yucg/app.env ] || cp -p /etc/yucg/app.env "$WORK/previous.env"
