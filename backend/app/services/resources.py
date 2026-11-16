@@ -9,7 +9,8 @@ the import all go through them (docs/product/RESOURCES-PLAN.md):
   project's team and admins;
 * past project, ``private``: only the team and admins see it at all;
 * revenue, client contacts and files marked ``admin_only`` (statements of
-  work, which state the fee): admins only.
+  work, which state the fee): admins only;
+* the resource's SharePoint or Google Drive link: whoever may open its files.
 
 The team is the member accounts a resource's names were matched to when it was
 imported (or re-matched by an admin); a later name change grants nothing.
@@ -17,10 +18,12 @@ imported (or re-matched by an admin); a later name change grants nothing.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import unicodedata
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.services import document_storage
 from app.services.transaction_audit import audit
@@ -31,6 +34,14 @@ ROLES = ("Engagement director", "Project manager", "Associate")
 _SEASON_RANK = {"spring": 1, "summer": 2, "fall": 3}
 _TOKEN = re.compile(r"\w+", re.UNICODE)
 _TOKENIZER = "porter unicode61 remove_diacritics 2"
+_SEMESTER = re.compile(r"(?i)^\s*(spring|summer|fall)\s+(\d{4})\s*$")
+_SHAREPOINT_HOST = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)*\.sharepoint\.com")
+_GOOGLE_DRIVE_HOSTS = ("drive.google.com", "docs.google.com")
+# A SharePoint link as stored from the table: SharePoint's sharing prefix (":f:/r"
+# for a folder, ":p:/r" and the like for a file), which goes straight after the
+# host, then the site path. Older links have no prefix.
+_SHAREPOINT_PATH = re.compile(r"(?:/:[a-z]:/r)?/sites/[^?#]+")
+_UNSAFE = re.compile(r"[\s\\<>\"]")
 
 
 async def create_tables(db) -> None:
@@ -81,6 +92,122 @@ async def create_tables(db) -> None:
     )
     for statement in statements:
         await db.execute(statement)
+
+
+async def add_link_column(db) -> None:
+    """Migration resources:2. A nullable column; the previous release never reads it.
+    Holds either a SharePoint path from the host on ("/:f:/r/sites/...", put
+    after the SHAREPOINT_BASE_URL host when read) or a Google Drive address."""
+    await db.execute("ALTER TABLE resources ADD COLUMN link TEXT")
+
+
+# --- Links -------------------------------------------------------------------
+
+def sharepoint_path(target: str | None) -> str | None:
+    """How a table hyperlink is stored: its path from the host on
+    ("/:f:/r/sites/..."), from the relative form SharePoint writes
+    ("../../../../:f:/r/sites/...") or an absolute link on the configured host;
+    None for anything else. ponytail: the query (view flags, a sharing token)
+    is dropped; the path alone opens the folder or file for whoever SharePoint
+    already lets in."""
+    try:
+        parts = urlsplit(str(target or "").strip())
+        port = parts.port
+    except ValueError:
+        return None
+    if (parts.scheme or parts.netloc) and (
+        parts.scheme != "https" or parts.username or parts.password or port not in (None, 443)
+        or parts.hostname != sharepoint_host()
+    ):
+        return None
+    path = "/" + re.sub(r"^(?:\.\./)*/?", "", parts.path)
+    if not _SHAREPOINT_PATH.fullmatch(path) or _UNSAFE.search(path) or any(part in (".", "..") for part in path.split("/")):
+        return None
+    return path
+
+
+def sharepoint_base() -> str | None:
+    """https://<tenant>.sharepoint.com from SHAREPOINT_BASE_URL (its host
+    only); None when it is unset or not a SharePoint address, so no link is
+    built against it."""
+    raw = (os.getenv("SHAREPOINT_BASE_URL") or "").strip()
+    try:
+        parts = urlsplit(raw)
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme != "https" or parts.username or parts.password or port not in (None, 443):
+        return None
+    if not _SHAREPOINT_HOST.fullmatch(parts.hostname or ""):
+        return None
+    return f"https://{parts.hostname}"
+
+
+def sharepoint_host() -> str | None:
+    base = sharepoint_base()
+    return base[len("https://"):] if base else None
+
+
+def clean_link(value: str | None) -> str:
+    """An admin's link as stored, else ValueError. A SharePoint link must be
+    https on exactly the configured SHAREPOINT_BASE_URL host and is stored from
+    the host on (path and query), like the table's; a Google Drive or Docs
+    link is stored whole."""
+    text = str(value or "").strip()
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        parts, port = None, None
+    host = sharepoint_host()
+    message = (f"Use an https link on {host} or Google Drive" if host
+               else "Use an https Google Drive link (SharePoint links need SHAREPOINT_BASE_URL)")
+    if (
+        parts is None or len(text) > 2000 or _UNSAFE.search(text)
+        or parts.scheme != "https" or parts.username or parts.password or port not in (None, 443)
+    ):
+        raise ValueError(message)
+    if parts.hostname in _GOOGLE_DRIVE_HOSTS:
+        return parts.geturl()
+    if host and parts.hostname == host:
+        return (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+    raise ValueError(message)
+
+
+def link_provider(stored: str | None) -> str | None:
+    """"sharepoint" or "google_drive" for a stored link (for the audit log)."""
+    if not stored:
+        return None
+    return "sharepoint" if stored.startswith("/") else "google_drive"
+
+
+def resolve_link(stored: str | None) -> dict | None:
+    """{url, provider} to open, or None. A stored SharePoint path is put after
+    the SHAREPOINT_BASE_URL host; without that setting there is no link rather
+    than a broken one. Anything else must still be an https Google Drive link."""
+    if not stored:
+        return None
+    if stored.startswith("/"):
+        base = sharepoint_base()
+        return {"url": base + stored, "provider": "sharepoint"} if base else None
+    try:
+        parts = urlsplit(stored)
+    except ValueError:
+        return None
+    if parts.scheme == "https" and parts.hostname in _GOOGLE_DRIVE_HOSTS:
+        return {"url": stored, "provider": "google_drive"}
+    return None
+
+
+def clean_semester(value: str | None) -> str | None:
+    """"fall 2025" -> "Fall 2025"; blank -> None; anything else ValueError."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    match = _SEMESTER.match(text)
+    if not match:
+        raise ValueError("Semester looks like Fall 2025")
+    return f"{match.group(1).capitalize()} {match.group(2)}"
 
 
 # --- Names -------------------------------------------------------------------
@@ -197,28 +324,33 @@ async def _visible_rows(db, viewer: dict) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-async def search(
-    db, viewer: dict, *, q: str = "", kind: str = "", semester: str = "", industry: str = "",
-    limit: int = 60, offset: int = 0, match_all: bool = True,
-) -> tuple[list[dict], int, dict[str, list[str]]]:
-    """(resource rows for the page, total matches, filter facets), every one
-    visible to ``viewer``. File text matches only for resources whose files the
-    viewer may open. Every word must match unless ``match_all`` is False (then
-    the rows matching the most words come first). ponytail: the library is a
-    few hundred rows, so filtering and ordering happen here rather than in a
-    query per combination."""
-    rows = await _visible_rows(db, viewer)
-    facets = {
-        "kinds": sorted({r["kind"] for r in rows}),
-        "semesters": sorted({r["semester"] for r in rows if r["semester"]}, key=_semester_order, reverse=True),
-        "industries": sorted({i for r in rows for i in _industries(r["industry"])}, key=str.lower),
+def _facet_values(row: dict) -> dict[str, list[str]]:
+    return {
+        "kind": [row["kind"]],
+        "semester": [row["semester"]] if row["semester"] else [],
+        "industry": _industries(row["industry"]),
+        # Disclosure is a past project's; guides and templates are open to every member.
+        "disclosure": [row["disclosure"]] if row["kind"] == "past_project" else [],
     }
-    if kind:
-        rows = [r for r in rows if r["kind"] == kind]
-    if semester:
-        rows = [r for r in rows if r["semester"] == semester]
-    if industry:
-        rows = [r for r in rows if industry.lower() in (i.lower() for i in _industries(r["industry"]))]
+
+
+def _facet_key(name: str, value: str) -> str:
+    return value.lower() if name == "industry" else value
+
+
+async def search(
+    db, viewer: dict, *, q: str = "", kind: str = "", semester: str = "", industry: str = "", disclosure: str = "",
+    limit: int = 60, offset: int = 0, match_all: bool = True,
+) -> tuple[list[dict], int, dict[str, list[dict]]]:
+    """(resource rows for the page, total matches, facets), every one visible
+    to ``viewer``. File text matches only for resources whose files the viewer
+    may open. Every word must match unless ``match_all`` is False (then the
+    rows matching the most words come first). Each facet lists its values with
+    how many matching resources have each, counted with the search and every
+    other filter applied (not its own, so its other values stay on offer).
+    ponytail: the library is a few hundred rows, so filtering, counting and
+    ordering happen here rather than in a query per combination."""
+    rows = await _visible_rows(db, viewer)
     terms = _matches(q)
     if terms:
         per_term = await _search_scores(db, terms)
@@ -236,8 +368,34 @@ async def search(
         rows = [item[3] for item in sorted(scored, key=lambda item: item[:3])]
     else:
         rows = sorted(rows, key=lambda r: (tuple(-v for v in _semester_order(r["semester"])), r["kind"] != "past_project", r["title"].lower()))
-    limit = max(1, min(limit, 100))
+
+    chosen = {"kind": kind, "semester": semester, "industry": industry, "disclosure": disclosure}
+    chosen = {name: _facet_key(name, value) for name, value in chosen.items() if value}
+    values = [_facet_values(row) for row in rows]
+    passes = [
+        {name: value in {_facet_key(name, v) for v in row_values[name]} for name, value in chosen.items()}
+        for row_values in values
+    ]
+    counts: dict[str, dict[str, int]] = {name: {} for name in ("kind", "semester", "industry", "disclosure")}
+    for row_values, passed in zip(values, passes):
+        for name, found in row_values.items():
+            if all(ok for other, ok in passed.items() if other != name):
+                for value in found:
+                    counts[name][value] = counts[name].get(value, 0) + 1
+    rank = {
+        "kind": lambda v: (KINDS.index(v) if v in KINDS else len(KINDS), v),
+        "semester": lambda v: tuple(-n for n in _semester_order(v)) + (v,),
+        "industry": str.lower,
+        "disclosure": lambda v: (DISCLOSURES.index(v) if v in DISCLOSURES else len(DISCLOSURES), v),
+    }
+    facets = {
+        plural: [{"value": v, "count": n} for v, n in sorted(counts[name].items(), key=lambda item: rank[name](item[0]))]
+        for name, plural in (("kind", "kinds"), ("semester", "semesters"), ("industry", "industries"), ("disclosure", "disclosures"))
+    }
+    rows = [row for row, passed in zip(rows, passes) if all(passed.values())]
+    limit = max(1, min(limit, 500))
     return rows[max(0, offset):max(0, offset) + limit], len(rows), facets
+
 
 async def get_visible(db, viewer: dict, resource_id: int) -> dict:
     """The resource row if the viewer may see it, else None (never says why)."""
@@ -298,8 +456,12 @@ async def present(db, viewer: dict, rows: list[dict]) -> list[dict]:
             ],
             "files_hidden_count": hidden,
             "team": team[r["id"]], "created_at": r["created_at"],
+            # The folder or file behind the link is the deliverable, so it follows the files' rule.
+            "link": resolve_link(r["link"]) if r["files_open"] else None,
         }
         if admin:
+            # What is stored, so an admin can see a SharePoint path waiting for SHAREPOINT_BASE_URL.
+            item["stored_link"] = r["link"]
             row = sensitive.get(r["id"])
             item["revenue"] = row["revenue"] if row else None
             item["contacts"] = json.loads(row["contacts"]) if row else []
@@ -378,6 +540,38 @@ async def delete_resource(db, admin: dict, resource_id: int) -> bool:
     await db.execute(f"DELETE FROM workspace_document_versions WHERE document_id IN ({marks})", documents)
     await db.execute(f"DELETE FROM workspace_documents WHERE id IN ({marks})", documents)
     await audit(db, admin["id"], "resource_delete", "resource", resource_id, {"files": len(documents)})
+    await db.commit()
+    return True
+
+
+async def create_link_resource(db, admin: dict, *, kind: str, title: str, semester: str | None, industry: str | None,
+                               disclosure: str, url: str) -> int:
+    """Add a resource that is only a link (no stored file). Arguments are
+    already validated; the access rules are the same as for any resource."""
+    industry = "; ".join(_industries(industry)) or None
+    stamp = now()
+    await db.execute("BEGIN IMMEDIATE")
+    cursor = await db.execute(
+        """INSERT INTO resources(kind, title, semester, industry, disclosure, link, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (kind, title, semester, industry, disclosure, url, stamp, stamp),
+    )
+    rid = cursor.lastrowid
+    await reindex(db, rid)
+    await audit(db, admin["id"], "resource_create", "resource", rid, {"kind": kind, "link": link_provider(url)})
+    await db.commit()
+    return rid
+
+
+async def set_link(db, admin: dict, resource_id: int, url: str | None) -> bool:
+    """Set (or, with None, remove) a resource's link. False when there is no such resource."""
+    await db.execute("BEGIN IMMEDIATE")
+    cursor = await db.execute("UPDATE resources SET link = ?, updated_at = ? WHERE id = ?", (url, now(), resource_id))
+    if not cursor.rowcount:
+        await db.rollback()
+        return False
+    await audit(db, admin["id"], "resource_link_set", "resource", resource_id,
+                {"link": link_provider(url)})
     await db.commit()
     return True
 

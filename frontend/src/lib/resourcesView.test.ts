@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ResourceItem } from '../api';
 import {
-  buildResourceQuery, clientText, formatFileSize, formatRevenue, groupTeam, hasAdminDetails, hiddenFilesNote, kindLabel, kindSingular, orderKinds,
+  buildResourceQuery, clientText, disclosureLabel, editableLink, facetOptions, fileCountText, formatFileSize, formatRevenue,
+  groupResources, groupTeam, hasAdminDetails, hiddenFilesNote, kindLabel, kindSingular, linkLabel, orderKinds, semesterRank,
 } from './resourcesView';
 
 describe('kind names', () => {
   it('uses the filter labels the club knows the groups by', () => {
     expect(['past_project', 'template', 'interview', 'survey', 'analytics', 'other'].map(kindLabel)).toEqual([
-      'Past projects', 'Slide templates', 'Interview guides', 'Survey guides', 'Analytics', 'Other',
+      'Past projects', 'Templates', 'Interview', 'Survey', 'Analytics', 'Other',
     ]);
-    expect(kindSingular('template')).toBe('Slide template');
+    expect(kindSingular('template')).toBe('Template');
   });
   it('never shows a raw id for a kind it does not know', () => {
     expect(kindLabel('case_study')).toBe('Case study');
@@ -48,11 +49,11 @@ describe('formatRevenue', () => {
 describe('buildResourceQuery', () => {
   it('sends only what is set', () => {
     expect(buildResourceQuery({})).toBe('');
-    expect(buildResourceQuery({ q: '  pricing ', kind: 'past_project', semester: 'Fall 2025', industry: 'Healthcare', limit: 30, offset: 60 }))
-      .toBe('q=pricing&kind=past_project&semester=Fall+2025&industry=Healthcare&limit=30&offset=60');
+    expect(buildResourceQuery({ q: '  pricing ', kind: 'past_project', semester: 'Fall 2025', industry: 'Healthcare', disclosure: 'public', limit: 30, offset: 60 }))
+      .toBe('q=pricing&kind=past_project&semester=Fall+2025&industry=Healthcare&disclosure=public&limit=30&offset=60');
   });
   it('leaves out an empty search, an unset filter and a zero offset', () => {
-    expect(buildResourceQuery({ q: '   ', kind: '', semester: '', industry: '', limit: 30, offset: 0 })).toBe('limit=30');
+    expect(buildResourceQuery({ q: '   ', kind: '', semester: '', industry: '', disclosure: '', limit: 30, offset: 0 })).toBe('limit=30');
   });
   it('escapes what a member types', () => {
     expect(buildResourceQuery({ q: 'a&b=c' })).toBe('q=a%26b%3Dc');
@@ -106,5 +107,48 @@ describe('hasAdminDetails', () => {
     expect(hasAdminDetails(base)).toBe(false);
     expect(hasAdminDetails({ ...base, revenue: null })).toBe(true);
     expect(hasAdminDetails({ ...base, contacts: [] })).toBe(true);
+  });
+});
+
+
+describe('facets and groups', () => {
+  const item = (id: number, kind: ResourceItem['kind'], title: string, semester: string | null): ResourceItem => ({
+    id, kind, title, semester, client: null, client_hidden: false, industry: null, industries: [], areas: null,
+    description: null, code_name: null, team_size: null, disclosure: 'public', status: null, files_open: true,
+    files: [], files_hidden_count: 0, team: [], created_at: 0, link: null,
+  });
+  it('names disclosures and link providers for people, not the API', () => {
+    expect(['public', 'name_only', 'private'].map(disclosureLabel)).toEqual(['Deliverable & name', 'Name only', 'Team only']);
+    expect(linkLabel('sharepoint')).toBe('Open in SharePoint');
+    expect(linkLabel('google_drive')).toBe('Open in Google Drive');
+  });
+  it('starts the admin link field with the address that opens, never a bare SharePoint path', () => {
+    const sharepoint = { url: 'https://tenant.sharepoint.com/:f:/r/sites/S/x', provider: 'sharepoint' as const };
+    expect(editableLink({ link: sharepoint, stored_link: '/:f:/r/sites/S/x' })).toBe(sharepoint.url);
+    expect(editableLink({ link: null, stored_link: '/:f:/r/sites/S/x' })).toBe('');
+    expect(editableLink({ link: null, stored_link: 'https://drive.google.com/x' })).toBe('https://drive.google.com/x');
+    expect(editableLink({ link: null, stored_link: null })).toBe('');
+  });
+  it('keeps a selected facet present with a zero count', () => {
+    expect(facetOptions([{ value: 'Healthcare', count: 3 }], 'Retail')).toEqual([
+      { value: 'Retail', count: 0 }, { value: 'Healthcare', count: 3 },
+    ]);
+    expect(facetOptions([{ value: 'Retail', count: 1 }], 'Retail')).toHaveLength(1);
+  });
+  it('groups projects by semester newest first, and other resources by type', () => {
+    const groups = groupResources([
+      item(1, 'past_project', 'Old', 'Spring 2025'), item(2, 'template', 'T', null),
+      item(3, 'past_project', 'New', 'Fall 2025'), item(4, 'interview', 'I', null),
+      item(5, 'past_project', 'No semester', null),
+    ]);
+    expect(groups.map((group) => [group.label, group.items.map((entry) => entry.title)])).toEqual([
+      ['Fall 2025', ['New']], ['Spring 2025', ['Old']], ['Past projects', ['No semester']], ['Templates', ['T']], ['Interview', ['I']],
+    ]);
+    expect(semesterRank('Fall 2025')).toBeGreaterThan(semesterRank('Spring 2025'));
+  });
+  it('counts shown and hidden files in the compact row', () => {
+    const base = { files: [], files_hidden_count: 0 };
+    expect(fileCountText(base)).toBeNull();
+    expect(fileCountText({ files: [{ id: 1 } as ResourceItem['files'][number]], files_hidden_count: 1 })).toBe('2 files');
   });
 });

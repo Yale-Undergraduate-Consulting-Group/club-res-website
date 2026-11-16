@@ -105,19 +105,24 @@ guides and analytics resources; data rules and decisions in
 documents (`workspace_documents`, owned by the importing admin, private);
 `routers/resources.py` and `services/resources.py` are the only readers, and
 `services/resources.py` is the one place the visibility rules live: the page,
-the search and the Slack tool (`search_resources`) all call it. Search is two
-SQLite FTS5 indexes, metadata and file text; file text only matches for a
-member who may open the files. A statement of work (file name contains SOW or
-"statement of work") is admin-only, is never text-indexed, and is not
-mentioned to other members. Revenue and client contacts are in
-`resource_sensitive`, read only on the admin branch.
+the visibility-safe facet counts, search and the Slack tool
+(`search_resources`) all call it. Search is two SQLite FTS5 indexes, metadata
+and file text; file text only matches for a member who may open the files. A
+statement of work (file name contains SOW or "statement of work") is
+admin-only, is never text-indexed, and is not mentioned to other members.
+Revenue and client contacts are in `resource_sensitive`, read only on the
+admin branch. Imported SharePoint links are stored from the host on
+(`/:f:/r/sites/...`) and resolve only when `SHAREPOINT_BASE_URL` is set; an
+admin-entered link must be https on exactly that host or on Google Drive.
+Links follow the same access rule as files.
 
 `python backend/scripts/import_resources.py <zip> [--dry-run]` imports the
-OneDrive export (admin-run, idempotent). Files go to `DOCUMENTS_BUCKET`; with
-no bucket and `APP_ENV` unset, local or beta they go to `DOCUMENTS_LOCAL_DIR`
-(default `/tmp/yucg-documents`), and production without a bucket refuses to
-import. A "Public Disclosure?" answer that is not a clear yes is private; a
-caveat steps the answer down one level.
+OneDrive export (admin-run, idempotent), including the table's hyperlinks
+without overwriting a link an admin edited. Files go to `DOCUMENTS_BUCKET`;
+with no bucket and `APP_ENV` unset, local or beta they go to
+`DOCUMENTS_LOCAL_DIR` (default `/tmp/yucg-documents`), and production without
+a bucket refuses to import. A "Public Disclosure?" answer that is not a clear
+yes is private; a caveat steps the answer down one level.
 
 ### Market sentiment (`sentiment`)
 

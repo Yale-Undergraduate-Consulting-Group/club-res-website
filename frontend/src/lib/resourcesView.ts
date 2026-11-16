@@ -1,14 +1,26 @@
-import type { ResourceItem, ResourceKind, ResourceQuery, ResourceTeamMember } from '../api';
+import type { ResourceFacet, ResourceItem, ResourceKind, ResourceQuery, ResourceTeamMember } from '../api';
 
-/** The kinds in the order the filter lists them, with the plural name the filter shows and the singular name a card shows. */
+/** The kinds in the order the filter lists them, with the plural name the filter and group headers show and the singular name a row shows. */
 export const RESOURCE_KINDS: { kind: ResourceKind; label: string; singular: string }[] = [
   { kind: 'past_project', label: 'Past projects', singular: 'Past project' },
-  { kind: 'template', label: 'Slide templates', singular: 'Slide template' },
-  { kind: 'interview', label: 'Interview guides', singular: 'Interview guide' },
-  { kind: 'survey', label: 'Survey guides', singular: 'Survey guide' },
+  { kind: 'template', label: 'Templates', singular: 'Template' },
+  { kind: 'interview', label: 'Interview', singular: 'Interview guide' },
+  { kind: 'survey', label: 'Survey', singular: 'Survey guide' },
   { kind: 'analytics', label: 'Analytics', singular: 'Analytics' },
   { kind: 'other', label: 'Other', singular: 'Other' },
 ];
+
+/** The club's "Public Disclosure?" answers, as the filter and a project's badge name them. */
+const DISCLOSURE_LABELS: Record<string, string> = {
+  public: 'Deliverable & name',
+  name_only: 'Name only',
+  private: 'Team only',
+};
+
+/** The name of a disclosure value; an unknown one is never shown as a raw id. */
+export function disclosureLabel(disclosure: string): string {
+  return DISCLOSURE_LABELS[disclosure] ?? titleCase(disclosure);
+}
 
 const titleCase = (kind: string) => {
   const words = kind.replace(/_/g, ' ');
@@ -59,6 +71,7 @@ export function buildResourceQuery(query: ResourceQuery): string {
   if (query.kind) params.set('kind', query.kind);
   if (query.semester) params.set('semester', query.semester);
   if (query.industry) params.set('industry', query.industry);
+  if (query.disclosure) params.set('disclosure', query.disclosure);
   if (query.limit !== undefined) params.set('limit', String(query.limit));
   if (query.offset) params.set('offset', String(query.offset));
   return params.toString();
@@ -90,4 +103,58 @@ export function groupTeam(team: ResourceTeamMember[]): { role: string; members: 
 /** The admin-only block is drawn only when the server sent those keys at all (it leaves them out for everyone else). */
 export function hasAdminDetails(item: ResourceItem): boolean {
   return item.revenue !== undefined || item.contacts !== undefined;
+}
+
+/** The link button's label. */
+export function linkLabel(provider: string): string {
+  return provider === 'google_drive' ? 'Open in Google Drive' : 'Open in SharePoint';
+}
+
+/** A facet's values with the chosen one kept on offer (at 0) even when nothing else now matches it. */
+export function facetOptions(values: ResourceFacet[], chosen: string): ResourceFacet[] {
+  if (!chosen || values.some((entry) => entry.value === chosen)) return values;
+  return [{ value: chosen, count: 0 }, ...values];
+}
+
+/** What an admin's link field starts with: the address that opens now, else a saved address (a SharePoint path waiting for its setting is not one). */
+export function editableLink(item: Pick<ResourceItem, 'link' | 'stored_link'>): string {
+  return item.link?.url ?? (item.stored_link?.startsWith('https://') ? item.stored_link : '');
+}
+
+const SEASONS: Record<string, number> = { spring: 1, summer: 2, fall: 3 };
+
+/** "Fall 2025" -> 2025 * 10 + 3, so later semesters sort first; anything else is 0. */
+export function semesterRank(semester: string): number {
+  const match = /^\s*(spring|summer|fall)\s+(\d{4})/i.exec(semester);
+  return match ? Number(match[2]) * 10 + SEASONS[match[1].toLowerCase()] : 0;
+}
+
+export type ResourceGroup = { key: string; label: string; items: ResourceItem[] };
+
+/** The list's sections: past projects by semester, newest first; everything else by type, in the filter's order.
+ *  Within a section the server's order (newest, or best match) is kept. */
+export function groupResources(items: ResourceItem[]): ResourceGroup[] {
+  const groups = new Map<string, ResourceGroup>();
+  for (const item of items) {
+    const bySemester = item.kind === 'past_project' && Boolean(item.semester);
+    const key = bySemester ? `semester:${item.semester}` : `kind:${item.kind}`;
+    const label = bySemester ? item.semester! : kindLabel(item.kind);
+    if (!groups.has(key)) groups.set(key, { key, label, items: [] });
+    groups.get(key)!.items.push(item);
+  }
+  const kinds = orderKinds([...new Set(items.map((item) => item.kind))]);
+  const rank = (group: ResourceGroup): [number, number] => (group.key.startsWith('semester:')
+    ? [0, -semesterRank(group.label)]
+    : [1, kinds.indexOf(group.key.slice('kind:'.length))]);
+  return [...groups.values()].sort((a, b) => {
+    const [ga, ra] = rank(a);
+    const [gb, rb] = rank(b);
+    return ga - gb || ra - rb || a.label.localeCompare(b.label);
+  });
+}
+
+/** How many files a row says it has: the ones the viewer may open and the ones kept for the team. */
+export function fileCountText(item: Pick<ResourceItem, 'files' | 'files_hidden_count'>): string | null {
+  const count = item.files.length + item.files_hidden_count;
+  return count > 0 ? `${count} ${count === 1 ? 'file' : 'files'}` : null;
 }

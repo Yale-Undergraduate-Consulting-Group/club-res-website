@@ -6,7 +6,9 @@ repo; each file goes through a temp file (for text extraction) and then
 app.services.document_storage, the register's storage path.
 
 Re-running updates what is there and never duplicates: a resource is keyed by
-its table row (or folder / file path), a file by its path and CRC.
+its table row (or folder / file path), a file by its path and CRC. The table's
+"Project File Link" hyperlinks fill a resource's SharePoint link only while it
+has none, so a link an admin set is kept.
 
 Data rules (docs/product/RESOURCES-PLAN.md): the club's own "Public Disclosure?"
 column decides visibility; anything not clearly "yes" is private. Nothing read
@@ -34,6 +36,7 @@ from app.services.transaction_audit import audit
 
 PROJECTS = "Past Project Database/"
 TOC_MEMBER = PROJECTS + "YUCG Project Database Table of Contents.xlsx"
+LINK_COLUMN = "Project File Link"
 SECTIONS = {
     "Slide Templates": "template",
     "Interview Resources": "interview",
@@ -107,6 +110,7 @@ class TocRow:
     fields: dict[str, Any] = field(default_factory=dict)
     folder: str | None = None
     files: list[str] = field(default_factory=list)
+    link: str | None = None
 
     @property
     def key(self) -> str:
@@ -116,21 +120,24 @@ class TocRow:
 def read_toc(data: bytes) -> list[TocRow]:
     """The table's rows, the sheets merged by (semester, code name or client):
     the "Database" sheet wins, the "Info" sheet fills what it leaves blank
-    (revenue lives only there)."""
+    (revenue lives only there). A row's SharePoint link is the hyperlink on its
+    "Project File Link" cell (the cell's text is only "Click Here")."""
     import openpyxl
 
-    workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    # Not read_only: that mode does not load hyperlinks. The table is about 50 KB.
+    workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
     sheets = sorted(workbook.worksheets, key=lambda ws: "database" not in ws.title.lower())
     merged: dict[str, TocRow] = {}
     for sheet in sheets:
-        rows = sheet.iter_rows(values_only=True)
-        header = [str(h or "").strip() for h in next(rows, ())]
-        for values in rows:
-            record = dict(zip(header, values))
+        rows = sheet.iter_rows()
+        header = [str(cell.value or "").strip() for cell in next(rows, ())]
+        for cells in rows:
+            record = dict(zip(header, (cell.value for cell in cells)))
             semester, client, code = _clean(record.get("Semester")), _clean(record.get("Client")), _clean(record.get("Code Name"))
             if not semester or not (client or code):
                 continue
-            row = TocRow(semester, client, code, record)
+            hyperlink = next((cell.hyperlink for column, cell in zip(header, cells) if column == LINK_COLUMN), None)
+            row = TocRow(semester, client, code, record, link=resources.sharepoint_path(hyperlink.target if hyperlink else None))
             known = merged.get(row.key)
             if known is None:
                 merged[row.key] = row
@@ -139,6 +146,7 @@ def read_toc(data: bytes) -> list[TocRow]:
                 if known.fields.get(column) in (None, "") and value not in (None, ""):
                     known.fields[column] = value
             known.client = known.client or client
+            known.link = known.link or row.link
     return list(merged.values())
 
 
@@ -171,6 +179,7 @@ class Plan:
     team: list[tuple[str, str]] = field(default_factory=list)
     alt_key: str | None = None
     folder: str | None = None
+    link: str | None = None
 
 
 def _plan_file(member: str, force_admin_only: bool = False) -> PlanFile:
@@ -192,6 +201,7 @@ def _project_plan(row: TocRow, files: list[str], folder: str | None) -> Plan:
         disclosure=map_disclosure(f.get("Public Disclosure?")), status=_clean(f.get("Completed?")),
         revenue=_number(f.get("Revenue")), contacts=_contacts(f.get("Points of Contact"), f.get("POC Emails")),
         team=team, files=[_plan_file(m) for m in files], alt_key=f"folder:{row.semester}/{folder}" if folder else None, folder=folder,
+        link=row.link,
     )
 
 
@@ -280,31 +290,34 @@ def summarize(plan: dict[str, Any]) -> dict[str, Any]:
         "resources": len(plans),
         "files": sum(len(p.files) for p in plans),
         "admin_only_files": sum(1 for p in plans for f in p.files if f.admin_only),
+        "links": sum(1 for p in plans if p.link),
         "visibility": {f"{kind}/{disclosure}": n for (kind, disclosure), n in sorted(Counter((p.kind, p.disclosure) for p in plans).items())},
     }
 
 
 # --- Writing -----------------------------------------------------------------
 
-async def _upsert_resource(db, plan: Plan, now: int) -> int:
+async def _upsert_resource(db, plan: Plan, now: int) -> tuple[int, bool]:
+    """(resource id, whether its link was filled now)."""
     await db.execute("BEGIN IMMEDIATE")
-    row = await (await db.execute("SELECT id FROM resources WHERE source_key = ?", (plan.source_key,))).fetchone()
+    row = await (await db.execute("SELECT id, link FROM resources WHERE source_key = ?", (plan.source_key,))).fetchone()
     if row is None and plan.alt_key:
-        row = await (await db.execute("SELECT id FROM resources WHERE source_key = ?", (plan.alt_key,))).fetchone()
+        row = await (await db.execute("SELECT id, link FROM resources WHERE source_key = ?", (plan.alt_key,))).fetchone()
+    filled = bool(plan.link) and not (row and row["link"])
     values = (plan.kind, plan.title, plan.client, plan.semester, plan.industry, plan.areas, plan.description, plan.code_name,
               plan.team_size, plan.disclosure, plan.status)
     if row:
         rid = row["id"]
         await db.execute(
             """UPDATE resources SET kind=?, title=?, client=?, semester=?, industry=?, areas=?, description=?, code_name=?,
-               team_size=?, disclosure=?, status=?, source_key=?, updated_at=? WHERE id=?""",
-            (*values, plan.source_key, now, rid),
+               team_size=?, disclosure=?, status=?, source_key=?, link=COALESCE(link, ?), updated_at=? WHERE id=?""",
+            (*values, plan.source_key, plan.link, now, rid),
         )
     else:
         cursor = await db.execute(
             """INSERT INTO resources(kind, title, client, semester, industry, areas, description, code_name,
-               team_size, disclosure, status, source_key, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (*values, plan.source_key, now, now),
+               team_size, disclosure, status, source_key, link, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (*values, plan.source_key, plan.link, now, now),
         )
         rid = cursor.lastrowid
     if plan.kind == "past_project":
@@ -315,7 +328,7 @@ async def _upsert_resource(db, plan: Plan, now: int) -> int:
         await db.execute("INSERT OR IGNORE INTO resource_team(resource_id, role, name, name_key) VALUES (?,?,?,?)",
                          (rid, role, name, resources.name_key(name)))
     await db.commit()
-    return rid
+    return rid, filled
 
 
 async def _import_file(db, archive: zipfile.ZipFile, rid: int, pf: PlanFile, admin_id: int, target: str, now: int) -> str:
@@ -412,8 +425,10 @@ async def run_import(
             now = resources.now()
             counts: Counter = Counter()
             ids = []
+            links_filled = 0
             for item in plan["plans"]:
-                rid = await _upsert_resource(db, item, now)
+                rid, filled = await _upsert_resource(db, item, now)
+                links_filled += filled
                 ids.append(rid)
                 for pf in item.files:
                     counts[await _import_file(db, archive, rid, pf, admin_id, target, now)] += 1
@@ -422,10 +437,11 @@ async def run_import(
                 await db.commit()
             await db.execute("BEGIN IMMEDIATE")
             summary["team"] = await resources.match_team(db, ids)
-            await audit(db, admin_id, "resources_import", "resource", 0, {"resources": len(ids), **counts})
+            await audit(db, admin_id, "resources_import", "resource", 0, {"resources": len(ids), "links_filled": links_filled, **counts})
             await db.commit()
             summary["file_results"] = dict(counts)
-            log(f"Imported {len(ids)} resources; files: {dict(counts)}")
+            summary["links_filled"] = links_filled
+            log(f"Imported {len(ids)} resources; files: {dict(counts)}; links filled: {links_filled}")
         finally:
             await db.close()
     return summary

@@ -1,7 +1,10 @@
 """Club Resources API. Every route decides access in app.services.resources;
 a resource or file the member may not see answers 404, the same as a missing one."""
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from app.auth_deps import get_current_admin, get_current_user
 from app.database import get_db
@@ -14,16 +17,60 @@ def not_found() -> HTTPException:
     return HTTPException(404, "Not found")
 
 
+class LinkResource(BaseModel):
+    kind: Literal[resources.KINDS]
+    title: str = Field(min_length=1, max_length=200)
+    semester: str | None = Field(None, max_length=20)
+    industry: str | None = Field(None, max_length=200)
+    disclosure: Literal[resources.DISCLOSURES] = "private"
+    url: str = Field(max_length=2000)
+
+
+class LinkUpdate(BaseModel):
+    #: None or blank removes the link.
+    url: str | None = Field(None, max_length=2000)
+
+
+def _checked(check, value):
+    try:
+        return check(value)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
 @router.get("")
 async def list_resources(
-    q: str = Query("", max_length=200), kind: str = "", semester: str = "", industry: str = "",
+    q: str = Query("", max_length=200), kind: str = "", semester: str = "", industry: str = "", disclosure: str = "",
     limit: int = 60, offset: int = 0, user: dict = Depends(get_current_user),
 ):
     db = await get_db()
     try:
         rows, total, facets = await resources.search(
-            db, user, q=q, kind=kind, semester=semester, industry=industry, limit=limit, offset=offset)
-        return {"items": await resources.present(db, user, rows), "total": total, "facets": facets}
+            db, user, q=q, kind=kind, semester=semester, industry=industry, disclosure=disclosure, limit=limit, offset=offset)
+        listed = {"items": await resources.present(db, user, rows), "total": total, "facets": facets}
+        if resources.is_admin(user):
+            # Admins see whether imported SharePoint paths can open (the address itself stays on the server).
+            listed["sharepoint_configured"] = resources.sharepoint_base() is not None
+        return listed
+    finally:
+        await db.close()
+
+
+@router.post("")
+async def create_link_resource(payload: LinkResource, admin: dict = Depends(get_current_admin)):
+    """Add a resource that is a SharePoint or Google Drive link, with no file."""
+    title = " ".join(payload.title.split())
+    if not title:
+        raise HTTPException(422, "Give the resource a title")
+    semester = _checked(resources.clean_semester, payload.semester)
+    url = _checked(resources.clean_link, payload.url)
+    disclosure = payload.disclosure if payload.kind == "past_project" else "public"
+    db = await get_db()
+    try:
+        rid = await resources.create_link_resource(
+            db, admin, kind=payload.kind, title=title, semester=semester, industry=payload.industry, disclosure=disclosure, url=url)
+        row = await resources.get_visible(db, admin, rid)
+        return (await resources.present(db, admin, [row]))[0]
     finally:
         await db.close()
 
@@ -101,6 +148,19 @@ async def download_file(resource_id: int, file_id: int, user: dict = Depends(get
             (file_id,),
         )).fetchone()
         return {"url": url, "filename": name["filename"] if name else ""}
+    finally:
+        await db.close()
+
+
+@router.put("/{resource_id}/link")
+async def set_link(resource_id: int, payload: LinkUpdate, admin: dict = Depends(get_current_admin)):
+    url = _checked(resources.clean_link, payload.url) if (payload.url or "").strip() else None
+    db = await get_db()
+    try:
+        if not await resources.set_link(db, admin, resource_id, url):
+            raise not_found()
+        row = await resources.get_visible(db, admin, resource_id)
+        return (await resources.present(db, admin, [row]))[0]
     finally:
         await db.close()
 

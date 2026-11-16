@@ -18,9 +18,12 @@ os.environ.pop("APP_ENV", None)
 
 import openpyxl  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
+import main  # noqa: E402
 from app.auth_deps import get_current_admin  # noqa: E402
 from app.database import get_db, init_db  # noqa: E402
+from app.jwt_utils import create_token  # noqa: E402
 from app.routers import resources as api, workspace  # noqa: E402
 from app.services import document_storage, resource_import, resources  # noqa: E402
 from app.services.slack_tools import run_tool  # noqa: E402
@@ -38,22 +41,37 @@ ROWS = [
     ["Fall 2024", "Epsilon Air", "Complete", "Yes - Name Only (Need to Confirm First)", "Aviation", "", "Seat study", "Jet", 3, "", "", "", "", ""],
 ]
 REVENUE = {"rocket": 12345, "sprout": 777, "vault": 4242}
+# The table's "Project File Link" hyperlinks, in the relative shapes SharePoint
+# writes when the workbook sits in the same library. Jet's is only on the Info sheet.
+LINKS = {
+    "rocket": "../../../../:f:/r/sites/ClubSite/Shared%20Documents/Fall%202025/Rocket?csf=1&web=1&e=Tok3n",
+    "sprout": "../../../../:p:/r/sites/ClubSite/Shared%20Documents/Spring%202025/Sprout.pptx?d=w123&csf=1&web=1&e=x",
+    "vault": "../../../../:f:/r/sites/ClubSite/Shared%20Documents/Spring%202024/Vault?csf=1&web=1",
+}
+INFO_LINKS = {"jet": "../../../../:f:/r/sites/ClubSite/Shared%20Documents/Fall%202024/Jet?csf=1&web=1"}
+BASE = "https://club-example.sharepoint.com"
 
 
 def table(description_suffix=""):
     workbook = openpyxl.Workbook()
     main = workbook.active
     main.title = "Detailed Project Database"
-    main.append(HEADER)
+    main.append([*HEADER, "Project File Link"])
     for row in ROWS:
         row = list(row)
         row[6] += description_suffix
-        main.append(row)
+        code = row[7].lower()
+        main.append([*row, "Click Here" if code in LINKS else None])
+        if code in LINKS:
+            main.cell(main.max_row, len(HEADER) + 1).hyperlink = LINKS[code]
     info = workbook.create_sheet("Detailed Project Info")
-    info.append(["Semester", "Client", "Code Name", "Revenue"])
+    info.append(["Semester", "Client", "Code Name", "Revenue", "Project File Link"])
     for row in ROWS:
-        if row[7].lower() in REVENUE:
-            info.append([row[0], row[1], row[7], REVENUE[row[7].lower()]])
+        code = row[7].lower()
+        if code in REVENUE or code in INFO_LINKS:
+            info.append([row[0], row[1], row[7], REVENUE.get(code), "Click Here" if code in INFO_LINKS else None])
+            if code in INFO_LINKS:
+                info.cell(info.max_row, 5).hyperlink = INFO_LINKS[code]
     out = io.BytesIO()
     workbook.save(out)
     return out.getvalue()
@@ -119,6 +137,69 @@ def by_title(listed):
     return {item["title"]: item for item in listed["items"]}
 
 
+def facet(listed, name):
+    return {entry["value"]: entry["count"] for entry in listed["facets"][name]}
+
+
+def client_for(user_id, role):
+    client = TestClient(main.app, raise_server_exceptions=False)
+    client.cookies.set("yucg_session", create_token(user_id, f"{user_id}@yale.edu", None, None, role))
+    return client
+
+
+def check_link_paths():
+    os.environ.pop("SHAREPOINT_BASE_URL", None)
+    path = resources.sharepoint_path
+    expected = "/:f:/r/sites/ClubSite/Shared%20Documents/Fall%202025/Rocket"
+    assert path(LINKS["rocket"]) == expected, "the sharing prefix is kept, the query dropped"
+    assert path("../../:p:/r/sites/A/B/deck.pptx?d=w1") == "/:p:/r/sites/A/B/deck.pptx"
+    assert path("/sites/A/B") == "/sites/A/B"
+    absolute = f"{BASE}/:f:/r/sites/ClubSite/Shared%20Documents/Fall%202025/Rocket?web=1"
+    assert path(absolute) is None, "without the setting an absolute link has no host to match"
+    os.environ["SHAREPOINT_BASE_URL"] = BASE
+    assert path(absolute) == expected
+    for bad in (None, "", "Click Here", f"{BASE}/:f:/s/ClubSite/EaBc", "../other/sites/A", "../../:f:/r/sites/A/../../admin",
+                "/sites/A/has space", "javascript:/sites/A", "http://club-example.sharepoint.com/sites/A",
+                "https://other-tenant.sharepoint.com/:f:/r/sites/ClubSite/x"):
+        assert path(bad) is None, bad
+
+    resolve = resources.resolve_link
+    rocket_url = "https://club-example.sharepoint.com/:f:/r/sites/ClubSite/Shared%20Documents/Fall%202025/Rocket"
+    assert resolve(expected) == {"url": rocket_url, "provider": "sharepoint"}
+    os.environ["SHAREPOINT_BASE_URL"] = BASE + "/sites/ClubSite/"
+    assert resolve(expected)["url"] == rocket_url, "the sharing prefix goes straight after the host, not after a site path"
+    assert resolve("https://evil.test/x") is None and resolve("http://drive.google.com/x") is None
+
+    clean = resources.clean_link
+    assert clean(f"{BASE}/sites/ClubSite/x") == "/sites/ClubSite/x", "stored from the host on, like the table's"
+    assert clean("https://Club-Example.SharePoint.com/:f:/s/ClubSite/EaBc?e=1") == "/:f:/s/ClubSite/EaBc?e=1"
+    for drive in ("https://drive.google.com/drive/folders/abc", "https://docs.google.com/presentation/d/x/edit"):
+        assert clean(drive) == drive
+    rejected = ("https://other-tenant.sharepoint.com/sites/A", "http://club-example.sharepoint.com/sites/A", "https://example.com/sites/A",
+                "https://sharepoint.com/sites/A", "https://club-example.sharepoint.com.evil.test/sites/A",
+                "https://club-example.sharepoint.com@evil.test/", "javascript:alert(1)", "https://club-example.sharepoint.com:8443/sites/A",
+                "https://drive.google.com.evil.test/x", "https://club-example.sharepoint.com/a b", "", None)
+    for bad in rejected:
+        try:
+            clean(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+
+    os.environ.pop("SHAREPOINT_BASE_URL")
+    assert resolve(expected) is None, "no setting: no link, never a broken one"
+    assert resolve("https://drive.google.com/x") == {"url": "https://drive.google.com/x", "provider": "google_drive"}
+    try:
+        clean(f"{BASE}/sites/ClubSite/x")
+        raise AssertionError("a SharePoint link needs the setting's host to compare with")
+    except ValueError:
+        pass
+    for bad_base in ("http://club-example.sharepoint.com", "https://evil.test", "not a url"):
+        os.environ["SHAREPOINT_BASE_URL"] = bad_base
+        assert resolve(expected) is None, bad_base
+    os.environ.pop("SHAREPOINT_BASE_URL")
+
+
 async def run():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -128,8 +209,10 @@ async def run():
         make_zip(archive)
 
         # A dry run before the database exists writes and stores nothing.
+        check_link_paths()
         dry = await resource_import.run_import(archive, dry_run=True)
         assert dry["table_rows"] == 5 and dry["matched"] == 4
+        assert dry["links"] == 4, dry  # three on the Database sheet, one only on the Info sheet
         assert dry["folders_without_row"] == ["Fall 2025/Orphan Inc (Zed)"]
         assert dry["rows_without_folder"] == ["Fall 2023: Delta Co"]
         assert dry["held_back_files"] == 0
@@ -152,6 +235,7 @@ async def run():
 
         summary = await resource_import.run_import(archive, log=lambda _line: None)
         assert summary["file_results"] == {"added": 9}, summary
+        assert summary["links_filled"] == 4, summary
         # Team: "Team Person" matched on three resources; the ghost and the ambiguous twins grant nothing.
         assert summary["team"] == {"matched": 3, "unmatched": 2}, summary["team"]
         counts = {t: await count(db, t) for t in ("resources", "resource_files", "workspace_documents", "workspace_document_versions", "resource_team")}
@@ -160,6 +244,7 @@ async def run():
         # Idempotent: the same zip changes nothing; a changed row and file update in place.
         again = await resource_import.run_import(archive, log=lambda _line: None)
         assert again["file_results"] == {"unchanged": 9}, again
+        assert again["links_filled"] == 0, again
         assert {t: await count(db, t) for t in counts} == counts
         make_zip(archive, description_suffix=" (revised)", acme_text="giraffe market sizing revised")
         changed = await resource_import.run_import(archive, log=lambda _line: None)
@@ -217,8 +302,18 @@ async def run():
 
         # Facets and filters only cover what the viewer may see.
         listed = await listing(member)
-        assert "Financial Services" not in listed["facets"]["industries"] and "Healthcare" in listed["facets"]["industries"]
-        assert listed["facets"]["semesters"][0] == "Fall 2025"
+        assert "Financial Services" not in facet(listed, "industries") and facet(listed, "industries")["Healthcare"] == 1
+        assert listed["facets"]["semesters"][0] == {"value": "Fall 2025", "count": 1}
+        assert facet(listed, "kinds") == {"past_project": 2, "template": 2, "interview": 1}
+        assert facet(listed, "disclosures") == {"public": 1, "name_only": 1}, "a private project is not even counted"
+        assert facet(await listing(team), "disclosures") == {"public": 1, "name_only": 1, "private": 1}
+        assert facet(await listing(admin), "kinds")["past_project"] == 6
+        # A facet is counted with the other filters applied, not its own.
+        templates = await listing(member, kind="template")
+        assert facet(templates, "kinds") == facet(listed, "kinds") and facet(templates, "semesters") == {}
+        assert facet(await listing(member, q="sprout"), "kinds") == {"past_project": 1}
+        assert set(by_title(await listing(member, disclosure="name_only"))) == {"Beta Foods (Sprout)"}
+        assert facet(await listing(member, disclosure="name_only"), "semesters") == {"Spring 2025": 1}
         assert set(by_title(await listing(member, kind="template"))) == {"Baseline", "Copy of client work"}
         assert set(by_title(await listing(member, semester="Spring 2025"))) == {"Beta Foods (Sprout)"}
         assert set(by_title(await listing(member, industry="healthcare"))) == {"Acme Corp (Rocket)"}
@@ -308,6 +403,73 @@ async def run():
         assert len([p for p in (tmp / "files").rglob("*") if p.is_file()]) == stored - 1
         delete_audit = await (await db.execute("SELECT details FROM audit_log WHERE action='resource_delete'")).fetchone()
         assert json.loads(delete_audit["details"]) == {"files": 1}
+
+        # --- Links ---------------------------------------------------------------
+        rocket_path = "/:f:/r/sites/ClubSite/Shared%20Documents/Fall%202025/Rocket"
+        seen = {name: by_title(await listing(u)) for name, u in (("member", member), ("team", team), ("admin", admin))}
+        assert all(item["link"] is None for who in seen.values() for item in who.values()), "no SHAREPOINT_BASE_URL: no button"
+        assert seen["admin"]["Acme Corp (Rocket)"]["stored_link"] == rocket_path
+        assert seen["admin"]["Epsilon Air (Jet)"]["stored_link"].endswith("/Fall%202024/Jet")
+        assert "stored_link" not in json.dumps(seen["member"]) and "ClubSite" not in json.dumps(seen["member"])
+        assert (await listing(admin))["sharepoint_configured"] is False and "sharepoint_configured" not in await listing(member)
+        os.environ["SHAREPOINT_BASE_URL"] = BASE
+        seen = {name: by_title(await listing(u)) for name, u in (("member", member), ("team", team))}
+        assert seen["member"]["Acme Corp (Rocket)"]["link"] == {"url": BASE + rocket_path, "provider": "sharepoint"}
+        assert (await listing(admin))["sharepoint_configured"] is True
+        assert seen["member"]["Beta Foods (Sprout)"]["link"] is None, "name only: the link follows the files"
+        assert seen["team"]["Beta Foods (Sprout)"]["link"]["url"].endswith("/Spring%202025/Sprout.pptx")
+        assert seen["member"]["Baseline"]["link"] is None
+
+        # Over HTTP: only an admin edits links or adds a link-only resource, and the address is checked on the server.
+        acme_id = acme["id"]
+        as_member, as_admin = client_for(1, "standard"), client_for(3, "admin")
+        drive = "https://drive.google.com/drive/folders/club-folder"
+        assert as_member.put(f"/api/resources/{acme_id}/link", json={"url": drive}).status_code == 403
+        assert as_member.post("/api/resources", json={"kind": "template", "title": "T", "url": drive}).status_code == 403
+        for bad in ("https://evil.test/x", "http://drive.google.com/x", "javascript:alert(1)", "https://other-tenant.sharepoint.com/sites/ClubSite/x"):
+            response = as_admin.put(f"/api/resources/{acme_id}/link", json={"url": bad})
+            assert response.status_code == 422, (bad, response.status_code)
+        assert as_admin.put("/api/resources/99999/link", json={"url": drive}).status_code == 404
+        response = as_admin.put(f"/api/resources/{acme_id}/link", json={"url": drive})
+        assert response.status_code == 200 and response.json()["link"] == {"url": drive, "provider": "google_drive"}
+        assert (await api.get_resource(acme_id, member))["link"]["url"] == drive
+        assert as_member.get(f"/api/resources/{acme_id}").json()["link"]["url"] == drive
+
+        # Link-only resources follow the same rules as any other.
+        private = as_admin.post("/api/resources", json={
+            "kind": "past_project", "title": "Linked private project", "semester": "fall 2026", "industry": "Energy; Utilities",
+            "disclosure": "private", "url": BASE + "/sites/ClubSite/Shared%20Documents/Linked"})
+        assert private.status_code == 200, private.text
+        assert private.json()["semester"] == "Fall 2026" and private.json()["files"] == [] and private.json()["industries"] == ["Energy", "Utilities"]
+        assert private.json()["stored_link"] == "/sites/ClubSite/Shared%20Documents/Linked"
+        assert private.json()["link"] == {"url": BASE + "/sites/ClubSite/Shared%20Documents/Linked", "provider": "sharepoint"}
+        private_id = private.json()["id"]
+        guide = as_admin.post("/api/resources", json={"kind": "survey", "title": "Linked survey guide", "url": drive + "2"})
+        assert guide.status_code == 200, guide.text
+        named = as_admin.post("/api/resources", json={"kind": "past_project", "title": "Linked named project", "disclosure": "name_only", "url": drive + "3"})
+        assert named.status_code == 200, named.text
+        assert as_admin.post("/api/resources", json={"kind": "template", "title": "x", "semester": "Autumn", "url": drive}).status_code == 422
+        assert as_admin.post("/api/resources", json={"kind": "template", "title": "x", "url": "https://evil.test"}).status_code == 422
+        assert as_admin.post("/api/resources", json={"kind": "nonsense", "title": "x", "url": drive}).status_code == 422
+        assert as_admin.post("/api/resources", json={"kind": "template", "title": "   ", "url": drive}).status_code == 422
+        mine = by_title(await listing(member))
+        assert "Linked private project" not in mine and mine["Linked survey guide"]["link"]["url"] == drive + "2"
+        assert mine["Linked named project"]["link"] is None and mine["Linked named project"]["files_open"] is False
+        assert as_member.get(f"/api/resources/{private_id}").status_code == 404
+        assert facet(await listing(member), "semesters").get("Fall 2026") is None, "facets count only what the viewer sees"
+        assert facet(await listing(admin), "semesters")["Fall 2026"] == 1
+        assert await found(admin, "linked private") == {"Linked private project"}
+        assert as_admin.put(f"/api/resources/{private_id}/link", json={"url": None}).json()["link"] is None
+        assert as_admin.put(f"/api/resources/{private_id}/link", json={"url": "  "}).json()["stored_link"] is None
+
+        # Re-importing keeps the link an admin set and fills only empty ones (Gamma was deleted above, so it comes back).
+        refill = await resource_import.run_import(archive, log=lambda _line: None)
+        assert refill["links_filled"] == 1, refill
+        assert (await api.get_resource(acme_id, admin))["stored_link"] == drive
+        os.environ.pop("SHAREPOINT_BASE_URL")
+        link_audit = [json.loads(r["details"]) for r in await (await db.execute(
+            "SELECT details FROM audit_log WHERE action IN ('resource_link_set', 'resource_create') ORDER BY id")).fetchall()]
+        assert link_audit[0] == {"link": "google_drive"} and "drive.google" not in json.dumps(link_audit)
 
         # --- Storage mode --------------------------------------------------------
         assert document_storage.local_enabled()

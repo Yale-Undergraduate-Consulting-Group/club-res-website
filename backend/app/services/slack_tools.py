@@ -335,6 +335,8 @@ async def _search_resources(member: dict, data: dict) -> dict:
             "description": _text(item["description"], 300), "status": item["status"],
             "files": [f["filename"] for f in item["files"][:5]],
         }
+        if item["link"]:
+            entry["link"] = item["link"]["url"]
         if item["files_hidden_count"]:
             entry["files_for_team"] = item["files_hidden_count"]
         if "revenue" in item:

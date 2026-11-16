@@ -8,8 +8,10 @@ work" phase of [WORKSPACE-PLAN.md](WORKSPACE-PLAN.md).
 ## What it is
 
 A new main page, **Resources**: the club's library of past projects, slide
-templates, interview and survey guides and analytics resources, typed and
-searchable, built on the existing document register
+templates, interview and survey guides and analytics resources, typed,
+searchable and faceted by type, semester, industry and disclosure. The compact
+list groups projects by semester and other resources by type; rows expand
+inline. Files use the existing document register
 (`backend/app/routers/workspace.py`, files in the private documents bucket).
 The Slack assistant and AI drafting search it through the same access check
 as the page, so they never return what the asking member may not see.
@@ -18,6 +20,15 @@ Source of the first import: the club's OneDrive export (136 items, about 6 GB:
 Past Project Database by semester, Slide Templates, Interview Resources,
 Survey Resources, YUCG Analytics Resources) and its
 "YUCG Project Database Table of Contents.xlsx" (about 90 projects).
+
+The table's **Project File Link** hyperlinks are relative
+(`../../../../:f:/r/sites/...`) and are stored from the host on
+(`/:f:/r/sites/...`, query dropped). `SHAREPOINT_BASE_URL` (for example,
+`https://tenant.sharepoint.com`) supplies the host when read, so the sharing
+prefix sits straight after it; without it the page shows no button. A link
+follows the same access rule as the resource's files. Admins can edit links or
+add link-only resources; a SharePoint link must be https on exactly the
+configured host, otherwise only Google Drive or Docs https links are accepted.
 
 ## Data store rules (AGENTS.md: client data)
 
@@ -41,8 +52,8 @@ the existing server. No new AWS service.
 
 ## Order
 
-1. Resources page, import and search (preview on localhost, then prod on approval).
+1. Resources page, import, search, compact groups and visibility-safe facets (preview on localhost, then prod on approval).
 2. Slack assistant and AI drafting search tool over Resources.
-3. Outreach links: a company being contacted shows related past projects the member may see.
-4. SharePoint: links and one-time imports now; live sync only if Yale allows an app (test with Graph Explorer).
+3. SharePoint and Google Drive links: one-time table imports and admin-managed link-only resources. Live sync remains separate and requires Yale to allow an app (test with Graph Explorer).
+4. Outreach links: a company being contacted shows related past projects the member may see.
 5. Later, separately planned: cost trims, security hardening, custom domain, alumni database (needs its own data rules first), client share links and a client portal design.

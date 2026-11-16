@@ -14,7 +14,10 @@ export type SurveyLibrary = {
 export type ResourceKind = 'past_project' | 'template' | 'interview' | 'survey' | 'analytics' | 'other';
 export type ResourceFile = { id: number; filename: string; byte_size: number; content_type: string; admin_only: boolean };
 export type ResourceTeamMember = { name: string; role: 'Engagement director' | 'Project manager' | 'Associate'; member: boolean };
-/** `revenue` and `contacts` are left out of the response for everyone but administrators. */
+export type ResourceDisclosure = 'public' | 'name_only' | 'private';
+/** Where a resource's SharePoint folder or Google Drive item opens; null when there is none or the viewer may not open its files. */
+export type ResourceLink = { url: string; provider: 'sharepoint' | 'google_drive' };
+/** `revenue`, `contacts` and `stored_link` are left out of the response for everyone but administrators. */
 export type ResourceItem = {
   id: number;
   kind: ResourceKind;
@@ -28,18 +31,31 @@ export type ResourceItem = {
   description: string | null;
   code_name: string | null;
   team_size: number | null;
-  disclosure: 'public' | 'name_only' | 'private';
+  disclosure: ResourceDisclosure;
   status: string | null;
   files_open: boolean;
   files: ResourceFile[];
   files_hidden_count: number;
   team: ResourceTeamMember[];
   created_at: number;
+  link: ResourceLink | null;
+  /** Admins only: what is saved, a SharePoint path from the host on ("/:f:/r/sites/...") or a Google Drive address. */
+  stored_link?: string | null;
   revenue?: number | null;
   contacts?: { name: string; email: string }[];
 };
-export type ResourceList = { items: ResourceItem[]; total: number; facets: { kinds: string[]; semesters: string[]; industries: string[] } };
-export type ResourceQuery = { q?: string; kind?: string; semester?: string; industry?: string; limit?: number; offset?: number };
+export type ResourceFacet = { value: string; count: number };
+export type ResourceList = {
+  items: ResourceItem[];
+  total: number;
+  facets: { kinds: ResourceFacet[]; semesters: ResourceFacet[]; industries: ResourceFacet[]; disclosures: ResourceFacet[] };
+  /** Admins only: whether SHAREPOINT_BASE_URL is set, so SharePoint links can open. */
+  sharepoint_configured?: boolean;
+};
+export type ResourceQuery = { q?: string; kind?: string; semester?: string; industry?: string; disclosure?: string; limit?: number; offset?: number };
+export type ResourceLinkCreate = {
+  kind: ResourceKind; title: string; semester?: string; industry?: string; disclosure: ResourceDisclosure; url: string;
+};
 /** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
 export type Template = {
   id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
@@ -704,6 +720,11 @@ export const api = {
       return { ...file, url: file.url.startsWith('/') ? `${API_BASE}${file.url}` : file.url };
     },
     remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/resources/${id}`, { method: 'DELETE' }),
+    /** Admins: add a resource that is only a SharePoint or Google Drive link. */
+    create: (data: ResourceLinkCreate) => fetchApi<ResourceItem>('/api/resources', { method: 'POST', body: JSON.stringify(data) }),
+    /** Admins: set a resource's link; null removes it. */
+    setLink: (id: number, url: string | null) =>
+      fetchApi<ResourceItem>(`/api/resources/${id}/link`, { method: 'PUT', body: JSON.stringify({ url }) }),
   },
   surveys: {
     library: () => fetchApi<SurveyLibrary>('/api/surveys/library'),

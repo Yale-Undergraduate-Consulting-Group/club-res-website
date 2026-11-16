@@ -73,12 +73,14 @@ const RESOURCES = [
       { name: 'Dana Fox', role: 'Engagement director', member: true }, { name: 'Eli Park-Longname', role: 'Project manager', member: false },
       { name: 'Ana Long-Surname', role: 'Associate', member: true }, { name: 'Sam Wu', role: 'Associate', member: false },
     ],
-    created_at: 1760000000, revenue: 250000, contacts: [{ name: 'Robin Vale', email: 'robin.vale.with.a.long.address@northwind-clinic-network.example' }],
+    created_at: 1760000000, link: { url: 'https://club-example.sharepoint.com/:f:/r/sites/Club/Shared%20Documents/Regional', provider: 'sharepoint' },
+    stored_link: '/:f:/r/sites/Club/Shared%20Documents/Regional', revenue: 250000, contacts: [{ name: 'Robin Vale', email: 'robin.vale.with.a.long.address@northwind-clinic-network.example' }],
   },
   {
     id: 2, kind: 'past_project', title: 'Supply chain review', client: null, client_hidden: true, semester: 'Spring 2025', industry: 'Consumer Goods',
     industries: ['Consumer Goods'], areas: null, description: 'Reviewed the supplier base.', code_name: null, team_size: null, disclosure: 'name_only',
-    status: 'Complete', files_open: false, files: [], files_hidden_count: 2, team: [], created_at: 1760000000, revenue: null, contacts: [],
+    status: 'Complete', files_open: false, files: [], files_hidden_count: 2, team: [], created_at: 1760000000, link: null,
+    stored_link: null, revenue: null, contacts: [],
   },
 ];
 
@@ -93,7 +95,12 @@ async function mockApi(page: Page, authenticated: boolean) {
     else if (path === '/api/contacts') body = { items: CONTACTS, total: CONTACTS.length, limit: 100, offset: 0 };
     else if (path === '/api/contacts/pipeline-metrics' || path === '/api/outreach/metrics/pipeline') body = { by_status: [{ status: 'cold', count: 1 }, { status: 'contacted', count: 1 }, { status: 'replied', count: 1 }] };
     else if (path === '/api/campaigns/1') body = CAMPAIGN;
-    else if (path === '/api/resources') body = { items: RESOURCES, total: RESOURCES.length, facets: { kinds: ['past_project', 'template'], semesters: ['Fall 2025', 'Spring 2025'], industries: ['Consumer Goods', 'Healthcare'] } };
+    else if (path === '/api/resources') body = { items: RESOURCES, total: RESOURCES.length, facets: {
+      kinds: [{ value: 'past_project', count: 2 }, { value: 'template', count: 1 }],
+      semesters: [{ value: 'Fall 2025', count: 1 }, { value: 'Spring 2025', count: 1 }],
+      industries: [{ value: 'Consumer Goods', count: 1 }, { value: 'Healthcare', count: 1 }],
+      disclosures: [{ value: 'public', count: 1 }, { value: 'name_only', count: 1 }],
+    } };
     else if (path === '/api/campaigns') body = [CAMPAIGN];
     else if (path === '/api/directory/summary') body = {
       total: 3, capped: false, ready: 3,
@@ -265,7 +272,16 @@ const SURFACES: Surface[] = [
     ],
   },
   { name: 'Directory', url: '/directory', ready: 'Jean Bartik' },
-  { name: 'Resources', url: '/resources', ready: 'Supply chain review' },
+  {
+    name: 'Resources', url: '/resources', ready: 'Northwind Clinic Network',
+    steps: [
+      async (page) => { await page.getByRole('article', { name: /Regional outpatient/ }).getByRole('button', { expanded: false }).click(); },
+      async (page) => {
+        await page.getByRole('button', { name: /Spring 2025/, expanded: false }).click();
+        await page.getByText('Supply chain review').waitFor();
+      },
+    ],
+  },
   { name: 'Campaign', url: '/campaigns/1', ready: 'Fall consumer outreach' },
   { name: 'Admin Members', url: '/admin', ready: 'Ana Long-Surname' },
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },

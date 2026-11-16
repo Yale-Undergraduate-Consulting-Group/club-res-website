@@ -28,6 +28,7 @@ from app.services.resource_import import run_import  # noqa: E402
 def report(summary: dict) -> None:
     print(f"Table rows: {summary['table_rows']}, matched to a folder: {summary['matched']}")
     print(f"Resources: {summary['resources']}; files: {summary['files']} ({summary['admin_only_files']} admin-only statements of work)")
+    print(f"SharePoint links in the table: {summary['links']}")
     print("Visibility (kind/visibility: resources):")
     for key, count in summary["visibility"].items():
         print(f"  {key}: {count}")
@@ -44,6 +45,8 @@ def report(summary: dict) -> None:
         print(f"Team names matched: {summary['team']['matched']}, left as text: {summary['team']['unmatched']}")
     if "file_results" in summary:
         print(f"Files: {summary['file_results']}")
+    if "links_filled" in summary:
+        print(f"SharePoint links filled: {summary['links_filled']}")
 
 
 def main() -> None:

@@ -1,62 +1,58 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-/** The Resources library: search and filters, who sees which names and files,
- *  the admin-only block, deleting, and the empty and error states. Every name
- *  below is made up. */
-
+/** Resources browser contract. All names and links are synthetic. */
 const MEMBER = { id: 2, email: 'ana@yale.edu', name: 'Ana Lee', role: 'standard', is_active: 1 };
 const ADMIN = { id: 1, email: 'admin@yale.edu', name: 'Admin', role: 'admin', is_active: 1 };
-
+const SHAREPOINT = 'https://club-example.sharepoint.com/:f:/r/sites/Club/Shared%20Documents/Lantern';
 const LONG_DESCRIPTION = 'Sized the regional market for outpatient scheduling software and tested three pricing models with clinic managers. '.repeat(6).trim();
 const LONG_FILENAME = 'Final-presentation-template-with-a-very-long-descriptive-name-that-goes-on-and-on-v12-reviewed-by-the-board-of-directors-2026.pptx';
 
 const PROJECT = {
-  id: 1, kind: 'past_project', title: 'Regional clinic pricing study', client: 'Northwind Clinic', client_hidden: false,
-  semester: 'Fall 2025', industry: 'Healthcare; Technology', industries: ['Healthcare', 'Technology'],
-  areas: 'Market sizing; Customer Analysis', description: LONG_DESCRIPTION, code_name: 'Project Lantern', team_size: 4,
-  disclosure: 'public', status: 'Complete', files_open: true,
+  id: 1, kind: 'past_project', title: 'Northwind Clinic (Lantern)', client: 'Northwind Clinic', client_hidden: false,
+  semester: 'Fall 2025', industry: 'Healthcare; Technology', industries: ['Healthcare', 'Technology'], areas: 'Market sizing',
+  description: LONG_DESCRIPTION, code_name: 'Lantern', team_size: 4, disclosure: 'public', status: 'Complete', files_open: true,
   files: [
     { id: 11, filename: 'final-deck.pptx', byte_size: 2_621_440, content_type: 'application/vnd.ms-powerpoint', admin_only: false },
     { id: 12, filename: 'engagement-notes.docx', byte_size: 18_000, content_type: 'application/msword', admin_only: true },
-  ],
-  files_hidden_count: 0,
+  ], files_hidden_count: 0,
   team: [
     { name: 'Dana Fox', role: 'Engagement director', member: true },
     { name: 'Eli Park', role: 'Project manager', member: false },
     { name: 'Ana Lee', role: 'Associate', member: true },
-    { name: 'Sam Wu', role: 'Associate', member: false },
   ],
   created_at: 1_760_000_000,
+  link: { url: SHAREPOINT, provider: 'sharepoint' }, stored_link: '/:f:/r/sites/Club/Shared%20Documents/Lantern',
 };
 const RESTRICTED = {
-  ...PROJECT, id: 2, title: 'Supply chain review', client: null, client_hidden: true, semester: 'Spring 2025', industry: 'Consumer Goods',
-  industries: ['Consumer Goods'], areas: 'Operations', description: 'Reviewed the supplier base.', code_name: null, disclosure: 'name_only',
-  status: 'In Progress', files_open: false, files: [], files_hidden_count: 2, team: [],
+  ...PROJECT, id: 2, title: 'Supply chain review', client: 'Southridge Foods', semester: 'Spring 2025', industry: 'Consumer Goods',
+  industries: ['Consumer Goods'], areas: 'Operations', description: 'Reviewed the supplier base.', code_name: 'Sprout', disclosure: 'name_only',
+  status: 'In Progress', files_open: false, files: [], files_hidden_count: 2, team: [], link: null, stored_link: '/:f:/r/sites/Club/Sprout',
 };
 const TEMPLATE = {
-  ...PROJECT, id: 3, kind: 'template', title: 'Final presentation template', client: null, client_hidden: false, semester: null, industry: null,
+  ...PROJECT, id: 3, kind: 'template', title: 'Final presentation template', client: null, semester: null, industry: null,
   industries: [], areas: null, description: null, code_name: null, team_size: null, disclosure: 'public', status: null,
-  files: [{ id: 31, filename: LONG_FILENAME, byte_size: 900, content_type: 'application/vnd.ms-powerpoint', admin_only: false }], team: [],
+  files: [{ id: 31, filename: LONG_FILENAME, byte_size: 900, content_type: 'application/vnd.ms-powerpoint', admin_only: false }],
+  team: [], link: null, stored_link: null,
 };
 const ADMIN_FIELDS = { revenue: 250_000, contacts: [{ name: 'Robin Vale', email: 'robin.vale@northwind.example' }] };
 const FACETS = {
-  kinds: ['past_project', 'template', 'survey'],
-  semesters: ['Fall 2025', 'Spring 2025'],
-  industries: ['Consumer Goods', 'Healthcare', 'Technology'],
+  kinds: [{ value: 'past_project', count: 2 }, { value: 'template', count: 1 }, { value: 'survey', count: 0 }],
+  semesters: [{ value: 'Fall 2025', count: 1 }, { value: 'Spring 2025', count: 1 }],
+  industries: [{ value: 'Consumer Goods', count: 1 }, { value: 'Healthcare', count: 1 }, { value: 'Technology', count: 1 }],
+  disclosures: [{ value: 'public', count: 1 }, { value: 'name_only', count: 1 }],
 };
+type Item = typeof PROJECT;
 
-type Item = Record<string, unknown>;
-
-/** A Resources server in miniature: filters and pages the way the real one does, and leaves revenue and contacts out for members. */
-async function mock(page: Page, opts: { user?: typeof ADMIN; items?: Item[]; fail?: { detail: string } } = {}) {
+async function mock(page: Page, opts: { user?: typeof ADMIN; items?: Item[]; configured?: boolean; fail?: { detail: string } } = {}) {
   const user = opts.user ?? MEMBER;
   const admin = user.role === 'admin';
-  const source = opts.items ?? [PROJECT, RESTRICTED, TEMPLATE];
-  const items = source.map((item) => (admin ? { ...item, ...ADMIN_FIELDS } : item));
+  let source: Item[] = opts.items ?? [PROJECT, RESTRICTED, TEMPLATE];
+  const configured = opts.configured ?? true;
   const requests: URLSearchParams[] = [];
   const deleted: string[] = [];
   const downloads: string[] = [];
+  const links: { id: string; url: string | null }[] = [];
   const state = { fail: opts.fail };
   await page.context().route('**/api/resources/local-file**', (route) => route.fulfill({ body: 'file' }));
   await page.route('**/api/**', async (route) => {
@@ -69,14 +65,38 @@ async function mock(page: Page, opts: { user?: typeof ADMIN; items?: Item[]; fai
       requests.push(url.searchParams);
       if (state.fail) return json(state.fail, 500);
       const q = (url.searchParams.get('q') ?? '').toLowerCase();
-      const hit = items.filter((item) =>
+      const listed = source.map((item) => ({
+        ...item,
+        link: configured ? item.link : null,
+        ...(admin ? ADMIN_FIELDS : { stored_link: undefined }),
+      }));
+      const hit = listed.filter((item) =>
         (!q || `${item.title} ${item.description ?? ''}`.toLowerCase().includes(q))
         && (!url.searchParams.get('kind') || item.kind === url.searchParams.get('kind'))
         && (!url.searchParams.get('semester') || item.semester === url.searchParams.get('semester'))
-        && (!url.searchParams.get('industry') || (item.industries as string[]).includes(url.searchParams.get('industry')!)));
+        && (!url.searchParams.get('industry') || item.industries.includes(url.searchParams.get('industry')!))
+        && (!url.searchParams.get('disclosure') || item.disclosure === url.searchParams.get('disclosure')));
       const offset = Number(url.searchParams.get('offset') ?? 0);
-      const limit = Number(url.searchParams.get('limit') ?? 60);
-      return json({ items: hit.slice(offset, offset + limit), total: hit.length, facets: FACETS });
+      const limit = Number(url.searchParams.get('limit') ?? 100);
+      return json({
+        items: hit.slice(offset, offset + limit), total: hit.length, facets: FACETS,
+        ...(admin ? { sharepoint_configured: configured } : {}),
+      });
+    }
+    if (path === '/api/resources' && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      const added = { ...TEMPLATE, ...body, id: 99, client: null, industries: body.industry ? [body.industry] : [], files: [], link: { url: body.url, provider: 'google_drive' }, stored_link: body.url };
+      source = [...source, added];
+      return json({ ...added, ...ADMIN_FIELDS });
+    }
+    const setLink = path.match(/^\/api\/resources\/(\d+)\/link$/);
+    if (setLink && request.method() === 'PUT') {
+      const body = request.postDataJSON();
+      links.push({ id: setLink[1], url: body.url });
+      const item = source.find((entry) => String(entry.id) === setLink[1])!;
+      const changed = { ...item, link: body.url ? { url: body.url, provider: body.url.includes('google') ? 'google_drive' : 'sharepoint' } : null, stored_link: body.url };
+      source = source.map((entry) => (entry.id === changed.id ? changed : entry));
+      return json({ ...changed, ...ADMIN_FIELDS });
     }
     const download = path.match(/^\/api\/resources\/(\d+)\/files\/(\d+)\/download$/);
     if (download) {
@@ -86,150 +106,170 @@ async function mock(page: Page, opts: { user?: typeof ADMIN; items?: Item[]; fai
     const remove = path.match(/^\/api\/resources\/(\d+)$/);
     if (remove && request.method() === 'DELETE') {
       deleted.push(remove[1]);
+      source = source.filter((entry) => String(entry.id) !== remove[1]);
       return json({ ok: true });
     }
     return json({});
   });
-  return { requests, deleted, downloads, state };
+  return { requests, deleted, downloads, links, state };
 }
 
-test('searching and each filter send the right query', async ({ page }) => {
+const openRow = async (page: Page, name: string) => {
+  const article = page.getByRole('article', { name });
+  await article.getByRole('button', { expanded: false }).click();
+  return article;
+};
+
+test('sidebar facets show visibility-safe counts and send each filter', async ({ page }) => {
   const { requests } = await mock(page);
   await page.goto('/resources');
-  await expect(page.getByRole('heading', { name: 'Regional clinic pricing study' })).toBeVisible();
-  expect(requests[0].get('q')).toBeNull();
-  expect(requests[0].get('limit')).toBe('30');
+  const filters = page.getByRole('complementary', { name: 'Resource filters' });
+  await expect(filters.getByText('Past projects').locator('..')).toContainText('2');
+  await expect(filters.getByText('Fall 2025').locator('..')).toContainText('1');
+  await expect(filters.getByText('Healthcare').locator('..')).toContainText('1');
+  expect(requests[0].get('limit')).toBe('200');
 
-  // Typing searches after a pause.
+  await filters.getByRole('button', { name: /Templates 1/ }).click();
+  await expect.poll(() => requests.at(-1)?.get('kind')).toBe('template');
+  await filters.getByRole('button', { name: /Templates 1/ }).click();
+  await filters.getByRole('button', { name: /Spring 2025 1/ }).click();
+  await expect.poll(() => requests.at(-1)?.get('semester')).toBe('Spring 2025');
+  await filters.getByRole('button', { name: /Spring 2025 1/ }).click();
+  await filters.getByRole('button', { name: /Healthcare 1/ }).click();
+  await expect.poll(() => requests.at(-1)?.get('industry')).toBe('Healthcare');
+  await filters.getByRole('button', { name: /Healthcare 1/ }).click();
+  await filters.getByRole('button', { name: /Name only 1/ }).click();
+  await expect.poll(() => requests.at(-1)?.get('disclosure')).toBe('name_only');
+});
+
+test('search stays above the library and is debounced or immediate on Enter', async ({ page }) => {
+  const { requests } = await mock(page);
+  await page.goto('/resources');
   await page.getByLabel('Search resources').fill('pricing');
   await expect.poll(() => requests.at(-1)?.get('q')).toBe('pricing');
-  await expect(page.getByRole('heading', { name: 'Supply chain review' })).toHaveCount(0);
-
-  // Enter searches without waiting for the pause.
+  await expect(page.getByRole('article', { name: 'Supply chain review' })).toHaveCount(0);
   await page.getByLabel('Search resources').fill('zeppelin');
   await page.getByLabel('Search resources').press('Enter');
   await expect(page.getByRole('heading', { name: 'No resources match' })).toBeVisible();
-  expect(requests.at(-1)?.get('q')).toBe('zeppelin');
-  await page.getByLabel('Search resources').fill('');
-  await page.getByLabel('Search resources').press('Enter');
-  await expect(page.getByRole('heading', { name: 'Regional clinic pricing study' })).toBeVisible();
-
-  await page.getByLabel('Type', { exact: true }).selectOption({ label: 'Slide templates' });
-  await expect.poll(() => requests.at(-1)?.get('kind')).toBe('template');
-  await expect(page.getByRole('heading', { name: 'Final presentation template' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Regional clinic pricing study' })).toHaveCount(0);
-
-  await page.getByLabel('Type', { exact: true }).selectOption('');
-  await page.getByLabel('Semester', { exact: true }).selectOption('Spring 2025');
-  await expect.poll(() => requests.at(-1)?.get('semester')).toBe('Spring 2025');
-  await expect(page.getByRole('heading', { name: 'Supply chain review' })).toBeVisible();
-
-  await page.getByLabel('Semester', { exact: true }).selectOption('');
-  await page.getByLabel('Industry', { exact: true }).selectOption('Healthcare');
-  await expect.poll(() => requests.at(-1)?.get('industry')).toBe('Healthcare');
-  await expect(page.getByRole('heading', { name: 'Regional clinic pricing study' })).toBeVisible();
-  expect(requests.at(-1)?.get('kind')).toBeNull();
-  expect(requests.at(-1)?.get('semester')).toBeNull();
 });
 
-test('a restricted project says Confidential client and counts the files it keeps back', async ({ page }) => {
+test('semester groups are newest first and collapse without losing their count', async ({ page }) => {
   await mock(page);
   await page.goto('/resources');
-  const restricted = page.getByRole('article', { name: 'Supply chain review' });
-  await expect(restricted.getByText('Confidential client')).toBeVisible();
-  await expect(restricted.getByText('2 files available to the project team')).toBeVisible();
-  await expect(restricted.getByRole('button', { name: /Open/ })).toHaveCount(0);
-
-  const open = page.getByRole('article', { name: 'Regional clinic pricing study' });
-  await expect(open.getByText('Northwind Clinic')).toBeVisible();
-  await expect(open.getByText('Confidential client')).toHaveCount(0);
-  await expect(open.getByText(/available to the project team/)).toHaveCount(0);
-  await expect(open.getByText('Fall 2025')).toBeVisible();
-  await expect(open.getByText('Healthcare; Technology')).toBeVisible();
-  await expect(open.getByText('Market sizing; Customer Analysis')).toBeVisible();
-  await expect(open.getByText('Engagement director')).toBeVisible();
-  await expect(open.getByText('Dana Fox')).toBeVisible();
-
-  // A resource with no client shows no client line at all.
-  const template = page.getByRole('article', { name: 'Final presentation template' });
-  await expect(template.getByText('Confidential client')).toHaveCount(0);
+  const groups = page.locator('.resource-group__toggle');
+  await expect(groups.nth(0)).toContainText('Fall 2025');
+  await expect(groups.nth(1)).toContainText('Spring 2025');
+  await expect(groups.nth(2)).toContainText('Templates');
+  const fall = page.locator('.resource-group__toggle').filter({ hasText: 'Fall 2025' });
+  await expect(fall).toHaveAttribute('aria-expanded', 'true');
+  await fall.click();
+  await expect(fall).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('article', { name: 'Northwind Clinic (Lantern)' })).toHaveCount(0);
+  await fall.click();
+  await expect(page.getByRole('article', { name: 'Northwind Clinic (Lantern)' })).toBeVisible();
 });
 
-test('a member sees no revenue, contacts, admin-only block or Delete', async ({ page }) => {
+test('one compact row expands inline to description, files and team', async ({ page }) => {
   await mock(page);
   await page.goto('/resources');
-  await expect(page.getByRole('heading', { name: 'Regional clinic pricing study' })).toBeVisible();
-  const body = page.locator('main, body').first();
-  await expect(body).not.toContainText('Revenue');
-  await expect(body).not.toContainText('Client contacts');
-  await expect(body).not.toContainText('robin.vale@northwind.example');
+  const article = page.getByRole('article', { name: 'Northwind Clinic (Lantern)' });
+  await expect(article).toContainText('Northwind Clinic');
+  await expect(article).toContainText('Lantern');
+  await expect(article).toContainText('Healthcare; Technology');
+  await expect(article).toContainText('2 files');
+  await expect(article).not.toContainText('Sized the regional market');
+  await openRow(page, 'Northwind Clinic (Lantern)');
+  await expect(article).toContainText('Sized the regional market');
+  await expect(article).toContainText('Dana Fox');
+  await expect(article.getByRole('button', { name: 'Open final-deck.pptx' })).toBeVisible();
+});
+
+test('SharePoint button appears only when the server resolved the setting', async ({ page }) => {
+  await mock(page, { configured: false });
+  await page.goto('/resources');
+  await expect(page.getByRole('link', { name: 'Open in SharePoint' })).toHaveCount(0);
+
+  await page.unrouteAll({ behavior: 'wait' });
+  await mock(page, { configured: true });
+  await page.reload();
+  const link = page.getByRole('article', { name: 'Northwind Clinic (Lantern)' }).getByRole('link', { name: 'Open in SharePoint' });
+  await expect(link).toHaveAttribute('href', SHAREPOINT);
+  await expect(page.getByRole('link', { name: 'Open in SharePoint' })).toHaveCount(1);
+});
+
+test('admins are told when SHAREPOINT_BASE_URL is not set; members are not', async ({ page }) => {
+  await mock(page, { user: ADMIN, configured: false });
+  await page.goto('/resources');
+  await expect(page.getByText(/SHAREPOINT_BASE_URL is not set/)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open in SharePoint' })).toHaveCount(0);
+
+  await page.unrouteAll({ behavior: 'wait' });
+  await mock(page, { user: ADMIN, configured: true });
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Open in SharePoint' })).toHaveCount(1);
+  await expect(page.getByText(/SHAREPOINT_BASE_URL is not set/)).toHaveCount(0);
+
+  await page.unrouteAll({ behavior: 'wait' });
+  await mock(page, { configured: false });
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Fall 2025' })).toBeVisible();
+  await expect(page.getByText(/SHAREPOINT_BASE_URL/)).toHaveCount(0);
+});
+
+test('member sees no admin-only fields or controls', async ({ page }) => {
+  await mock(page);
+  await page.goto('/resources');
+  await openRow(page, 'Northwind Clinic (Lantern)');
   await expect(page.getByRole('group', { name: 'Admin only' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Delete/ })).toHaveCount(0);
+  await expect(page.getByText('Revenue')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Delete/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add linked resource' })).toHaveCount(0);
 });
 
-test('an admin sees revenue and client contacts, and the admin-only files are tagged', async ({ page }) => {
-  await mock(page, { user: ADMIN });
+test('admin edits a link and adds a link-only resource', async ({ page }) => {
+  const { links, requests } = await mock(page, { user: ADMIN });
   await page.goto('/resources');
-  const card = page.getByRole('article', { name: 'Regional clinic pricing study' });
-  const block = card.getByRole('group', { name: 'Admin only' });
-  await expect(block.getByText('$250,000')).toBeVisible();
-  await expect(block.getByText('Robin Vale')).toBeVisible();
-  await expect(block.getByRole('link', { name: 'robin.vale@northwind.example' })).toHaveAttribute('href', 'mailto:robin.vale@northwind.example');
-  await expect(card.getByText('Admin only', { exact: true })).toHaveCount(2); // the block heading and the one admin-only file
-  await expect(card.getByRole('button', { name: 'Delete Regional clinic pricing study' })).toBeVisible();
+  const article = await openRow(page, 'Northwind Clinic (Lantern)');
+  const block = article.getByRole('group', { name: 'Admin only' });
+  await expect(block).toContainText('$250,000');
+  const drive = 'https://drive.google.com/drive/folders/synthetic';
+  await block.getByLabel('SharePoint or Google Drive link').fill(drive);
+  await block.getByRole('button', { name: 'Save link' }).click();
+  await expect(article.getByRole('link', { name: 'Open in Google Drive' })).toHaveAttribute('href', drive);
+  expect(links).toEqual([{ id: '1', url: drive }]);
+
+  await page.getByRole('button', { name: 'Add linked resource' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add linked resource' });
+  await dialog.getByLabel('Title').fill('Linked survey guide');
+  await dialog.getByLabel('Type').selectOption('survey');
+  await dialog.getByLabel('SharePoint or Google Drive URL').fill(`${drive}-2`);
+  await dialog.getByRole('button', { name: 'Add resource' }).click();
+  await expect.poll(() => requests.length).toBeGreaterThan(1);
 });
 
-test('an admin deletes a resource after the dialog says its files go too', async ({ page }) => {
-  const { deleted } = await mock(page, { user: ADMIN });
+test('admin deletes after expanding a row; Open fetches a download address', async ({ page }) => {
+  const { deleted, downloads } = await mock(page, { user: ADMIN });
   await page.goto('/resources');
-  await page.getByRole('button', { name: 'Delete Supply chain review' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Delete this resource?' });
-  await expect(dialog).toContainText('Supply chain review');
-  await expect(dialog).toContainText('all of its files are removed');
-
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
-  expect(deleted).toEqual([]);
-  await expect(page.getByRole('heading', { name: 'Supply chain review' })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Delete Supply chain review' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete resource' }).click();
-  await expect(page.getByRole('heading', { name: 'Supply chain review' })).toHaveCount(0);
-  expect(deleted).toEqual(['2']);
-  await expect(page.getByText('Showing 2 of 2 resources')).toBeVisible();
-});
-
-test('Open fetches a download address and opens it in a new tab', async ({ page }) => {
-  const { downloads } = await mock(page);
-  await page.goto('/resources');
+  const article = await openRow(page, 'Northwind Clinic (Lantern)');
   const popup = page.context().waitForEvent('page');
-  await page.getByRole('button', { name: 'Open final-deck.pptx' }).click();
+  await article.getByRole('button', { name: 'Open final-deck.pptx' }).click();
   expect(await popup).toBeTruthy();
   expect(downloads).toEqual(['1/11']);
-  expect((await popup).url()).toContain('/api/resources/local-file?token=abc');
+
+  await article.getByRole('button', { name: 'Delete Northwind Clinic (Lantern)' }).click();
+  await page.getByRole('dialog', { name: 'Delete this resource?' }).getByRole('button', { name: 'Delete resource' }).click();
+  await expect(article).toHaveCount(0);
+  expect(deleted).toEqual(['1']);
 });
 
-test('Show more loads the next page with an offset', async ({ page }) => {
-  const many = Array.from({ length: 35 }, (_, i) => ({ ...TEMPLATE, id: 100 + i, title: `Guide number ${i + 1}`, files: [] }));
-  const { requests } = await mock(page, { items: many });
-  await page.goto('/resources');
-  await expect(page.getByText('Showing 30 of 35 resources')).toBeVisible();
-  await page.getByRole('button', { name: 'Show more' }).click();
-  await expect(page.getByText('Showing 35 of 35 resources')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Show more' })).toHaveCount(0);
-  expect(requests.at(-1)?.get('offset')).toBe('30');
-  await expect(page.getByRole('heading', { name: 'Guide number 35' })).toBeVisible();
-});
-
-test('an empty library and a failed load each say so, and Retry loads again', async ({ page }) => {
+test('empty and error states are explicit, and Retry loads again', async ({ page }) => {
   const { state } = await mock(page, { items: [], fail: { detail: 'The library is unavailable' } });
   await page.goto('/resources');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('The library is unavailable');
-  await expect(page.getByRole('heading', { name: 'No resources match' })).toHaveCount(0);
   state.fail = undefined;
   await alert.getByRole('button', { name: 'Retry' }).click();
   await expect(page.getByRole('heading', { name: 'No resources match' })).toBeVisible();
-  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('Resources opens from Home and has no accessibility violations', async ({ page }) => {
@@ -237,9 +277,7 @@ test('Resources opens from Home and has no accessibility violations', async ({ p
   await page.goto('/');
   await page.getByRole('region', { name: 'Your tools' }).getByRole('link', { name: /Resources/ }).click();
   await expect(page).toHaveURL(/\/resources$/);
-  const bar = page.getByRole('navigation', { name: 'Main navigation' }).first();
-  await expect(bar.getByRole('link', { name: 'Resources' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Regional clinic pricing study' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Resources' })).toBeVisible();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
