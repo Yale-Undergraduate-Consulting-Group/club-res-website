@@ -11,6 +11,7 @@ from app.auth_deps import get_current_user, get_current_admin
 from app.database import get_db
 from app.routers.invitations import digest
 from app.services import document_storage
+from app.services.resources import IMPORT_KEY_PREFIX
 from app.services.transaction_audit import audit
 
 router = APIRouter()
@@ -24,10 +25,13 @@ async def storage_usage(db, user_id):
             raise ValueError()
     except (ValueError, TypeError):
         raise HTTPException(503, 'Storage quota configuration is invalid')
+    # Versions the Resources import stored server-side (under IMPORT_KEY_PREFIX)
+    # are not the member's upload; a version a member uploads through a
+    # Resources page counts like any register upload.
     used = await (await db.execute("""SELECT COALESCE(SUM(v.byte_size),0) AS total
         FROM workspace_document_versions v
         WHERE v.uploaded_by=? AND v.state IN ('pending','ready')
-        AND NOT EXISTS (SELECT 1 FROM resource_files f WHERE f.document_id=v.document_id)""", (user_id,))).fetchone()
+        AND v.object_key NOT LIKE ?""", (user_id,IMPORT_KEY_PREFIX+'%'))).fetchone()
     return {'quota_bytes': quota, 'reserved_bytes': int(used['total']), 'available_bytes': max(0,quota-int(used['total']))}
 
 
@@ -252,25 +256,13 @@ async def finish_upload(document_id: int, version_id: int, user: dict = Depends(
     finally:
         await db.close()
 
-@router.post('/documents/{document_id}/uploads/{version_id}/abandon')
-async def abandon_upload(document_id: int, version_id: int, user: dict = Depends(get_current_user)):
-    """Release only an expired, empty reservation, sealing its key against late PUTs."""
+async def seal_reservation(upload: dict):
+    """Seal a pending reservation's S3 key against late PUTs and return the
+    VersionId of the sealing object. The caller has decided that releasing it
+    is allowed (the register waits for the URL to expire; a Resources cancel
+    does not). Raises 409 when the real file arrived, 502 when storage cannot confirm."""
     from botocore.exceptions import ClientError
-    db = await get_db()
-    try:
-        await document_access(db,document_id,user,True)
-        row = await (await db.execute('SELECT * FROM workspace_document_versions WHERE id=? AND document_id=?',(version_id,document_id))).fetchone()
-        if not row:
-            raise HTTPException(404,'Upload not found')
-        if row['state']=='abandoned':
-            return {'ok':True,'state':'abandoned'}
-        if row['state']!='pending':
-            raise HTTPException(409,'Only pending uploads may be abandoned')
-        if not row['presign_expires_at'] or row['presign_expires_at']>int(time.time()):
-            raise HTTPException(409,'Wait until the upload URL expires; unknown expiry requires administrator review')
-        upload = dict(row)
-    finally:
-        await db.close()
+    version_id = upload['id']
     marker = {'abandoned-reservation':str(version_id)}
     try:
         head = await s3_call('head_object',Bucket=stored_bucket(upload),Key=upload['object_key'])
@@ -292,6 +284,27 @@ async def abandon_upload(document_id: int, version_id: int, user: dict = Depends
         # The marker also makes recovery idempotent after a process interruption.
     if not head.get('VersionId') or head['VersionId']=='null':
         raise HTTPException(409,'Storage versioning must be enabled before cleanup can be confirmed')
+    return head['VersionId']
+
+@router.post('/documents/{document_id}/uploads/{version_id}/abandon')
+async def abandon_upload(document_id: int, version_id: int, user: dict = Depends(get_current_user)):
+    """Release only an expired, empty reservation, sealing its key against late PUTs."""
+    db = await get_db()
+    try:
+        await document_access(db,document_id,user,True)
+        row = await (await db.execute('SELECT * FROM workspace_document_versions WHERE id=? AND document_id=?',(version_id,document_id))).fetchone()
+        if not row:
+            raise HTTPException(404,'Upload not found')
+        if row['state']=='abandoned':
+            return {'ok':True,'state':'abandoned'}
+        if row['state']!='pending':
+            raise HTTPException(409,'Only pending uploads may be abandoned')
+        if not row['presign_expires_at'] or row['presign_expires_at']>int(time.time()):
+            raise HTTPException(409,'Wait until the upload URL expires; unknown expiry requires administrator review')
+        upload = dict(row)
+    finally:
+        await db.close()
+    sealed_version = await seal_reservation(upload)
     db = await get_db()
     try:
         await db.execute('BEGIN IMMEDIATE')
@@ -302,7 +315,7 @@ async def abandon_upload(document_id: int, version_id: int, user: dict = Depends
             return {'ok':True,'state':'abandoned'}
         if current['state']!='pending':
             raise HTTPException(409,'Upload state changed; reload before cleanup')
-        await db.execute("UPDATE workspace_document_versions SET state='abandoned',s3_version_id=? WHERE id=?",(head['VersionId'],version_id))
+        await db.execute("UPDATE workspace_document_versions SET state='abandoned',s3_version_id=? WHERE id=?",(sealed_version,version_id))
         await audit(db,user['id'],'document_upload_abandon','document',document_id,{'version_id':version_id,'released_bytes':upload['byte_size']})
         await db.commit()
         return {'ok':True,'state':'abandoned'}

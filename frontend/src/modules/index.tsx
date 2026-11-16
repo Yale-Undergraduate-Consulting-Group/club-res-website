@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { OutreachIcon, ResourcesIcon, SentimentIcon, SurveyIcon } from '../components/AppIcons';
-import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Hub, Outreach, Profile, Resources, Scraper, Surveys, Sentiment } from './pages';
+import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Hub, Outreach, Profile, Resources, Scraper, Surveys, Sentiment, type Page } from './pages';
 
 /**
  * Apps on the platform, as the browser sees them: the pages each one serves
@@ -11,7 +11,12 @@ import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Hu
  * (docs/PLATFORM.md).
  */
 
-export type AppRoute = { path: string; element: ReactNode } | { index: true; element: ReactNode };
+/** `preload` fetches the page's code ahead of a visit (lib/routePrefetch). */
+export type AppRoute = ({ path: string } | { index: true }) & { element: ReactNode; preload?: () => Promise<unknown> };
+
+function pageRoute(path: string, Component: Page): AppRoute {
+  return { path, element: <Component />, preload: Component.preload };
+}
 
 export type AppNavItem = {
   id: string;
@@ -37,9 +42,9 @@ const core: AppModule = {
   id: 'core',
   title: 'Platform',
   routes: [
-    { index: true, element: <Hub /> },
-    { path: 'admin', element: <Admin /> },
-    { path: 'profile', element: <Profile /> },
+    { index: true, element: <Hub />, preload: Hub.preload },
+    pageRoute('admin', Admin),
+    pageRoute('profile', Profile),
     { path: 'settings', element: <Navigate to="/profile?tab=settings" replace /> },
   ],
   nav: [
@@ -53,14 +58,14 @@ const outreach: AppModule = {
   title: 'Outreach',
   icon: <OutreachIcon />,
   routes: [
-    { path: 'scraper', element: <Scraper /> },
-    { path: 'studio', element: <EmailStudio /> },
+    pageRoute('scraper', Scraper),
+    pageRoute('studio', EmailStudio),
     // Outreach's own home: a member's campaigns, what needs attention, the leaderboard.
-    { path: 'campaigns', element: <Dashboard /> },
-    { path: 'campaigns/:id', element: <CampaignDetail /> },
-    { path: 'analytics', element: <Analytics /> },
-    { path: 'outreach', element: <Outreach /> },
-    { path: 'directory', element: <Directory /> },
+    pageRoute('campaigns', Dashboard),
+    pageRoute('campaigns/:id', CampaignDetail),
+    pageRoute('analytics', Analytics),
+    pageRoute('outreach', Outreach),
+    pageRoute('directory', Directory),
   ],
   nav: [
     { id: 'campaigns', to: '/campaigns', label: 'Overview', shortLabel: 'Outreach' },
@@ -75,7 +80,7 @@ const surveys: AppModule = {
   id: 'surveys',
   title: 'Survey builder',
   icon: <SurveyIcon />,
-  routes: [{ path: 'surveys', element: <Surveys /> }],
+  routes: [pageRoute('surveys', Surveys)],
   nav: [{ id: 'surveys', to: '/surveys', label: 'Survey builder', shortLabel: 'Surveys' }],
 };
 
@@ -83,7 +88,7 @@ const sentiment: AppModule = {
   id: 'sentiment',
   title: 'Market sentiment',
   icon: <SentimentIcon />,
-  routes: [{ path: 'sentiment', element: <Sentiment /> }],
+  routes: [pageRoute('sentiment', Sentiment)],
   nav: [{ id: 'sentiment', to: '/sentiment', label: 'Market sentiment', shortLabel: 'Sentiment' }],
 };
 
@@ -91,7 +96,7 @@ const resources: AppModule = {
   id: 'resources',
   title: 'Resources',
   icon: <ResourcesIcon />,
-  routes: [{ path: 'resources', element: <Resources /> }],
+  routes: [pageRoute('resources', Resources)],
   nav: [{ id: 'resources', to: '/resources', label: 'Resources', shortLabel: 'Resources' }],
 };
 

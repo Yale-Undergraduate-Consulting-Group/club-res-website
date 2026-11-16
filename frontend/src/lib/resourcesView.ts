@@ -57,9 +57,8 @@ export function formatFileSize(bytes: number): string {
   return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10} ${units[unit]}`;
 }
 
-/** Whole dollars with separators; a project with no revenue on record says so. */
-export function formatRevenue(revenue: number | null | undefined): string {
-  if (revenue === null || revenue === undefined || !Number.isFinite(revenue)) return 'Not recorded';
+/** Whole dollars with separators. Callers show revenue only when one is recorded. */
+export function formatRevenue(revenue: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(revenue);
 }
 

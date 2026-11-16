@@ -42,6 +42,12 @@ _GOOGLE_DRIVE_HOSTS = ("drive.google.com", "docs.google.com")
 # host, then the site path. Older links have no prefix.
 _SHAREPOINT_PATH = re.compile(r"(?:/:[a-z]:/r)?/sites/[^?#]+")
 _UNSAFE = re.compile(r"[\s\\<>\"]")
+#: Object-key prefixes of stored file versions. The import stores server-side
+#: under IMPORT_KEY_PREFIX, and those versions are not charged to anyone's
+#: storage quota (workspace.storage_usage); a member's page upload is stored
+#: under UPLOAD_KEY_PREFIX and is charged to the uploader like a register upload.
+IMPORT_KEY_PREFIX = "documents/resource/"
+UPLOAD_KEY_PREFIX = "documents/resource-upload/"
 
 
 async def create_tables(db) -> None:
@@ -273,6 +279,23 @@ def files_open_sql(viewer: dict) -> tuple[str, list]:
     return f"(r.kind != 'past_project' OR r.disclosure = 'public' OR {team})", params
 
 
+async def managed_ids(db, viewer: dict, resource_ids: list[int]) -> set[int]:
+    """Of ``resource_ids`` (already visible to the viewer), those whose files
+    the viewer may add to, replace, restore and delete: any resource for an
+    admin; for a past project, a member of its team (the team that sees its files)."""
+    if not resource_ids:
+        return set()
+    if is_admin(viewer):
+        return set(resource_ids)
+    team, params = _team_sql(viewer["id"])
+    marks = ",".join("?" * len(resource_ids))
+    rows = await (await db.execute(
+        f"SELECT r.id FROM resources r WHERE r.kind = 'past_project' AND r.id IN ({marks}) AND {team}",
+        [*resource_ids, *params],
+    )).fetchall()
+    return {row["id"] for row in rows}
+
+
 def open_to_all_members(resource: dict, admin_only_file: bool = False) -> bool:
     """True when every member may download the file: it is the open case the
     audit log does not need to record."""
@@ -418,7 +441,7 @@ async def present(db, viewer: dict, rows: list[dict]) -> list[dict]:
     admin = is_admin(viewer)
     files: dict[int, list[dict]] = {i: [] for i in ids}
     for row in await (await db.execute(
-        f"""SELECT f.resource_id, f.document_id, f.admin_only, v.filename, v.byte_size, v.content_type
+        f"""SELECT f.resource_id, f.document_id, f.admin_only, d.current_version AS version_id, v.filename, v.byte_size, v.content_type
             FROM resource_files f JOIN workspace_documents d ON d.id = f.document_id
             JOIN workspace_document_versions v ON v.id = d.current_version
             WHERE f.resource_id IN ({marks}) ORDER BY v.filename COLLATE NOCASE""", ids,
@@ -435,6 +458,7 @@ async def present(db, viewer: dict, rows: list[dict]) -> list[dict]:
             f"SELECT resource_id, revenue, contacts FROM resource_sensitive WHERE resource_id IN ({marks})", ids,
         )).fetchall():
             sensitive[row["resource_id"]] = row
+    managed = await managed_ids(db, viewer, ids)
     items = []
     for r in rows:
         # A statement of work (admin_only) is not mentioned to anyone else, so it is not counted either.
@@ -448,9 +472,9 @@ async def present(db, viewer: dict, rows: list[dict]) -> list[dict]:
             "semester": r["semester"], "industry": r["industry"], "industries": _industries(r["industry"]),
             "areas": r["areas"], "description": r["description"], "code_name": r["code_name"],
             "team_size": r["team_size"], "disclosure": r["disclosure"], "status": r["status"],
-            "files_open": bool(r["files_open"]),
+            "files_open": bool(r["files_open"]), "can_manage": r["id"] in managed,
             "files": [
-                {"id": f["document_id"], "filename": f["filename"], "byte_size": f["byte_size"],
+                {"id": f["document_id"], "version_id": f["version_id"], "filename": f["filename"], "byte_size": f["byte_size"],
                  "content_type": f["content_type"], "admin_only": bool(f["admin_only"])}
                 for f in shown
             ],
@@ -517,14 +541,9 @@ async def reindex(db, resource_id: int) -> None:
     await db.execute("INSERT OR REPLACE INTO resource_body_fts(rowid, body) VALUES (?, ?)", (resource_id, "\n".join(parts)))
 
 
-async def delete_resource(db, admin: dict, resource_id: int) -> bool:
-    """Remove a resource: its stored file versions first (a failure leaves the
-    rows so the delete can be retried), then its rows, atomically."""
-    resource = await (await db.execute("SELECT id, title FROM resources WHERE id = ?", (resource_id,))).fetchone()
-    if not resource:
-        return False
-    documents = [r["document_id"] for r in await (await db.execute(
-        "SELECT document_id FROM resource_files WHERE resource_id = ?", (resource_id,))).fetchall()]
+async def delete_stored_versions(db, documents: list[int]) -> None:
+    """Delete every stored version object of these register documents (a
+    failure raises and leaves the rows, so the delete can be retried)."""
     marks = ",".join("?" * len(documents)) or "NULL"
     versions = await (await db.execute(
         f"SELECT object_key, storage_bucket, s3_version_id FROM workspace_document_versions WHERE document_id IN ({marks})", documents,
@@ -532,7 +551,23 @@ async def delete_resource(db, admin: dict, resource_id: int) -> bool:
     for version in versions:
         if version["storage_bucket"]:
             await document_storage.delete_version(version["storage_bucket"], version["object_key"], version["s3_version_id"])
+
+
+async def delete_resource(db, admin: dict, resource_id: int) -> bool:
+    """Remove a resource: its stored file versions first (a failure leaves the
+    rows so the delete can be retried), then its rows, atomically."""
+    from app.services import resource_ask
+
+    resource = await (await db.execute("SELECT id, title FROM resources WHERE id = ?", (resource_id,))).fetchone()
+    if not resource:
+        return False
+    documents = [r["document_id"] for r in await (await db.execute(
+        "SELECT document_id FROM resource_files WHERE resource_id = ?", (resource_id,))).fetchall()]
+    marks = ",".join("?" * len(documents)) or "NULL"
+    await delete_stored_versions(db, documents)
     await db.execute("BEGIN IMMEDIATE")
+    for document_id in documents:
+        await resource_ask.drop_text(db, document_id)
     await db.execute("DELETE FROM resource_fts WHERE rowid = ?", (resource_id,))
     await db.execute("DELETE FROM resource_body_fts WHERE rowid = ?", (resource_id,))
     await db.execute("DELETE FROM resources WHERE id = ?", (resource_id,))

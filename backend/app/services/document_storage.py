@@ -130,3 +130,29 @@ def read_local_token(token: str) -> int | None:
         return int(version_id)
     except (ValueError, UnicodeDecodeError):
         return None
+
+
+# --- Local upload links ------------------------------------------------------
+# The local stand-in for a presigned PUT: one version, short-lived, and signed
+# with a purpose marker so a download link can never be used to write.
+
+LOCAL_UPLOAD_URL_PATH = "/api/resources/local-upload"
+
+
+def local_upload_url(version_id: int, expires: int = 300) -> str:
+    payload = f"u.{int(version_id)}.{int(time.time()) + expires}"
+    token = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    return f"{LOCAL_UPLOAD_URL_PATH}?token={token}.{_sign(payload)}"
+
+
+def read_local_upload_token(token: str) -> int | None:
+    """The version id a valid, unexpired local upload link names, else None."""
+    try:
+        encoded, signature = token.rsplit(".", 1)
+        payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
+        purpose, version_id, expires = payload.split(".")
+        if purpose != "u" or not hmac.compare_digest(signature, _sign(payload)) or int(expires) < time.time():
+            return None
+        return int(version_id)
+    except (ValueError, UnicodeDecodeError):
+        return None

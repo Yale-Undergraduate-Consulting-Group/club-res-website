@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.database import get_db
-from app.services import document_storage, resource_text, resources
+from app.services import document_storage, resource_ask, resource_text, resources
 from app.services.transaction_audit import audit
 
 PROJECTS = "Past Project Database/"
@@ -349,9 +349,9 @@ async def _import_file(db, archive: zipfile.ZipFile, rid: int, pf: PlanFile, adm
         with archive.open(info) as source, open(path, "wb") as out:
             shutil.copyfileobj(source, out, 1024 * 1024)
         # A statement of work states the fee, so its text never reaches search.
-        text = "" if pf.admin_only else resource_text.extract_text(path, pf.name)
+        pages = [] if pf.admin_only else resource_text.extract_pages(path, pf.name)
         document_id = existing["document_id"] if existing else None
-        key = f"documents/resource/{secrets.token_urlsafe(24)}"
+        key = f"{resources.IMPORT_KEY_PREFIX}{secrets.token_urlsafe(24)}"
         version = await document_storage.store_file(target, key, path, content_type)
     await db.execute("BEGIN IMMEDIATE")
     if document_id is None:
@@ -369,7 +369,7 @@ async def _import_file(db, archive: zipfile.ZipFile, rid: int, pf: PlanFile, adm
         """INSERT INTO resource_files(resource_id, document_id, source_key, source_crc, admin_only) VALUES (?,?,?,?,?)
            ON CONFLICT(resource_id, source_key) DO UPDATE SET source_crc = excluded.source_crc, admin_only = excluded.admin_only""",
         (rid, document_id, pf.member, info.CRC, int(pf.admin_only)))
-    await db.execute("INSERT OR REPLACE INTO resource_file_text(document_id, resource_id, text) VALUES (?,?,?)", (document_id, rid, text))
+    await resource_ask.store_text(db, rid, document_id, pages)
     await db.commit()
     return "updated" if existing else "added"
 

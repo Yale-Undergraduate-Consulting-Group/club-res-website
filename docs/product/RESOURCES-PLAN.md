@@ -16,6 +16,18 @@ inline. Files use the existing document register
 The Slack assistant and AI drafting search it through the same access check
 as the page, so they never return what the asking member may not see.
 
+**Ask about this file**: a member can put a question to one file they may open
+(`POST /api/resources/{id}/files/{fid}/ask`, and the Slack assistant's
+`ask_resource_file`). The access check is the download's. The model is sent
+only the file's best-matching slides or pages (top 8 by full-text rank over
+per-page text), as quoted data, and the answer cites slide or page numbers.
+Admin-only files have no stored text, so they cannot be asked about. Each ask
+counts against `RESOURCE_ASK_PER_MEMBER_PER_HOUR` (20) and
+`RESOURCE_ASK_PER_CLUB_PER_HOUR` (200) and the club's `AI_MONTHLY_BUDGET_USD`;
+asks about files not open to every member are audited like downloads. Files
+imported before page text existed answer from sections of their stored text
+until they are re-imported or re-uploaded.
+
 Source of the first import: the club's OneDrive export (136 items, about 6 GB:
 Past Project Database by semester, Slide Templates, Interview Resources,
 Survey Resources, YUCG Analytics Resources) and its
@@ -39,16 +51,19 @@ configured host, otherwise only Google Drive or Docs https links are accepted.
 | Who reads guides and templates | Every member. |
 | Revenue, client contact names and emails | Admins only. Never returned by the Slack assistant or the AI to anyone else. |
 | Project team | Engagement directors, project managers and associates named in the table, matched to member accounts by name; an unmatched name grants nothing. |
+| Who manages files | Admins on every resource; on a past project, a member of its team (the same match as above, or an assignment to the linked project). Managing is uploading a new file, replacing a file with a new version, restoring an earlier version, and deleting a file. Team members never see or touch admin-only files (statements of work). Everyone else may open files as above but not change them. |
 | Where it lives | Rows in the app's SQLite database; files in the private, encrypted documents bucket. Nothing in Git, fixtures, logs or static exports. Dev gets none of it (synthetic data only). |
-| Retention | Kept until an admin deletes it. |
-| Deletion | An admin deletes a resource: its rows go at once; its file versions in the bucket are deleted by the app, and any copy in the database backups ages out with those backups. Downloads already made cannot be recalled. |
+| Retention | Kept until an admin deletes it. Replacing a file keeps every earlier version (counted in storage) so a manager can download or restore it; versions go only when the file or the resource is deleted. |
+| Deletion | An admin deletes a resource, or a manager deletes one file: the rows go at once; the file versions in the bucket are deleted by the app, and any copy in the database backups ages out with those backups. Downloads already made cannot be recalled. |
 | Backups | Rows are in the existing daily database backup; files rely on the documents bucket. |
-| Audit | Every download of a file that is not open to all members is recorded (who, what, when) in the existing audit log; admins can read it. |
+| Audit | Every download of a file that is not open to all members is recorded (who, what, when) in the existing audit log; admins can read it. Every upload, restore and file delete is recorded too. |
 
 ## Cost
 
 About $0.15 a month: 6 GB in S3 standard. Search is SQLite full-text search on
-the existing server. No new AWS service.
+the existing server. No new AWS service. Page uploads use the documents bucket's
+existing presigned PUT and count toward the uploader's storage quota (the
+import's server-side stored files do not); extra versions add a little storage.
 
 ## Order
 

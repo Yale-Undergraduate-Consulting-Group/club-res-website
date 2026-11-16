@@ -40,10 +40,6 @@ describe('formatRevenue', () => {
     expect(formatRevenue(125000)).toBe('$125,000');
     expect(formatRevenue(0)).toBe('$0');
   });
-  it('says so when no revenue is on record', () => {
-    expect(formatRevenue(null)).toBe('Not recorded');
-    expect(formatRevenue(undefined)).toBe('Not recorded');
-  });
 });
 
 describe('buildResourceQuery', () => {
@@ -114,7 +110,7 @@ describe('hasAdminDetails', () => {
 describe('facets and groups', () => {
   const item = (id: number, kind: ResourceItem['kind'], title: string, semester: string | null): ResourceItem => ({
     id, kind, title, semester, client: null, client_hidden: false, industry: null, industries: [], areas: null,
-    description: null, code_name: null, team_size: null, disclosure: 'public', status: null, files_open: true,
+    description: null, code_name: null, team_size: null, disclosure: 'public', status: null, files_open: true, can_manage: false,
     files: [], files_hidden_count: 0, team: [], created_at: 0, link: null,
   });
   it('names disclosures and link providers for people, not the API', () => {

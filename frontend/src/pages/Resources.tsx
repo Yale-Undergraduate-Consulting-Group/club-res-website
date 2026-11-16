@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
-  api, type ResourceDisclosure, type ResourceFacet, type ResourceItem, type ResourceLinkCreate, type ResourceList,
+  api, type ResourceDisclosure, type ResourceFacet, type ResourceFile, type ResourceFileAnswer, type ResourceFileVersion,
+  type ResourceItem, type ResourceLinkCreate, type ResourceList,
 } from '../api';
+import AppTabMenu from '../components/AppTabMenu';
 import PageHeader from '../components/PageHeader';
-import { Button, Chip, ConfirmDialog, EmptyState, Notice, StatusBadge } from '../components/ui/Primitives';
+import { Button, Chip, ConfirmDialog, EmptyState, Notice } from '../components/ui/Primitives';
 import {
   clientText, disclosureLabel, editableLink, facetOptions, fileCountText, formatFileSize, formatRevenue, groupResources, groupTeam,
   hasAdminDetails, hiddenFilesNote, kindLabel, kindSingular, linkLabel, orderKinds,
@@ -19,13 +21,19 @@ type Filter = { q: string; kind: string; semester: string; industry: string; dis
 
 const EMPTY_FACETS: Facets = { kinds: [], semesters: [], industries: [], disclosures: [] };
 const DISCLOSURES: ResourceDisclosure[] = ['public', 'name_only', 'private'];
+/** Past projects open first; every other type is one tab away instead of below every semester. */
+const DEFAULT_FILTER: Filter = { q: '', kind: 'past_project', semester: '', industry: '', disclosure: '' };
+/** The "All" tab's id; its filter value is the empty kind. */
+const ALL_KINDS = 'all';
+
+const errorText = (failure: unknown, fallback: string) => (failure instanceof Error ? failure.message : fallback);
 
 /** Resources: a compact, faceted library of the club's past work, templates and guides. */
 export default function Resources() {
   const { user } = useOutletContext<{ user: { role?: string } }>();
   const isAdmin = user?.role === 'admin';
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<Filter>({ q: '', kind: '', semester: '', industry: '', disclosure: '' });
+  const [filter, setFilter] = useState<Filter>(DEFAULT_FILTER);
   const [retry, setRetry] = useState(0);
   const [settled, setSettled] = useState<Settled | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -55,10 +63,14 @@ export default function Resources() {
 
   const loading = settled?.key !== requestKey;
   const error = loading ? '' : settled?.error ?? '';
-  const items = loading ? [] : settled?.items ?? [];
+  // The last answer stays on screen, dimmed, while the next loads: a new tab or
+  // filter never blanks the list or moves the page.
+  const items = settled?.items ?? [];
   const total = settled?.total ?? 0;
-  const facets = loading ? EMPTY_FACETS : settled?.facets ?? EMPTY_FACETS;
-  const filtered = Object.values(filter).some(Boolean);
+  const facets = settled?.facets ?? EMPTY_FACETS;
+  const filtered = Boolean(filter.q || filter.semester || filter.industry || filter.disclosure);
+  // Guides and templates have no semester, industry or disclosure: no empty filter panel for them.
+  const hasFacets = filtered || facets.semesters.length + facets.industries.length + facets.disclosures.length > 0;
 
   const setFacet = (name: keyof Omit<Filter, 'q'>, value: string) => {
     setFilter((current) => ({ ...current, [name]: current[name] === value ? '' : value }));
@@ -66,7 +78,12 @@ export default function Resources() {
 
   const clearFilters = () => {
     setSearch('');
-    setFilter({ q: '', kind: '', semester: '', industry: '', disclosure: '' });
+    setFilter((current) => ({ ...DEFAULT_FILTER, kind: current.kind }));
+  };
+
+  const chooseKind = (tab: string) => {
+    const kind = tab === ALL_KINDS ? '' : tab;
+    setFilter((current) => ({ ...current, kind, semester: kind === 'past_project' || kind === '' ? current.semester : '' }));
   };
 
   const submitSearch = (event: FormEvent) => {
@@ -85,7 +102,7 @@ export default function Resources() {
         ? { ...current, items: [...(current.items ?? []), ...result.items], total: result.total, facets: result.facets }
         : current));
     } catch (failure) {
-      if (!controller.signal.aborted) setMoreError(failure instanceof Error ? failure.message : 'Could not load more resources.');
+      if (!controller.signal.aborted) setMoreError(errorText(failure, 'Could not load more resources.'));
     } finally {
       setLoadingMore(false);
     }
@@ -109,11 +126,18 @@ export default function Resources() {
         : current));
       setRemoving(null);
     } catch (failure) {
-      setRemoveError(failure instanceof Error ? failure.message : 'Could not delete this resource.');
+      setRemoveError(errorText(failure, 'Could not delete this resource.'));
     } finally {
       setRemoveBusy(false);
     }
   };
+
+  const kindTabs = [
+    { id: ALL_KINDS, label: 'All', count: settled?.facets ? facets.kinds.reduce((sum, entry) => sum + entry.count, 0) : undefined },
+    ...orderFacetKinds(facetOptions(facets.kinds, filter.kind)).map((entry) => ({
+      id: entry.value, label: kindLabel(entry.value), count: settled?.facets ? entry.count : undefined,
+    })),
+  ];
 
   return (
     <div className="app-workspace resource-page">
@@ -123,17 +147,16 @@ export default function Resources() {
         actions={isAdmin ? <Button onClick={() => setAdding(true)}>Add linked resource</Button> : undefined}
       />
 
-      <form role="search" className="surface-card resource-search" onSubmit={submitSearch}>
-        <label>
-          <span className="sr-only">Search resources</span>
-          <input
-            className="ui-input block w-full"
-            type="search"
-            value={search}
-            placeholder="Search title, client, industry, topic or file text"
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
+      <form role="search" className="surface-card flex resource-search" onSubmit={submitSearch}>
+        <input
+          className="ui-input"
+          type="search"
+          aria-label="Search resources"
+          data-search-input
+          value={search}
+          placeholder="Search title, client, industry, topic or file text"
+          onChange={(event) => setSearch(event.target.value)}
+        />
         <Button type="submit" variant="secondary">Search</Button>
       </form>
 
@@ -149,26 +172,26 @@ export default function Resources() {
         </Notice>
       )}
 
-      <div className="resource-layout">
-        <aside className="surface-card resource-sidebar" aria-label="Resource filters">
+      <AppTabMenu label="Resource type" tabs={kindTabs} active={filter.kind || ALL_KINDS} onChange={chooseKind} />
+
+      <div className={hasFacets ? 'resource-layout' : 'resource-layout resource-layout--full'}>
+        {hasFacets && <aside className="surface-card grid resource-sidebar" aria-label="Resource filters">
           <div className="resource-sidebar__head">
             <h2>Filter</h2>
             {filtered && <Button size="sm" variant="ghost" onClick={clearFilters}>Clear all</Button>}
           </div>
-          <Facet title="Type" values={orderFacetKinds(facetOptions(facets.kinds, filter.kind))} chosen={filter.kind}
-            label={kindLabel} onChoose={(value) => setFacet('kind', value)} />
           <Facet title="Semester" values={facetOptions(facets.semesters, filter.semester)} chosen={filter.semester}
             onChoose={(value) => setFacet('semester', value)} />
           <Facet title="Industry" values={facetOptions(facets.industries, filter.industry)} chosen={filter.industry}
             onChoose={(value) => setFacet('industry', value)} collapsible />
           <Facet title="Disclosure" values={facetOptions(facets.disclosures, filter.disclosure)} chosen={filter.disclosure}
             label={disclosureLabel} onChoose={(value) => setFacet('disclosure', value)} />
-        </aside>
+        </aside>}
 
-        <section className="resource-results" aria-label="Results">
-          {loading ? (
+        <section className="resource-results" aria-label="Results" aria-busy={loading}>
+          {!settled?.items && loading ? (
             <p className="text-sm text-[var(--text-secondary)]" role="status">Loading resources…</p>
-          ) : !error && items.length === 0 ? (
+          ) : !loading && !error && items.length === 0 ? (
             <EmptyState
               title="No resources match"
               body={filtered ? 'Try a different search or clear a filter.' : 'Nothing has been added to the library yet.'}
@@ -186,7 +209,7 @@ export default function Resources() {
                 onDelete={(item) => { setRemoveError(''); setRemoving(item); }}
               />
               {moreError && <Notice tone="danger">{moreError}</Notice>}
-              {items.length < total && (
+              {!loading && items.length < total && (
                 <div className="flex justify-center">
                   <Button variant="secondary" disabled={loadingMore} onClick={showMore}>{loadingMore ? 'Loading…' : 'Show more'}</Button>
                 </div>
@@ -316,15 +339,17 @@ function ResourceRow({ item, isAdmin, onChange, onDelete }: {
             {client && item.title !== client && !item.code_name && <span className="resource-code resource-wrap">{item.title}</span>}
           </span>
           {item.industry && <span className="resource-row__industry resource-wrap">{item.industry}</span>}
-          <span className="resource-row__badges">
-            {item.kind === 'past_project' && <StatusBadge>{disclosureLabel(item.disclosure)}</StatusBadge>}
-            {item.status && <StatusBadge tone="info">{item.status}</StatusBadge>}
+          <span className="resource-row__labels">
+            {item.kind === 'past_project' && (
+              <span className={`resource-tag resource-tag--${item.disclosure}`}>{disclosureLabel(item.disclosure)}</span>
+            )}
+            {item.status && <span className="resource-tag resource-tag--status">{item.status}</span>}
             {count && <span className="resource-file-count">{count}</span>}
           </span>
         </button>
         {item.link && (
           <a className="ui-button ui-button--secondary ui-button--sm resource-link" href={item.link.url} target="_blank" rel="noreferrer">
-            {linkLabel(item.link.provider)}
+            {linkLabel(item.link.provider)}<span className="resource-link__arrow" aria-hidden="true">↗</span>
           </a>
         )}
       </div>
@@ -338,23 +363,8 @@ function ResourceRow({ item, isAdmin, onChange, onDelete }: {
 function ResourceDetail({ id, item, isAdmin, onChange, onDelete }: {
   id: string; item: ResourceItem; isAdmin: boolean; onChange: (item: ResourceItem) => void; onDelete: () => void;
 }) {
-  const [opening, setOpening] = useState<number | null>(null);
-  const [fileError, setFileError] = useState('');
   const team = groupTeam(item.team);
   const hiddenNote = hiddenFilesNote(item);
-
-  const openFile = async (fileId: number) => {
-    setFileError('');
-    setOpening(fileId);
-    try {
-      const file = await api.resources.download(item.id, fileId);
-      window.open(file.url, '_blank', 'noopener');
-    } catch (failure) {
-      setFileError(failure instanceof Error ? failure.message : 'Could not open this file.');
-    } finally {
-      setOpening(null);
-    }
-  };
 
   return (
     <div id={id} className="resource-detail">
@@ -362,27 +372,16 @@ function ResourceDetail({ id, item, isAdmin, onChange, onDelete }: {
         <p className="resource-detail__kind">{kindSingular(item.kind)}{item.semester ? ` · ${item.semester}` : ''}</p>
         {item.description && <p className="resource-desc resource-wrap">{item.description}</p>}
         {item.areas && <p className="resource-areas resource-wrap"><span className="resource-label">Areas</span> {item.areas}</p>}
-        {(item.files.length > 0 || hiddenNote) && (
-          <section>
+        {(item.files.length > 0 || hiddenNote || item.can_manage) && (
+          <section aria-label="Files">
             <h3 className="resource-label">Files</h3>
             {item.files.length > 0 && (
               <ul className="resource-files">
-                {item.files.map((file) => (
-                  <li key={file.id} className="resource-file">
-                    <span className="resource-file__name resource-wrap">
-                      {file.filename}<span className="resource-file__size"> {formatFileSize(file.byte_size)}</span>
-                      {file.admin_only && <StatusBadge tone="warning">Admin only</StatusBadge>}
-                    </span>
-                    <Button size="sm" variant="secondary" aria-label={`Open ${file.filename}`} disabled={opening === file.id}
-                      onClick={() => openFile(file.id)}>
-                      {opening === file.id ? 'Opening…' : 'Open'}
-                    </Button>
-                  </li>
-                ))}
+                {item.files.map((file) => <ResourceFileRow key={file.id} item={item} file={file} onChange={onChange} />)}
               </ul>
             )}
             {hiddenNote && <p className="resource-note">{hiddenNote}</p>}
-            {fileError && <Notice tone="danger" className="mt-2">{fileError}</Notice>}
+            {item.can_manage && <AddFile item={item} onChange={onChange} />}
           </section>
         )}
         {team.length > 0 && (
@@ -404,23 +403,262 @@ function ResourceDetail({ id, item, isAdmin, onChange, onDelete }: {
       {hasAdminDetails(item) && (
         <div className="resource-admin" role="group" aria-label="Admin only">
           <h3>Admin only</h3>
-          <dl>
-            <div><dt className="resource-label">Revenue</dt><dd>{formatRevenue(item.revenue)}</dd></div>
-            <div>
-              <dt className="resource-label">Client contacts</dt>
-              <dd>{item.contacts && item.contacts.length > 0 ? (
-                <ul className="resource-contacts">{item.contacts.map((contact, index) => (
-                  <li key={`${contact.email}-${index}`} className="resource-wrap">
-                    {contact.name} <a href={`mailto:${contact.email}`}>{contact.email}</a>
-                  </li>
-                ))}</ul>
-              ) : 'None on record'}</dd>
-            </div>
-          </dl>
+          {(item.revenue != null || (item.contacts?.length ?? 0) > 0) && (
+            <dl>
+              {item.revenue != null && <div><dt className="resource-label">Revenue</dt><dd>{formatRevenue(item.revenue)}</dd></div>}
+              {item.contacts && item.contacts.length > 0 && (
+                <div>
+                  <dt className="resource-label">Client contacts</dt>
+                  <dd>
+                    <ul className="resource-contacts">{item.contacts.map((contact, index) => (
+                      <li key={`${contact.email}-${index}`} className="resource-wrap">
+                        {contact.name} <a href={`mailto:${contact.email}`}>{contact.email}</a>
+                      </li>
+                    ))}</ul>
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
           {isAdmin && <LinkEditor item={item} onChange={onChange} />}
           {isAdmin && <div className="resource-card__actions"><Button size="sm" variant="danger" aria-label={`Delete ${item.title}`} onClick={onDelete}>Delete</Button></div>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Opens a file (or one of its older versions) through the access-checked, short-lived link. */
+async function openStored(item: ResourceItem, fileId: number, versionId?: number) {
+  const file = await api.resources.download(item.id, fileId, versionId);
+  window.open(file.url, '_blank', 'noopener');
+}
+
+/**
+ * One file: open it, ask about it, and, for whoever manages the resource,
+ * upload a new version, see and restore earlier versions, or delete it.
+ */
+function ResourceFileRow({ item, file, onChange }: { item: ResourceItem; file: ResourceFile; onChange: (item: ResourceItem) => void }) {
+  const [panel, setPanel] = useState<'versions' | 'ask' | null>(null);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+
+  const run = async (label: string, action: () => Promise<void>) => {
+    setBusy(label);
+    setError('');
+    try {
+      await action();
+    } catch (failure) {
+      setError(errorText(failure, 'That did not work.'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const toggle = (next: 'versions' | 'ask') => setPanel((current) => (current === next ? null : next));
+
+  return (
+    <li className="resource-file">
+      <div className="resource-file__line">
+        <span className="resource-file__name resource-wrap">
+          {file.filename}<span className="resource-file__size"> {formatFileSize(file.byte_size)}</span>
+          {file.admin_only && <span className="resource-tag resource-tag--private">Admin only</span>}
+        </span>
+        <span className="resource-file__actions">
+          <Button size="sm" variant="secondary" aria-label={`Open ${file.filename}`} disabled={busy === 'open'}
+            onClick={() => run('open', () => openStored(item, file.id))}>
+            {busy === 'open' ? 'Opening…' : 'Open'}
+          </Button>
+          {/* A statement of work's text is never read by the AI, so there is nothing to ask. */}
+          {!file.admin_only && (
+            <Button size="sm" variant="ghost" aria-label={`Ask about ${file.filename}`} aria-expanded={panel === 'ask'} onClick={() => toggle('ask')}>
+              Ask
+            </Button>
+          )}
+          {item.can_manage && (
+            <>
+              <input ref={input} type="file" className="hidden" aria-label={`New version of ${file.filename}`}
+                onChange={(event) => {
+                  const chosen = event.target.files?.[0];
+                  event.target.value = '';
+                  if (chosen) void run('upload', async () => onChange(await api.resources.upload(item.id, chosen, file.id)));
+                }} />
+              <Button size="sm" variant="ghost" disabled={busy === 'upload'} onClick={() => input.current?.click()}>
+                {busy === 'upload' ? 'Uploading…' : 'New version'}
+              </Button>
+              <Button size="sm" variant="ghost" aria-label={`Versions of ${file.filename}`} aria-expanded={panel === 'versions'}
+                onClick={() => toggle('versions')}>
+                Versions
+              </Button>
+              <Button size="sm" variant="ghost" aria-label={`Delete ${file.filename}`} onClick={() => { setError(''); setDeleting(true); }}>
+                Delete
+              </Button>
+            </>
+          )}
+        </span>
+      </div>
+      {error && <Notice tone="danger" className="mt-2">{error}</Notice>}
+      {panel === 'versions' && <FileVersions item={item} file={file} onChange={onChange} />}
+      {panel === 'ask' && <AskFile item={item} file={file} />}
+      <ConfirmDialog
+        open={deleting}
+        title="Delete this file?"
+        danger
+        busy={busy === 'delete'}
+        confirmLabel="Delete file"
+        body={(
+          <>
+            <p><strong className="resource-wrap">{file.filename}</strong> and every earlier version are removed from this resource for everyone.</p>
+            <p>Downloads already made cannot be recalled.</p>
+            {error && <Notice tone="danger" className="mt-3">{error}</Notice>}
+          </>
+        )}
+        onConfirm={() => run('delete', async () => {
+          onChange(await api.resources.removeFile(item.id, file.id));
+          setDeleting(false);
+        })}
+        onClose={() => setDeleting(false)}
+      />
+    </li>
+  );
+}
+
+/** Every stored version, newest first; any but the current one can be opened or made current again. */
+function FileVersions({ item, file, onChange }: { item: ResourceItem; file: ResourceFile; onChange: (item: ResourceItem) => void }) {
+  const [versions, setVersions] = useState<ResourceFileVersion[] | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    api.resources.versions(item.id, file.id)
+      .then((rows) => { if (live) setVersions(rows); })
+      .catch((failure) => { if (live) setError(errorText(failure, 'Could not load the versions.')); });
+    return () => { live = false; };
+  }, [item.id, file.id, file.version_id]);
+
+  const act = async (versionId: number, action: () => Promise<void>) => {
+    setBusy(versionId);
+    setError('');
+    try {
+      await action();
+    } catch (failure) {
+      setError(errorText(failure, 'That did not work.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="resource-file__panel" role="group" aria-label={`Versions of ${file.filename}`}>
+      {versions === null && !error && <p className="resource-note" role="status">Loading versions…</p>}
+      {versions && (
+        <ul className="resource-versions">
+          {versions.map((version) => (
+            <li key={version.id}>
+              <span className="resource-wrap">
+                {version.filename}
+                <span className="resource-file__size">
+                  {' '}{formatFileSize(version.byte_size)} · {new Date(version.created_at * 1000).toLocaleDateString()}
+                  {version.uploaded_by_name ? ` · ${version.uploaded_by_name}` : ''}
+                </span>
+              </span>
+              {version.current ? (
+                <span className="resource-tag resource-tag--public">Current</span>
+              ) : (
+                <span className="resource-file__actions">
+                  <Button size="sm" variant="secondary" disabled={busy === version.id} aria-label={`Open version from ${new Date(version.created_at * 1000).toLocaleDateString()}`}
+                    onClick={() => act(version.id, () => openStored(item, file.id, version.id))}>
+                    Open
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy === version.id}
+                    onClick={() => act(version.id, async () => onChange(await api.resources.restore(item.id, file.id, version.id)))}>
+                    Restore
+                  </Button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <Notice tone="danger">{error}</Notice>}
+    </div>
+  );
+}
+
+/** A question answered from the file's own text, with the slides or pages it came from. */
+function AskFile({ item, file }: { item: ResourceItem; file: ResourceFile }) {
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<ResourceFileAnswer | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const ask = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!question.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      setAnswer(await api.resources.ask(item.id, file.id, question.trim()));
+    } catch (failure) {
+      setError(errorText(failure, 'Could not answer that.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="resource-file__panel" role="group" aria-label={`Ask about ${file.filename}`}>
+      <form className="flex resource-ask" onSubmit={ask}>
+        <input className="ui-input" aria-label={`Question about ${file.filename}`} value={question} maxLength={1000}
+          placeholder="What did this deck recommend?" onChange={(event) => setQuestion(event.target.value)} />
+        <Button type="submit" variant="secondary" disabled={busy || !question.trim()}>{busy ? 'Asking…' : 'Ask'}</Button>
+      </form>
+      {answer && (
+        <>
+          <p className="resource-answer" aria-live="polite">{answer.answer}</p>
+          {answer.citations.length > 0 && (
+            <p className="resource-note">From {answer.citations.map((citation) => citation.label).join(', ')}</p>
+          )}
+        </>
+      )}
+      {error && <Notice tone="danger">{error}</Notice>}
+    </div>
+  );
+}
+
+/** Adds a file to the resource; the server checks who may and how large. */
+function AddFile({ item, onChange }: { item: ResourceItem; onChange: (item: ResourceItem) => void }) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+
+  const upload = async (file: File) => {
+    setBusy(file.name);
+    setError('');
+    try {
+      onChange(await api.resources.upload(item.id, file));
+    } catch (failure) {
+      setError(errorText(failure, 'Could not upload this file.'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <div className="resource-files__add">
+      <input ref={input} type="file" className="hidden" aria-label={`Add a file to ${item.title}`}
+        onChange={(event) => {
+          const chosen = event.target.files?.[0];
+          event.target.value = '';
+          if (chosen) void upload(chosen);
+        }} />
+      <Button size="sm" variant="secondary" disabled={Boolean(busy)} onClick={() => input.current?.click()}>Add file</Button>
+      {busy ? <span className="resource-note" role="status">Uploading {busy}…</span>
+        : <span className="resource-note">Up to 100 MB. Members open it through the same access check.</span>}
+      {error && <Notice tone="danger">{error}</Notice>}
     </div>
   );
 }
