@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import MainApp from './pages/MainApp';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -100,7 +100,8 @@ function AppContent() {
       </Route>
     </Routes>
   );
-  return <Suspense fallback={<AppLoading label="Loading section…" />}>{routes}</Suspense>;
+  // Pages load lazily inside the app shell's own Suspense boundary (components/shell/AppShell.tsx).
+  return routes;
 }
 
 function AppLoading({ label }: { label: string }) {

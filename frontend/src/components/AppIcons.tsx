@@ -44,3 +44,15 @@ export function SentimentIcon() {
     </Glyph>
   );
 }
+
+/** Resources: a shelf of two books and a leaning folder. */
+export function ResourcesIcon() {
+  return (
+    <Glyph>
+      <path d="M3.5 20.5h17" />
+      <rect x="5" y="5" width="4" height="15.5" />
+      <rect x="10" y="3.5" width="4" height="17" />
+      <path d="m15.7 7.2 3.9-.9 2 13.2-3.9.9z" />
+    </Glyph>
+  );
+}

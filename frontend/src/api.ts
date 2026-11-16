@@ -1,3 +1,5 @@
+import { trackRequest } from './lib/pageProgress';
+import { buildResourceQuery } from './lib/resourcesView';
 import type { SurveyDraft } from './lib/surveyImport';
 
 export type MemberProfile = { projects?: string; experience?: string; role_title?: string; linkedin_url?: string; slack_handle?: string; other_handles?: string };
@@ -8,6 +10,64 @@ export type SurveyLibrary = {
   qualtrics: boolean; surveys: number; questions: number; names: string[]; synced_at: string | null; syncing: boolean;
   last_sync: { ok: true; saved: number; skipped: number; failed: string[] } | { ok: false; error: string } | null;
 };
+
+/** The club's library of past projects, templates and guides (backend/app/routers/resources.py). */
+export type ResourceKind = 'past_project' | 'template' | 'interview' | 'survey' | 'analytics' | 'other';
+/** `version_id`: the version that opens now (backend/app/routers/resources.py). */
+export type ResourceFile = { id: number; filename: string; byte_size: number; content_type: string; admin_only: boolean; version_id: number };
+/** One stored version of a resource file, newest first; `current` is the one that opens. */
+export type ResourceFileVersion = {
+  id: number; filename: string; byte_size: number; content_type: string; created_at: number; uploaded_by_name: string | null; current: boolean;
+};
+/** An answer from the file's own text; `citations` name the slides or pages it used. */
+export type ResourceFileAnswer = { answer: string; citations: { page: number; label: string }[] };
+export type ResourceTeamMember = { name: string; role: 'Engagement director' | 'Project manager' | 'Associate'; member: boolean };
+export type ResourceDisclosure = 'public' | 'name_only' | 'private';
+/** Where a resource's SharePoint folder or Google Drive item opens; null when there is none or the viewer may not open its files. */
+export type ResourceLink = { url: string; provider: 'sharepoint' | 'google_drive' };
+/** `revenue`, `contacts` and `stored_link` are left out of the response for everyone but administrators. */
+export type ResourceItem = {
+  id: number;
+  kind: ResourceKind;
+  title: string;
+  client: string | null;
+  client_hidden: boolean;
+  semester: string | null;
+  industry: string | null;
+  industries: string[];
+  areas: string | null;
+  description: string | null;
+  code_name: string | null;
+  team_size: number | null;
+  disclosure: ResourceDisclosure;
+  status: string | null;
+  files_open: boolean;
+  /** Admins, and a past project's matched team: may upload, replace, delete and restore its files. */
+  can_manage: boolean;
+  files: ResourceFile[];
+  files_hidden_count: number;
+  team: ResourceTeamMember[];
+  created_at: number;
+  link: ResourceLink | null;
+  /** Admins only: what is saved, a SharePoint path from the host on ("/:f:/r/sites/...") or a Google Drive address. */
+  stored_link?: string | null;
+  revenue?: number | null;
+  contacts?: { name: string; email: string }[];
+};
+export type ResourceFacet = { value: string; count: number };
+export type ResourceList = {
+  items: ResourceItem[];
+  total: number;
+  facets: { kinds: ResourceFacet[]; semesters: ResourceFacet[]; industries: ResourceFacet[]; disclosures: ResourceFacet[] };
+  /** Admins only: whether SHAREPOINT_BASE_URL is set, so SharePoint links can open. */
+  sharepoint_configured?: boolean;
+};
+export type ResourceQuery = { q?: string; kind?: string; semester?: string; industry?: string; disclosure?: string; limit?: number; offset?: number };
+export type ResourceLinkCreate = {
+  kind: ResourceKind; title: string; semester?: string; industry?: string; disclosure: ResourceDisclosure; url: string;
+};
+/** The document register's per-file limit, which resource uploads share (backend UploadRequest). */
+export const RESOURCE_FILE_MAX_BYTES = 100 * 1024 * 1024;
 /** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
 export type Template = {
   id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
@@ -614,7 +674,12 @@ export function problemDetail(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, 320) || 'Request failed';
 }
 
-export async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+/** Every JSON call; the first ones a page makes also drive the shell's loading bar (lib/pageProgress). */
+export function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  return trackRequest(requestApi<T>(path, options));
+}
+
+async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: 'include',
@@ -664,6 +729,62 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
 }
 
 export const api = {
+  resources: {
+    list: (query: ResourceQuery, signal?: AbortSignal) => fetchApi<ResourceList>(`/api/resources?${buildResourceQuery(query)}`, { signal }),
+    /** The address to open a file (or, for its managers, an older version) at: the server may answer with a path on its own origin. */
+    download: async (id: number, fileId: number, versionId?: number) => {
+      const query = versionId ? `?version_id=${versionId}` : '';
+      const file = await fetchApi<{ url: string; filename: string }>(`/api/resources/${id}/files/${fileId}/download${query}`);
+      return { ...file, url: file.url.startsWith('/') ? `${API_BASE}${file.url}` : file.url };
+    },
+    /**
+     * Stores a file on the resource, or a new version of `fileId`: the server
+     * reserves it (the register's size limit and quota), the browser sends the
+     * bytes straight to private storage, and the server checks and publishes
+     * it. A transfer that fails is released, so nothing half-sent is published.
+     */
+    upload: async (id: number, file: File, fileId?: number) => {
+      if (file.size > RESOURCE_FILE_MAX_BYTES) throw new Error('Files must be 100 MB or smaller.');
+      if (file.size === 0) throw new Error('This file is empty.');
+      const started = await fetchApi<{ file_id: number; version_id: number; upload: { url: string; method: string; headers: Record<string, string> } }>(
+        `/api/resources/${id}/files/uploads`,
+        { method: 'POST', body: JSON.stringify({ filename: file.name, byte_size: file.size, content_type: file.type || 'application/octet-stream', file_id: fileId }) },
+      );
+      const base = `/api/resources/${id}/files/${started.file_id}/uploads/${started.version_id}`;
+      // Without a bucket the server takes the bytes itself, behind the member's session;
+      // a presigned storage address must get no credentials of ours.
+      const own = started.upload.url.startsWith('/');
+      let sent = false;
+      try {
+        const response = await fetch(own ? `${API_BASE}${started.upload.url}` : started.upload.url, {
+          method: started.upload.method,
+          headers: own ? { ...started.upload.headers, ...getAuthHeaders() } : started.upload.headers,
+          credentials: own ? 'include' : 'omit',
+          body: file,
+        });
+        sent = response.ok;
+      } catch {
+        sent = false;
+      }
+      if (!sent) {
+        await fetchApi(`${base}/cancel`, { method: 'POST' }).catch(() => undefined);
+        throw new Error('The file could not be sent. Nothing was published; try again.');
+      }
+      return fetchApi<ResourceItem>(`${base}/complete`, { method: 'POST' });
+    },
+    versions: (id: number, fileId: number) => fetchApi<ResourceFileVersion[]>(`/api/resources/${id}/files/${fileId}/versions`),
+    restore: (id: number, fileId: number, versionId: number) =>
+      fetchApi<ResourceItem>(`/api/resources/${id}/files/${fileId}/versions/${versionId}/restore`, { method: 'POST' }),
+    removeFile: (id: number, fileId: number) => fetchApi<ResourceItem>(`/api/resources/${id}/files/${fileId}`, { method: 'DELETE' }),
+    ask: (id: number, fileId: number, question: string) =>
+      fetchApi<ResourceFileAnswer>(`/api/resources/${id}/files/${fileId}/ask`, { method: 'POST', body: JSON.stringify({ question }) }),
+    remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/resources/${id}`, { method: 'DELETE' }),
+    /** Admins: add a resource that is only a SharePoint or Google Drive link. */
+    create: (data: ResourceLinkCreate) => fetchApi<ResourceItem>('/api/resources', { method: 'POST', body: JSON.stringify(data) }),
+    /** Admins: set a resource's link; null removes it. */
+    setLink: (id: number, url: string | null) =>
+      fetchApi<ResourceItem>(`/api/resources/${id}/link`, { method: 'PUT', body: JSON.stringify({ url }) }),
+  },
   surveys: {
     library: () => fetchApi<SurveyLibrary>('/api/surveys/library'),
     syncLibrary: () => fetchApi<{ syncing: boolean }>('/api/surveys/library/sync', { method: 'POST' }),
