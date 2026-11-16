@@ -14,6 +14,7 @@ describe('navigation', () => {
     ['/campaigns/42', 'outreach'],
     ['/scraper', 'outreach'],
     ['/surveys', 'surveys'],
+    ['/resources', 'resources'],
     ['/sentiment', 'sentiment'],
   ])('%s belongs to %s', (pathname, app) => expect(appForPath(pathname).id).toBe(app));
 

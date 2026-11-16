@@ -1,6 +1,7 @@
 import { useRef, type KeyboardEvent } from 'react';
 
-type Tab = { id: string; label: string };
+/** `count`, when given, follows the label in muted figures (how many items the tab holds). */
+type Tab = { id: string; label: string; count?: number };
 
 type AppTabMenuProps = {
   tabs: Tab[];
@@ -39,6 +40,7 @@ export default function AppTabMenu({ tabs, active, onChange, className = '', lab
           onKeyDown={(event) => onKeyDown(event, index)}
         >
           {tab.label}
+          {tab.count != null && <span className="app-tab-menu-count">{tab.count.toLocaleString()}</span>}
         </button>
       ))}
     </div>

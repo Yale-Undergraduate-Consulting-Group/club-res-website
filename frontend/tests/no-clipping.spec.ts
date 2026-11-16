@@ -14,7 +14,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const WIDTHS = [1440, 1280, 1100, 1024, 768, 390];
 
-const admin = { id: 1, email: 'andre.h.costa@yale.edu', name: 'Andre H. Costa', role: 'admin', is_active: 1, apps: ['core', 'outreach', 'projects'] };
+const admin = { id: 1, email: 'andre.h.costa@yale.edu', name: 'Andre H. Costa', role: 'admin', is_active: 1, apps: ['core', 'outreach', 'projects', 'resources'] };
 
 const CONTACTS = [
   { id: 1, name: 'Jordan Rivers', email: 'jordan.rivers@acme-industrial-holdings.com', title: 'Vice President, Global Marketing and Partnerships', company: 'Acme Industrial Holdings', pipeline_status: 'cold' },
@@ -56,6 +56,34 @@ const METRICS = {
   not_measured: ['Positive replies: replies are not classified yet.'],
 };
 
+/** Synthetic library entries with the longest strings a card has to hold: title, filename, description, team, contact. */
+const RESOURCES = [
+  {
+    id: 1, kind: 'past_project', title: 'Regional outpatient scheduling software pricing and packaging study for a mid-sized clinic network',
+    client: 'Northwind Clinic Network of Greater Hartford Holdings', client_hidden: false, semester: 'Fall 2025',
+    industry: 'Healthcare; Technology; Professional Services', industries: ['Healthcare'], areas: 'Market sizing; Customer Analysis; Pricing; Go-to-market strategy',
+    description: 'Sized the regional market for outpatient scheduling software and tested three pricing models with clinic managers. '.repeat(6).trim(),
+    code_name: null, team_size: 4, disclosure: 'public', status: 'In Progress', files_open: true,
+    files: [
+      { id: 11, filename: 'Final-presentation-with-a-very-long-descriptive-name-that-goes-on-and-on-v12-reviewed-by-the-board-2026.pptx', byte_size: 2621440, content_type: 'x', admin_only: false },
+      { id: 12, filename: 'engagement-notes.docx', byte_size: 18000, content_type: 'x', admin_only: true },
+    ],
+    files_hidden_count: 0,
+    team: [
+      { name: 'Dana Fox', role: 'Engagement director', member: true }, { name: 'Eli Park-Longname', role: 'Project manager', member: false },
+      { name: 'Ana Long-Surname', role: 'Associate', member: true }, { name: 'Sam Wu', role: 'Associate', member: false },
+    ],
+    created_at: 1760000000, link: { url: 'https://club-example.sharepoint.com/:f:/r/sites/Club/Shared%20Documents/Regional', provider: 'sharepoint' },
+    stored_link: '/:f:/r/sites/Club/Shared%20Documents/Regional', revenue: 250000, contacts: [{ name: 'Robin Vale', email: 'robin.vale.with.a.long.address@northwind-clinic-network.example' }],
+  },
+  {
+    id: 2, kind: 'past_project', title: 'Supply chain review', client: null, client_hidden: true, semester: 'Spring 2025', industry: 'Consumer Goods',
+    industries: ['Consumer Goods'], areas: null, description: 'Reviewed the supplier base.', code_name: null, team_size: null, disclosure: 'name_only',
+    status: 'Complete', files_open: false, files: [], files_hidden_count: 2, team: [], created_at: 1760000000, link: null,
+    stored_link: null, revenue: null, contacts: [],
+  },
+];
+
 async function mockApi(page: Page, authenticated: boolean) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -67,6 +95,12 @@ async function mockApi(page: Page, authenticated: boolean) {
     else if (path === '/api/contacts') body = { items: CONTACTS, total: CONTACTS.length, limit: 100, offset: 0 };
     else if (path === '/api/contacts/pipeline-metrics' || path === '/api/outreach/metrics/pipeline') body = { by_status: [{ status: 'cold', count: 1 }, { status: 'contacted', count: 1 }, { status: 'replied', count: 1 }] };
     else if (path === '/api/campaigns/1') body = CAMPAIGN;
+    else if (path === '/api/resources') body = { items: RESOURCES, total: RESOURCES.length, facets: {
+      kinds: [{ value: 'past_project', count: 2 }, { value: 'template', count: 1 }],
+      semesters: [{ value: 'Fall 2025', count: 1 }, { value: 'Spring 2025', count: 1 }],
+      industries: [{ value: 'Consumer Goods', count: 1 }, { value: 'Healthcare', count: 1 }],
+      disclosures: [{ value: 'public', count: 1 }, { value: 'name_only', count: 1 }],
+    } };
     else if (path === '/api/campaigns') body = [CAMPAIGN];
     else if (path === '/api/directory/summary') body = {
       total: 3, capped: false, ready: 3,
@@ -238,6 +272,16 @@ const SURFACES: Surface[] = [
     ],
   },
   { name: 'Directory', url: '/directory', ready: 'Jean Bartik' },
+  {
+    name: 'Resources', url: '/resources', ready: 'Northwind Clinic Network',
+    steps: [
+      async (page) => { await page.getByRole('article', { name: /Regional outpatient/ }).getByRole('button', { expanded: false }).click(); },
+      async (page) => {
+        await page.getByRole('button', { name: /Spring 2025/, expanded: false }).click();
+        await page.getByText('Supply chain review').waitFor();
+      },
+    ],
+  },
   { name: 'Campaign', url: '/campaigns/1', ready: 'Fall consumer outreach' },
   { name: 'Admin Members', url: '/admin', ready: 'Ana Long-Surname' },
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },
