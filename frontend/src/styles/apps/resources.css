@@ -1,0 +1,122 @@
+/* Resources: the search row, filters and result cards. Loaded last, so it
+   builds on the shell and the kit. Long titles, filenames and addresses wrap
+   instead of being cut. */
+
+.resource-search {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.resource-search label { flex: 1 1 auto; min-width: 0; }
+
+.resource-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.resource-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resource-wrap { overflow-wrap: anywhere; min-width: 0; }
+
+.resource-card { display: grid; gap: 0.75rem; min-width: 0; }
+.resource-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.resource-card__head h2 { margin: 0; min-width: 0; flex: 1 1 14rem; }
+.resource-card__actions { display: flex; justify-content: flex-end; }
+
+.resource-tags { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.resource-tag {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  background: var(--mist-100);
+  color: var(--navy-900);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.resource-tag--status { background: var(--blue-600); color: #ffffff; }
+.resource-tag--admin { margin-left: 0.5rem; background: var(--navy-900); color: #ffffff; }
+.dark .resource-tag { background: var(--surface-subtle); color: var(--text-primary); }
+
+.resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.resource-meta__part + .resource-meta__part::before { content: '·'; padding: 0 0.5rem; }
+.resource-client { font-weight: 700; color: var(--text-primary); }
+.resource-client--hidden { font-style: italic; font-weight: 400; color: var(--text-muted); }
+
+.resource-areas, .resource-note { margin: 0; font-size: 0.875rem; }
+.resource-note { margin-top: 0.5rem; color: var(--text-muted); }
+.resource-label {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.resource-desc { margin: 0; font-size: 0.875rem; line-height: 1.5; }
+.resource-desc--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resource-files { display: grid; margin: 0.25rem 0 0; padding: 0; list-style: none; }
+.resource-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem 0.75rem;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.resource-file:last-child { border-bottom: none; }
+.resource-file__name { flex: 1 1 12rem; }
+.resource-file__size { color: var(--text-muted); white-space: nowrap; }
+
+.resource-team { display: grid; gap: 0.5rem 1.5rem; margin: 0; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+.resource-team dd { margin: 0; display: flex; flex-wrap: wrap; gap: 0 0.75rem; font-size: 0.875rem; }
+.resource-person { overflow-wrap: anywhere; }
+.resource-person--member { font-weight: 700; color: var(--text-primary); }
+
+/* Revenue and client contacts: administrators only, drawn apart so they are never mistaken for what every member sees. */
+.resource-admin {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-control);
+  border-left: 4px solid var(--navy-900);
+  background: var(--surface-subtle);
+}
+.dark .resource-admin { border-left-color: var(--accent); }
+.resource-admin h3 { margin: 0 0 0.5rem; font-size: 0.875rem; font-weight: 700; }
+.resource-admin dl { display: grid; gap: 0.5rem 1.5rem; margin: 0; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+.resource-admin dd { margin: 0; font-size: 0.875rem; }
+.resource-contacts { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.25rem; }
+.resource-admin a { color: inherit; text-decoration: underline; }
+
+@media (max-width: 520px) {
+  .resource-search { flex-direction: column; align-items: stretch; }
+}

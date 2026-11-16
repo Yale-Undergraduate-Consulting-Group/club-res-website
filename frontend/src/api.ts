@@ -1,3 +1,4 @@
+import { buildResourceQuery } from './lib/resourcesView';
 import type { SurveyDraft } from './lib/surveyImport';
 
 export type MemberProfile = { projects?: string; experience?: string; role_title?: string; linkedin_url?: string; slack_handle?: string; other_handles?: string };
@@ -8,6 +9,37 @@ export type SurveyLibrary = {
   qualtrics: boolean; surveys: number; questions: number; names: string[]; synced_at: string | null; syncing: boolean;
   last_sync: { ok: true; saved: number; skipped: number; failed: string[] } | { ok: false; error: string } | null;
 };
+
+/** The club's library of past projects, templates and guides (backend/app/routers/resources.py). */
+export type ResourceKind = 'past_project' | 'template' | 'interview' | 'survey' | 'analytics' | 'other';
+export type ResourceFile = { id: number; filename: string; byte_size: number; content_type: string; admin_only: boolean };
+export type ResourceTeamMember = { name: string; role: 'Engagement director' | 'Project manager' | 'Associate'; member: boolean };
+/** `revenue` and `contacts` are left out of the response for everyone but administrators. */
+export type ResourceItem = {
+  id: number;
+  kind: ResourceKind;
+  title: string;
+  client: string | null;
+  client_hidden: boolean;
+  semester: string | null;
+  industry: string | null;
+  industries: string[];
+  areas: string | null;
+  description: string | null;
+  code_name: string | null;
+  team_size: number | null;
+  disclosure: 'public' | 'name_only' | 'private';
+  status: string | null;
+  files_open: boolean;
+  files: ResourceFile[];
+  files_hidden_count: number;
+  team: ResourceTeamMember[];
+  created_at: number;
+  revenue?: number | null;
+  contacts?: { name: string; email: string }[];
+};
+export type ResourceList = { items: ResourceItem[]; total: number; facets: { kinds: string[]; semesters: string[]; industries: string[] } };
+export type ResourceQuery = { q?: string; kind?: string; semester?: string; industry?: string; limit?: number; offset?: number };
 /** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
 export type Template = {
   id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
@@ -664,6 +696,15 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
 }
 
 export const api = {
+  resources: {
+    list: (query: ResourceQuery, signal?: AbortSignal) => fetchApi<ResourceList>(`/api/resources?${buildResourceQuery(query)}`, { signal }),
+    /** The address to open a file at: the server may answer with a path on its own origin. */
+    download: async (id: number, fileId: number) => {
+      const file = await fetchApi<{ url: string; filename: string }>(`/api/resources/${id}/files/${fileId}/download`);
+      return { ...file, url: file.url.startsWith('/') ? `${API_BASE}${file.url}` : file.url };
+    },
+    remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/resources/${id}`, { method: 'DELETE' }),
+  },
   surveys: {
     library: () => fetchApi<SurveyLibrary>('/api/surveys/library'),
     syncLibrary: () => fetchApi<{ syncing: boolean }>('/api/surveys/library/sync', { method: 'POST' }),

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.auth_deps import get_current_user, get_current_admin
 from app.database import get_db
 from app.routers.invitations import digest
+from app.services import document_storage
 from app.services.transaction_audit import audit
 
 router = APIRouter()
@@ -23,7 +24,10 @@ async def storage_usage(db, user_id):
             raise ValueError()
     except (ValueError, TypeError):
         raise HTTPException(503, 'Storage quota configuration is invalid')
-    used = await (await db.execute("SELECT COALESCE(SUM(byte_size),0) AS total FROM workspace_document_versions WHERE uploaded_by=? AND state IN ('pending','ready')", (user_id,))).fetchone()
+    used = await (await db.execute("""SELECT COALESCE(SUM(v.byte_size),0) AS total
+        FROM workspace_document_versions v
+        WHERE v.uploaded_by=? AND v.state IN ('pending','ready')
+        AND NOT EXISTS (SELECT 1 FROM resource_files f WHERE f.document_id=v.document_id)""", (user_id,))).fetchone()
     return {'quota_bytes': quota, 'reserved_bytes': int(used['total']), 'available_bytes': max(0,quota-int(used['total']))}
 
 
@@ -60,6 +64,11 @@ async def project_member(db, project_id: int, user_id: int) -> bool:
 async def document_access(db, document_id: int, user: dict, write: bool = False):
     row = await (await db.execute('SELECT * FROM workspace_documents WHERE id=?',(document_id,))).fetchone()
     if not row:
+        raise HTTPException(404,'Document not found')
+    # Resource files have their own disclosure/team boundary. They never pass
+    # through the generic register (including shares); /api/resources is the
+    # only read/download path.
+    if await (await db.execute('SELECT 1 FROM resource_files WHERE document_id=?',(document_id,))).fetchone():
         raise HTTPException(404,'Document not found')
     own = row['owner_user_id'] == user['id']
     visible = own or (not write and (row['visibility']=='club' or (row['visibility']=='project' and await project_member(db,row['project_id'],user['id']))))
@@ -105,6 +114,7 @@ async def documents(q: str = '', limit: int = 50, offset: int = 0, user: dict = 
             FROM workspace_documents d JOIN users u ON u.id=d.owner_user_id LEFT JOIN projects p ON p.id=d.project_id
             WHERE (d.owner_user_id=? OR d.visibility='club' OR (d.visibility='project' AND EXISTS
             (SELECT 1 FROM user_project_assignments a WHERE a.project_id=d.project_id AND a.user_id=?)))
+            AND NOT EXISTS (SELECT 1 FROM resource_files f WHERE f.document_id=d.id)
             AND d.title LIKE ? ORDER BY d.created_at DESC,d.id DESC LIMIT ? OFFSET ?''',
             (user['id'],user['id'],'%'+q[:200]+'%',max(1,min(limit,100)),max(0,offset)))).fetchall()
         return [dict(row) for row in rows]
@@ -316,6 +326,8 @@ async def download_url(db, document_id: int, version_id: int | None = None, expi
     row = await (await db.execute("SELECT * FROM workspace_document_versions WHERE id=? AND document_id=? AND state='ready'",(version_id,document_id))).fetchone()
     if not row:
         raise HTTPException(404,'No completed file version')
+    if row['storage_bucket']==document_storage.LOCAL:
+        return document_storage.local_download_url(row['id'],expires)
     return await s3_call('generate_presigned_url',ClientMethod='get_object',Params={
         'Bucket':stored_bucket(row),'Key':row['object_key'],'VersionId':row['s3_version_id'],
         'ResponseContentDisposition':'attachment','ResponseContentType':'application/octet-stream'},ExpiresIn=expires)

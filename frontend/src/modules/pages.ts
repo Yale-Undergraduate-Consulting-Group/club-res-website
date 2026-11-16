@@ -12,4 +12,5 @@ export const Admin = lazy(() => import('../pages/Admin'));
 export const Profile = lazy(() => import('../pages/Profile'));
 export const Surveys = lazy(() => import('../pages/Surveys'));
 export const Sentiment = lazy(() => import('../pages/Sentiment'));
+export const Resources = lazy(() => import('../pages/Resources'));
 export const Hub = lazy(() => import('../pages/Hub'));

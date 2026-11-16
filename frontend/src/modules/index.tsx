@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { OutreachIcon, SentimentIcon, SurveyIcon } from '../components/AppIcons';
-import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Hub, Outreach, Profile, Scraper, Surveys, Sentiment } from './pages';
+import { OutreachIcon, ResourcesIcon, SentimentIcon, SurveyIcon } from '../components/AppIcons';
+import { Admin, Analytics, CampaignDetail, Dashboard, Directory, EmailStudio, Hub, Outreach, Profile, Resources, Scraper, Surveys, Sentiment } from './pages';
 
 /**
  * Apps on the platform, as the browser sees them: the pages each one serves
@@ -87,8 +87,16 @@ const sentiment: AppModule = {
   nav: [{ id: 'sentiment', to: '/sentiment', label: 'Market sentiment', shortLabel: 'Sentiment' }],
 };
 
+const resources: AppModule = {
+  id: 'resources',
+  title: 'Resources',
+  icon: <ResourcesIcon />,
+  routes: [{ path: 'resources', element: <Resources /> }],
+  nav: [{ id: 'resources', to: '/resources', label: 'Resources', shortLabel: 'Resources' }],
+};
+
 /** Every app, core first. */
-export const MODULES: AppModule[] = [core, outreach, surveys, sentiment];
+export const MODULES: AppModule[] = [core, outreach, surveys, resources, sentiment];
 
 /**
  * The apps this member may use, as the server reported them on sign-in.
