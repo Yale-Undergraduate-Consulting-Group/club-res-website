@@ -10,7 +10,7 @@ import os
 from hmac import compare_digest
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -225,6 +225,20 @@ async def resolve_company_endpoint(q: str, user: dict = Depends(get_current_user
     from app.services.company_resolve import resolve_company
 
     return await resolve_company(q, user_id=user["id"])
+
+
+@router.post("/company-sheet")
+async def company_sheet(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """The cells of an uploaded .xlsx as text rows, so the page can read a
+    list of companies from it the same way it reads a CSV. Nothing is stored
+    and no company is looked up here."""
+    from app.routers.contacts import xlsx_rows
+
+    content = await file.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Upload a file smaller than 5 MB.")
+    rows = xlsx_rows(content, "company")
+    return {"rows": [["" if cell is None else str(cell).strip() for cell in row] for row in rows]}
 
 
 @router.get("/register")

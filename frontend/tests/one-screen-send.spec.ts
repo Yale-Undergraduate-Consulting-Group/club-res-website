@@ -170,16 +170,17 @@ async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: numb
 
 const clicks = (page: Page) => page.evaluate(() => (window as unknown as { __clicks: number }).__clicks);
 
-test('one company to a sent email in four clicks: found people need no Add, and one number is everywhere', async ({ page }) => {
+test('one company to a sent email in five clicks: found people need no Add, and one number is everywhere', async ({ page }) => {
   const server = await mock(page);
   await page.goto('/scraper?view=company');
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
 
-  // Click 1: into the field. Click 2: Add. The search starts by itself.
+  // Click 1: into the field. Click 2: Add. Click 3: Search.
   await rail.getByLabel('Company').click();
   await rail.getByLabel('Company').fill('A24');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
+  await rail.getByTestId('search-all').click();
 
   // Everyone found is on the one list with nobody asked to add them: the team
   // leads ticked, the CEO there but not ticked, the one the club refused
@@ -206,7 +207,7 @@ test('one company to a sent email in four clicks: found people need no Add, and 
   await expect(pipeline.locator('[data-lane="A24"]').getByTestId('lane-state')).toHaveText('2 can be emailed');
   await expect(rail.getByTestId('send-button')).toHaveText('Send to 2');
 
-  // Click 3: Send. The one confirm names who is held and why.
+  // Click 4: Send. The one confirm names who is held and why.
   await rail.getByTestId('send-button').click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading')).toHaveText('Send 2 emails from your Gmail?');
@@ -215,7 +216,7 @@ test('one company to a sent email in four clicks: found people need no Add, and 
   await expect(dialog.getByTestId('confirm-held')).toContainText('has no company on record');
   await expect(dialog.getByTestId('confirm-left-out')).toHaveText('Not included: 1 not ticked.');
 
-  // Click 4: confirm. Built from the template with exactly the header's people.
+  // Click 5: confirm. Built from the template with exactly the header's people.
   await dialog.getByRole('button', { name: 'Send 2' }).click();
   await expect(rail.getByTestId('sent-summary')).toContainText('Queued 2 emails');
   await expect(rail.getByRole('link', { name: 'Open campaign #42' })).toHaveAttribute('href', '/campaigns/42');
@@ -225,20 +226,20 @@ test('one company to a sent email in four clicks: found people need no Add, and 
   expect((server.builds[0].contact_ids as number[]).length).toBe(2);
   expect(server.releases).toEqual(['/api/campaigns/42/release']);
 
-  expect(await clicks(page)).toBeLessThanOrEqual(4);
+  expect(await clicks(page)).toBeLessThanOrEqual(5);
 
   // What was just queued is no longer something Send would send again.
   await expect(header).toHaveText('0 can be emailed');
   await expect(rail.getByTestId('send-button')).toBeDisabled();
 });
 
-test('five companies pasted as a list are searched one after another and sent in three clicks', async ({ page }) => {
+test('five companies pasted as a list are searched one after another and sent in four clicks', async ({ page }) => {
   const server = await mock(page);
   await page.goto('/scraper?view=company');
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
 
-  // Click 1: into the field; the paste adds all five.
+  // Click 1: into the field; the paste adds all five. Click 2: Search.
   const field = rail.getByLabel('Company');
   await field.click();
   await field.evaluate((el, text) => {
@@ -248,8 +249,11 @@ test('five companies pasted as a list are searched one after another and sent in
   }, 'Acme\nBlue Dot\nCedar\nDelta\nEcho');
   await expect(rail.getByTestId('chosen-count')).toContainText('5 companies added');
 
-  // Every company is queued, none dropped for a limit, and each waits its turn
-  // without the member being told they did anything wrong.
+  // Nothing is searched by adding. Search queues every company, none dropped
+  // for a limit, and each waits its turn without the member being told they
+  // did anything wrong.
+  expect(server.runsCreated).toEqual([]);
+  await rail.getByTestId('search-all').click();
   await expect(pipeline.getByRole('alert')).toHaveCount(0);
   await expect(pipeline.getByTestId('selected-count')).toHaveText('10 can be emailed', { timeout: 40_000 });
   expect(server.runsCreated.sort()).toEqual(['Acme', 'Blue Dot', 'Cedar', 'Delta', 'Echo']);
@@ -259,25 +263,26 @@ test('five companies pasted as a list are searched one after another and sent in
   await expect(pipeline.getByTestId('lanes-total')).toContainText('5 companies · 10 can be emailed');
   await expect(pipeline.getByRole('alert')).toHaveCount(0);
 
-  // Click 2: Send. Click 3: confirm.
+  // Click 3: Send. Click 4: confirm.
   await expect(rail.getByTestId('send-button')).toHaveText('Send to 10');
   await rail.getByTestId('send-button').click();
   await expect(page.getByRole('dialog').getByRole('heading')).toHaveText('Send 10 emails from your Gmail?');
   await page.getByRole('dialog').getByRole('button', { name: 'Send 10' }).click();
   await expect(rail.getByTestId('sent-summary')).toContainText('Queued 10 emails');
   expect((server.builds[0].contact_ids as number[]).length).toBe(10);
-  expect(await clicks(page)).toBeLessThanOrEqual(3);
+  expect(await clicks(page)).toBeLessThanOrEqual(4);
 });
 
 test('the filters only narrow the list: the number and what is sent do not change', async ({ page }) => {
   await mock(page);
   await page.goto('/scraper?view=company&companies=A24');
+  await page.getByTestId('search-all').click();
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const header = pipeline.getByTestId('selected-count');
   await expect(header).toHaveText('2 can be emailed', { timeout: 20_000 });
 
   await pipeline.getByLabel('Seniority').selectOption('executive');
-  await expect(pipeline.getByTestId('filter-note')).toContainText('the filters only narrow the list');
+  await expect(pipeline.getByTestId('filter-note')).toHaveText(/^Showing \d+ of \d+$/);
   await expect(pipeline.getByText('Jean Bartik')).toHaveCount(0);
   await expect(header).toHaveText('2 can be emailed');
   await expect(pipeline.getByTestId('send-button')).toHaveText('Send to 2');
@@ -286,6 +291,7 @@ test('the filters only narrow the list: the number and what is sent do not chang
 test('the AI writes an email for each person, four at a time, and Send follows', async ({ page }) => {
   const server = await mock(page, { generateDelayMs: 400, heldName: 'nobody' });
   await page.goto('/scraper?view=company&companies=BigTeam');
+  await page.getByTestId('search-all').click();
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
   await expect(pipeline.getByTestId('selected-count')).toHaveText('6 can be emailed', { timeout: 20_000 });
@@ -314,6 +320,7 @@ test('the AI writes an email for each person, four at a time, and Send follows',
 test('when the AI is unavailable the screen says so and offers the template', async ({ page }) => {
   await mock(page, { aiDown: true, heldName: 'nobody' });
   await page.goto('/scraper?view=company&companies=BigTeam');
+  await page.getByTestId('search-all').click();
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
   await expect(pipeline.getByTestId('selected-count')).toHaveText('6 can be emailed', { timeout: 20_000 });

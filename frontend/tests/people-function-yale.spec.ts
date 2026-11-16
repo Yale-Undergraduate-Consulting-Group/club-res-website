@@ -86,7 +86,8 @@ test('a search sends no function: who to look for is the only thing it is told b
   await expect(pipeline.getByText('Grace Hopper')).toBeVisible();
   await expect(pipeline.locator('[data-rail]').getByLabel('Function to look for')).toHaveCount(0);
 
-  // The search started when the company was added.
+  // Search sends the run request.
+  await pipeline.getByTestId('search-all').click();
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('A24');
   expect(runsCreated[0].levels).toEqual(['working', 'executive']);

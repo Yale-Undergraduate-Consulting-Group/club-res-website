@@ -212,8 +212,9 @@ export default function RecipientPicker({
           Hide the {hiddenWritten} already written to
         </label>
         {filtering && (
-          <span className="pb-2 text-xs text-deep-navy" data-testid="filter-note">
-            Showing {listed} of {tally.total}; the filters only narrow the list, not who is sent to
+          <span className="pb-2 text-xs text-deep-navy" data-testid="filter-note"
+                title="The filters only narrow the list, not who is sent to">
+            Showing {listed} of {tally.total}
           </span>
         )}
       </div>
@@ -272,8 +273,6 @@ export default function RecipientPicker({
                   {companyTally ? `${companyTally.canEmail} can be emailed` : ''}
                   {companyTally ? ` · ${companyTally.total} listed` : ''}
                 </span>
-                {/* The one way to look people up: a search already ran when the
-                    company was added, so this asks again. */}
                 {chosenKeys.has(key) && (
                   <button
                     type="button"
@@ -281,9 +280,9 @@ export default function RecipientPicker({
                     onClick={() => onFind(company)}
                     className="ui-button ui-button--secondary ui-button--sm"
                     data-testid="company-search"
-                    title={`Search ${company.name} again for people not on file yet`}
+                    title={`Search ${company.name}${run?.state === 'idle' ? '' : ' again'} for people not on file yet`}
                   >
-                    {run?.state === 'queued' ? 'Queued' : run?.state === 'searching' ? 'Searching…' : 'Search again'}
+                    {run?.state === 'queued' ? 'Queued' : run?.state === 'searching' ? 'Searching…' : run?.state === 'idle' ? 'Search' : 'Search again'}
                   </button>
                 )}
               </span>
@@ -342,9 +341,7 @@ export default function RecipientPicker({
             <div id={bodyId} hidden={isFolded}>
               {peopleHere === 0 && !searching && (
                 <p className="px-3 py-2 text-sm text-slate-500">
-                  {filtering
-                    ? 'Nobody matches your filters. Widen them above.'
-                    : 'Nobody here yet. The search is on its way, or import a list.'}
+                  {filtering ? 'Nobody matches your filters. Widen them above.' : 'Nobody here yet.'}
                 </p>
               )}
 
