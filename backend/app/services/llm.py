@@ -72,11 +72,19 @@ BEDROCK_ANTHROPIC: list[dict[str, str]] = [
 ]
 _ALLOWED = {model for chain in TIERS.values() for model in chain}
 
-#: Model calls in flight at once. Bedrock throttled above 2; Anthropic's own
-#: API does not, so the deploy sets LLM_INFERENCE_SLOTS=4 while its key is
-#: used, which lets AI review of a search run four batches side by side.
+#: Model calls in flight at once. Anthropic's own API takes LLM_INFERENCE_SLOTS
+#: (8 on prod while its key is used). Bedrock throttled above 2, so its calls
+#: also take one of BEDROCK_SLOTS: when the key expires mid-deploy the site
+#: falls back to two Bedrock calls at a time without a redeploy.
 INFERENCE_SLOTS = max(1, min(int(os.getenv("LLM_INFERENCE_SLOTS", "2") or 2), 8))
 _inference_slots = threading.BoundedSemaphore(INFERENCE_SLOTS)
+BEDROCK_SLOTS = 2
+_bedrock_slots = threading.BoundedSemaphore(BEDROCK_SLOTS)
+
+
+def usable_slots() -> int:
+    """Calls worth running side by side right now, for the provider in use."""
+    return INFERENCE_SLOTS if anthropic_key() else min(INFERENCE_SLOTS, BEDROCK_SLOTS)
 #: How long a call waits for a free slot before answering 429. Failing at
 #: once turned a discovery run's AI review into 58 calls of which 48 were
 #: refused (6 review workers, 2 slots), and a draft that met a busy slot got a
@@ -307,6 +315,7 @@ def converse(
     runtime_config = Config(connect_timeout=5, read_timeout=60, retries={'total_max_attempts': 1})
     if not _inference_slots.acquire(timeout=SLOT_WAIT_SEC):
         raise HTTPException(429, 'Draft generation is busy; please retry shortly')
+    bedrock_held = False
     try:
         key = anthropic_key()
         if key:
@@ -314,6 +323,9 @@ def converse(
                 key, requested, messages, system=system, tools=tools, max_tokens=max_tokens,
                 user_id=user_id, purpose=purpose, characters=characters, on_model=on_model,
             )
+        if not _bedrock_slots.acquire(timeout=SLOT_WAIT_SEC):
+            raise HTTPException(429, 'Draft generation is busy; please retry shortly')
+        bedrock_held = True
         client = boto3.client("bedrock-runtime", region_name=region, config=runtime_config)
         for mid in _usable(model_chain(requested)):
             reservation_id = reserve_bedrock_invocation(
@@ -338,6 +350,8 @@ def converse(
             return response
         raise HTTPException(503, _UNAVAILABLE)
     finally:
+        if bedrock_held:
+            _bedrock_slots.release()
         _inference_slots.release()
 
 
