@@ -139,6 +139,22 @@ export type ClubMetrics = {
   members: MemberMetrics[];
   not_measured: string[];
 };
+export type CostTrendPoint = { month: string; calls: number; usd: number | null };
+export type CostReport = {
+  generated_at: string;
+  aws: {
+    connected: boolean; month: string; fetched_at: string | null; total_usd: number | null;
+    request_usd?: number; message: string;
+    by_service: { name: string; usd: number }[];
+    by_environment: { name: string; usd: number }[];
+  };
+  providers: {
+    id: string; name: string; calls: number; estimated_usd: number | null;
+    budget_or_limit: string | null; unit: string; unit_cost_usd: number | null;
+    trend: CostTrendPoint[]; note: string;
+  }[];
+  recommendations: { rank: number; title: string; saving: string; risk: string }[];
+};
 export type LogEntry = { user_id?: number; name?: string; id: number; created_at: string; email?: string; user_email?: string; action?: string; details?: string; ip_address?: string; event_type?: string; resource_type?: string };
 export type ApiKey = { key_prefix?: string; id: number; name: string; scopes?: string; created_at?: string; last_used_at?: string };
 export type StoredObject = { byte_size?: number; source?: string; id: number; kind: string; s3_key: string; bytes?: number; created_at?: string };
@@ -1184,6 +1200,7 @@ export const api = {
         objects: StoredObject[];
         prefixes: { prefix: string; objects: StoredObject[] }[];
       }>('/api/admin/catalog'),
+    costs: () => fetchApi<CostReport>('/api/admin/costs'),
     loginLog: () => fetchApi<LogEntry[]>('/api/admin/login-log'),
     /** Who may use each app; restricted apps are open to listed members and admins. */
     apps: {

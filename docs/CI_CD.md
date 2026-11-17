@@ -331,6 +331,7 @@ People are the remaining gap: anyone with administrator access to the account ca
 | Customer-managed KMS key | One key per environment for client-data stores: EBS data volume, catalog, backups, secrets | [`security.tf`](../terraform/security.tf) |
 | Lifecycle | Noncurrent history expiration, multipart cleanup, delete-marker cleanup | [`storage.tf`](../terraform/storage.tf) |
 | AWS Budgets | Email notices for tagged actual and forecast spend | [`budget.tf`](../terraform/budget.tf) |
+| Cost dashboard | The box role has only `ce:GetCostAndUsage` (Cost Explorer cannot resource-scope it); a leader-only job reads one grouped monthly result per UTC day and caches it in that environment's SQLite database. Opening Admin → Costs never calls AWS. The API request costs $0.01/day/environment | [`compute.tf`](../terraform/compute.tf), `backend/app/services/costs.py` |
 
 Each environment has a dedicated VPC, one EC2 instance, a data volume with `prevent_destroy`, and no NAT gateway. Section 14 lists what that leaves exposed.
 
@@ -571,18 +572,19 @@ Budget notices are not spending limits. Billing data and notices can lag. The ta
 
 | Choice | Benefit | Cost or limitation |
 |---|---|---|
-| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared, always-on API | The instance and its public IPv4 bill continuously; stop the instance (host-control Lambda) when unused |
+| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared API and a private dev box | The instance and its public IPv4 bill while running; the optional EventBridge Scheduler stops dev outside office hours |
 | One shared account | One bootstrap and audit trail; no management account needed | Administrators of the account reach both environments |
 | WAF on the prod edge (off in prod today) | Blocks common attacks and floods before they reach the API | About $8 a month with three rules, plus $0.60 per million requests; without it the single small box sees all scanner traffic |
 | Office hours on dev | The box runs about 80 of 168 hours; compute and its public IPv4 bill only while running (about $9.90 a month saved) | Tools are offline nights and weekends; deploys outside the window need a manual start. Prod stays 24/7 because an open-tracking pixel request that reaches a stopped box is lost permanently, whereas a delayed send or reply sync is only late |
 | Customer-managed KMS key per environment | Key isolation for EBS, catalog, backups, and secrets | About $1 per key per month; the public site bucket stays on SSE-S3 |
+| Cached Cost Explorer read | Admins can see spend by service and `Site` tag without giving the browser AWS access | One account-wide, read-only request per UTC day per environment at $0.01/request; `ce:GetCostAndUsage` cannot be resource-scoped |
 | `PriceClass_100` | Limit edge locations | Some users can see higher latency |
 | Cheap Intake | No Docker, Terraform, or Playwright | Cloud incompatibility can surface later, intentionally |
 | Strict downstream checks | Test the deployment contract before release | Repeated builds and scans consume runner minutes |
 | Cached dependencies/layers | Reduce repeated downloads and builds | Caches do not prove correctness or artifact integrity |
 | No scheduled Actions | No periodic runner cost from these workflows | No continuous drift/uptime verification |
 
-Every job has a bounded timeout. Documentation changes skip costly lanes. CloudFront invalidation waiting still consumes runner time. No measured monthly AWS or CI cost estimate is claimed.
+Every job has a bounded timeout. Documentation changes skip costly lanes. CloudFront invalidation waiting still consumes runner time. The measured November baseline and reviewed reduction options are in [`night/costs.md`](night/costs.md).
 
 ## 13. Bootstrap requires plan support, a maintainer, and a real application
 

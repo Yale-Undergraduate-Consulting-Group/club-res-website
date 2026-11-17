@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from app.services.costs import record_paid_call
 
 REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
 REDDIT_API = "https://oauth.reddit.com"
@@ -109,6 +110,7 @@ async def _serp(client: httpx.AsyncClient, params: dict[str, Any]) -> dict[str, 
     if not serpapi_configured():
         raise NotConfigured(GOOGLE_MESSAGE)
     try:
+        await record_paid_call("serpapi", engine=str(params.get("engine") or ""))
         response = await client.get(SERPAPI_URL, params={**params, "api_key": os.environ["SERPAPI_KEY"].strip()})
     except httpx.HTTPError as exc:
         raise SourceError(f"Could not reach SerpAPI ({type(exc).__name__})") from None

@@ -100,7 +100,7 @@ alumni token gets nothing a request without a session would not.
 
 | App | Server prefixes | Pages | Jobs |
 |---|---|---|---|
-| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`, `/apps`, `/alumni`), `/api/attachments`, `/api/telemetry`, `/api/slack`, `/api/alumni` | Home (the hub), Profile, Admin; Alumni sign-in and area (outside the member shell) | — |
+| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`, `/apps`, `/alumni`), `/api/attachments`, `/api/telemetry`, `/api/slack`, `/api/alumni` | Home (the hub), Profile, Admin; Alumni sign-in and area (outside the member shell) | daily Cost Explorer cache |
 | `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Overview (`/campaigns`), Find contacts, Drafts, Pipeline, Directory, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
 | `surveys` | `/api/surveys` | Survey builder | — |
 | `sentiment` | `/api/sentiment` | Market sentiment (Interviews, Reddit, Google reviews) | stale-run reaper (fails runs left `running` by a restart) |
@@ -170,9 +170,8 @@ says Qualtrics is not configured. Conversations are not stored.
 ## Steps
 
 1. **App manifests and registry** — done. The server and the browser are
-   built from manifests. Verified: all 183 API paths and all 213 path/method
-   pairs resolve to the same handlers as before, and the same 12 production
-   and 8 beta jobs are scheduled.
+   built from manifests. The Cost Explorer cache adds one leader-only daily
+   core job; mail-reading and mail-sending jobs remain excluded from beta.
 2. **Versioned migrations** — done. `app.database._baseline_schema` is the
    frozen baseline: it still runs on every start (it also promotes the first
    member to admin when there is none), and nothing new is added to it. Every
@@ -186,7 +185,8 @@ says Qualtrics is not configured. Conversations are not stored.
    seconds (big backfills are batched leader-only jobs); it uses `execute`,
    never `commit` or `executescript`. A failure applies nothing, records
    nothing, and stops the new container from starting, so the old one keeps
-   serving. Versions run 1, 2, 3 per app (`test_modules.py`).
+   serving. Versions are contiguous from 1 for each app (`test_modules.py`);
+   `core:4` adds the one-row Cost Explorer cache used by Admin → Costs.
 3. **Access per app** — done. Every app is open to all active members until an
    admin restricts it (Admin → Apps); a restricted app is open to the members
    listed for it and to admins. Core (sign-in, profile, admin) and the
