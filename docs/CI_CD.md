@@ -281,9 +281,9 @@ When a `backend/`, `docker/`, or `ops/` path changes, the ship job deploys the c
 
 Dev has no CloudFront: it skips step 4 and relies on the on-box health check. Shipping the image and the pages are separate steps, so a failure between them can leave new pages talking to the previous API version. Keep API changes backward compatible for one release.
 
-An environment on office hours (`office_hours_enabled`) is stopped outside its window, and the preflight (`ops/check_deployment.py`) rejects a stopped box, so a ship outside the window fails before it changes anything. The deploy role cannot start instances. Either promote inside the window, or start the box (`aws ec2 start-instances --instance-ids <BOX_INSTANCE_ID>`, wait for SSM to report it online) and re-run the failed job. Production verification requires a successful Dev deployment of the exact commit, so a Dev ship that failed this way blocks promotion until it is re-run.
+Dev is stopped between releases. The Dev deploy job starts it (`ops/dev_box.py start`: waits for `running` and for an SSM check-in from this boot), runs the preflight and the on-box deploy and health check, then stops it in a final `always()` step after success, failure, or cancellation; the stop polls until the box is `stopped` before the job releases it. The job-level concurrency group `club-res-website-dev-box` (never cancelled in progress) lets only one deploy hold the box, so a queued release waits instead of having dev stopped under it; GitHub keeps only the newest pending deploy, which is the dev head that production promotes. The dev deploy role may start and stop only the dev box (by ARN and its `Site` and `Name` tags), create EBS grants on the dev key for that start, and read SSM agent status; the boundary of each environment denies start/stop on any instance not tagged as its own box. The prod deploy role cannot start or stop anything. A port-forward review starts dev with operator credentials and stops it afterwards; a Dev deploy that finishes during the review also stops it. Production verification still requires a successful Dev `deploy` job for the exact commit, so a failed start, deploy, or stop blocks promotion until it is re-run.
 
-Source: [`frontend/action.yml`](../.github/actions/frontend/action.yml), [`ship/action.yml`](../.github/actions/ship/action.yml).
+Source: [`frontend/action.yml`](../.github/actions/frontend/action.yml), [`ship/action.yml`](../.github/actions/ship/action.yml), [`dev.yml`](../.github/workflows/dev.yml), [`ops/dev_box.py`](../ops/dev_box.py).
 
 ## 6. One AWS account hosts dev and prod
 
@@ -400,7 +400,7 @@ The deploy trust subject is `repo:Yale-Undergraduate-Consulting-Group@264275789/
 
 The subject names an environment, not a branch. GitHub environment branch policies must enforce `dev` for dev deployment and `prod` for prod deployment and infrastructure jobs. Without those settings, the trust boundary is incomplete.
 
-The deploy role cannot apply Terraform or read state. It can list the site bucket, publish/delete current site objects, abort multipart uploads, and invalidate its distribution. It has no permission to delete historical object versions.
+The deploy role cannot apply Terraform or read state. It can list the site bucket, publish/delete current site objects, abort multipart uploads, and invalidate its distribution. It has no permission to delete historical object versions. In dev only, it can start and stop the dev box for a release (section 5).
 
 The Terraform role is privileged. It updates bucket policies, CloudFront configuration, IAM role policies, and related stack settings. Its normal resource permissions omit many create/delete APIs, so initial provisioning and replacement use operator credentials. Rewriting a role's policy can expand access **within its own environment**; the permissions boundary stops it at the other environment. Maintainer review is essential.
 
@@ -575,10 +575,10 @@ Budget notices are not spending limits. Billing data and notices can lag. The ta
 
 | Choice | Benefit | Cost or limitation |
 |---|---|---|
-| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared API and a private dev box | The instance and its public IPv4 bill while running; the optional EventBridge Scheduler stops dev outside office hours |
+| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared API and a private dev box | The instance and its public IPv4 bill while running; dev runs only during releases and reviews |
 | One shared account | One bootstrap and audit trail; no management account needed | Administrators of the account reach both environments |
 | WAF on the prod edge (off in prod today) | Blocks common attacks and floods before they reach the API | About $8 a month with three rules, plus $0.60 per million requests; without it the single small box sees all scanner traffic |
-| Office hours on dev | The box runs about 80 of 168 hours; compute and its public IPv4 bill only while running (about $9.90 a month saved) | Tools are offline nights and weekends; deploys outside the window need a manual start. Prod stays 24/7 because an open-tracking pixel request that reaches a stopped box is lost permanently, whereas a delayed send or reply sync is only late |
+| Dev runs only during releases | Compute and public IPv4 bill for minutes per release instead of about 80 of 168 hours (about $7.5 a month less than office hours) | Each Dev deploy adds a boot of about one to two minutes; a reviewer starts dev manually for a port-forward review; dev's backup timer, Cost Explorer read and background jobs run only while it is on (dev never sends mail). Prod stays 24/7 because an open-tracking pixel request that reaches a stopped box is lost permanently, whereas a delayed send or reply sync is only late |
 | Customer-managed KMS key per environment | Key isolation for EBS, catalog, backups, and secrets | About $1 per key per month; the public site bucket stays on SSE-S3 |
 | Cached Cost Explorer read | Admins can see spend by service and `Site` tag without giving the browser AWS access | One account-wide, read-only request per UTC day per environment at $0.01/request; `ce:GetCostAndUsage` cannot be resource-scoped |
 | `PriceClass_100` | Limit edge locations | Some users can see higher latency |

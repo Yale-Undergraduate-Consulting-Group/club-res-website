@@ -233,16 +233,28 @@ run "shared_account_reuses_the_existing_oidc_provider" {
   }
 }
 
-run "office_hours_schedule_is_opt_in" {
-  command = plan
-
-  variables {
-    office_hours_enabled = true
-  }
+run "dev_deploy_may_start_and_stop_only_the_dev_box" {
+  command = apply
 
   assert {
-    condition     = toset(keys(aws_scheduler_schedule.office_hours)) == toset(["start", "stop"]) && aws_scheduler_schedule.office_hours["stop"].target[0].arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
-    error_message = "office_hours_enabled must add one start and one stop schedule for the box."
+    condition     = length(aws_iam_role_policy.deploy_dev_box) == 1 && aws_iam_role_policy.deploy_dev_box[0].role == aws_iam_role.deploy.id
+    error_message = "Dev is stopped between releases, so the dev deploy role needs its start/stop policy."
+  }
+  assert {
+    condition     = toset(flatten([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Action])) == toset(["ec2:StartInstances", "ec2:StopInstances", "kms:CreateGrant", "ssm:DescribeInstanceInformation"]) && alltrue([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Effect == "Allow"])
+    error_message = "The dev deploy role gains only start/stop, the EBS key grant a start needs, and read-only SSM agent status."
+  }
+  assert {
+    condition     = one([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Resource == aws_instance.box.arn && s.Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-dev" && s.Condition.StringEquals["aws:ResourceTag/Name"] == "club-res-website-dev" if contains(flatten([s.Action]), "ec2:StartInstances")]) && aws_instance.box.arn == "arn:aws:ec2:us-east-2:123456789012:instance/i-0123456789abcdef0"
+    error_message = "Start and stop must be scoped to the dev box's ARN and to its dev Site and Name tags."
+  }
+  assert {
+    condition     = one([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Resource == aws_kms_key.env.arn && s.Condition.Bool["kms:GrantIsForAWSResource"] == "true" if s.Action == "kms:CreateGrant"])
+    error_message = "The key grant must be limited to the dev key and to grants for AWS resources (EBS)."
+  }
+  assert {
+    condition     = length([for s in jsondecode(aws_iam_role_policy.deploy.policy).Statement : s if contains(flatten([s.Action]), "ec2:StartInstances") || contains(flatten([s.Action]), "ec2:StopInstances")]) == 0
+    error_message = "The shared ship-app policy, which prod also gets, must not start or stop instances."
   }
 }
 
@@ -251,7 +263,7 @@ run "dev_raises_no_alerts" {
 
   assert {
     condition     = length(aws_sns_topic.alerts) == 0 && length(aws_cloudwatch_metric_alarm.box_system) == 0 && length(aws_chatbot_slack_channel_configuration.alerts) == 0
-    error_message = "The dev box stops nightly; it must not page anyone."
+    error_message = "The dev box is stopped between releases; it must not page anyone."
   }
 }
 
@@ -421,20 +433,18 @@ run "every_role_is_fenced_off_from_prod" {
   # Own state: earlier runs apply the prod edge, which this dev run would destroy.
   state_key = "boundary_dev"
 
-  variables {
-    office_hours_enabled = true
-  }
-
   assert {
-    condition = alltrue([for b in concat(
-      [aws_iam_role.deploy.permissions_boundary, aws_iam_role.terraform.permissions_boundary, aws_iam_role.box.permissions_boundary,
-      aws_iam_role.dlm.permissions_boundary, aws_iam_role.flow_logs.permissions_boundary],
-    [for r in aws_iam_role.scheduler : r.permissions_boundary]) : b == aws_iam_policy.boundary.arn])
+    condition = alltrue([for b in [aws_iam_role.deploy.permissions_boundary, aws_iam_role.terraform.permissions_boundary, aws_iam_role.box.permissions_boundary,
+    aws_iam_role.dlm.permissions_boundary, aws_iam_role.flow_logs.permissions_boundary] : b == aws_iam_policy.boundary.arn])
     error_message = "Every role must carry the boundary; dev and prod share one account and a role without it could rewrite its own policy to reach the other environment."
   }
   assert {
     condition     = contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:iam::*:role/club-res-website-prod*") && contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:secretsmanager:*:*:*club-res-website/prod*") && length([for r in jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource : r if startswith(r, "arn:aws:*")]) == 0 && jsondecode(aws_iam_policy.boundary.policy).Statement[2].Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-prod"
     error_message = "The dev boundary must deny prod resources by name (one ARN per service; IAM rejects a wildcard service) and by Site tag."
+  }
+  assert {
+    condition     = alltrue([for sid, tag in { StartStopOnlyThisEnvironmentsBoxBySite = "Site", StartStopOnlyThisEnvironmentsBoxByName = "Name" } : one([for s in jsondecode(aws_iam_policy.boundary.policy).Statement : s.Effect == "Deny" && s.Resource == "*" && toset(s.Action) == toset(["ec2:StartInstances", "ec2:StopInstances"]) && s.Condition.StringNotEquals["aws:ResourceTag/${tag}"] == "club-res-website-dev" if s.Sid == sid])])
+    error_message = "The dev boundary must deny starting or stopping any instance whose Site or Name tag is not club-res-website-dev."
   }
 }
 
@@ -454,6 +464,14 @@ run "every_role_is_fenced_off_from_dev" {
   assert {
     condition     = contains(jsondecode(aws_iam_policy.boundary.policy).Statement[1].Resource, "arn:aws:s3:::*/club-res-website/dev/*") && jsondecode(aws_iam_policy.boundary.policy).Statement[2].Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-dev"
     error_message = "The prod boundary must deny dev resources, including dev's Terraform state, by name and by Site tag."
+  }
+  assert {
+    condition     = length(aws_iam_role_policy.deploy_dev_box) == 0 && length([for s in jsondecode(aws_iam_role_policy.deploy.policy).Statement : s if contains(flatten([s.Action]), "ec2:StartInstances") || contains(flatten([s.Action]), "ec2:StopInstances")]) == 0
+    error_message = "The prod deploy role must never start or stop instances; prod stays on."
+  }
+  assert {
+    condition     = alltrue([for sid, tag in { StartStopOnlyThisEnvironmentsBoxBySite = "Site", StartStopOnlyThisEnvironmentsBoxByName = "Name" } : one([for s in jsondecode(aws_iam_policy.boundary.policy).Statement : s.Condition.StringNotEquals["aws:ResourceTag/${tag}"] == "club-res-website-prod" if s.Sid == sid])])
+    error_message = "The prod boundary must keep start/stop on the prod box (Terraform's instance-type change) and off every other instance."
   }
 }
 

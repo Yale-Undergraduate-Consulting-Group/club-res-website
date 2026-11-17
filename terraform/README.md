@@ -32,7 +32,7 @@ Later changes go through the reviewed saved-plan workflow. The Terraform role up
 - On / off / status (volumes are kept; mail jobs run only while on):
   `aws ec2 start-instances --instance-ids <id>`, `aws ec2 stop-instances --instance-ids <id>`,
   `aws ec2 describe-instances --instance-ids <id> --query 'Reservations[0].Instances[0].State.Name'`.
-  `office_hours_enabled=true` adds a schedule: start 12:00 UTC Monday–Friday, stop 04:00 UTC Tuesday–Saturday.
+  Dev is stopped between releases: each Dev deploy starts it, deploys and stops it again (`ops/dev_box.py`). For a port-forward review, start dev with operator credentials, wait until `aws ssm describe-instance-information` shows it `Online`, and stop it afterwards; a Dev deploy that finishes during the review also stops it.
 - Configuration changes are Terraform changes: the SSM parameter `/club-res-website/<env>/config` is rewritten and the next deploy copies it to the box. The first-boot script and AMI are ignored after creation, so Terraform never replaces the box by itself.
 - Growing `data_volume_gb` grows the EBS volume only; run `sudo xfs_growfs /data` on the box afterwards.
 - Self-healing: Docker restarts an app container that exits or is killed for exceeding its 1 GB memory cap, and the `yucg-watchdog` timer restarts the serving container once Docker marks it unhealthy (`/api/health` failing for about 90 s). Measured on dev 2026-11-09: a frozen process was serving again 231 s later. `journalctl -u yucg-watchdog` shows each restart.
