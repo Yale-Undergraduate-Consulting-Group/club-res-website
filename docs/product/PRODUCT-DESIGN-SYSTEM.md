@@ -12,7 +12,7 @@ Use five top-level destinations:
 4. **Outreach** — Drafts, Campaigns, Pipeline, and Results.
 5. **Admin** — Members, Invitations, Projects, Audit, Integrations, Usage, and Infrastructure status.
 
-Personal profile, Gmail connection, signature, notifications, theme, and sign-out belong in the member menu. They are not primary product destinations.
+Personal profile, Gmail connection, signature, notifications, and sign-out belong in the member menu. They are not primary product destinations. The theme is a square button in each top bar, beside the help button; it cycles Light, Dark and System (follows the device) and is remembered in the browser.
 
 Existing routes can migrate without a flag day:
 
@@ -77,7 +77,7 @@ Adopt one semantic token layer:
   --focus: #286dc0;
   --success: #16794b;
   --warning: #9a5b00;
-  --danger: #b42318;
+  --error: #b42318;
   --radius-control: 0.375rem;
   --radius-panel: 0.5rem;
   --space-unit: 0.25rem;

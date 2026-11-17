@@ -16,6 +16,7 @@ import InboxSection from '../components/alumni/InboxSection';
 import PostsSection from '../components/alumni/PostsSection';
 import ProfileSection from '../components/alumni/ProfileSection';
 import { PortalContext, type PortalContextValue } from '../components/alumni/portalContext';
+import ThemeToggle from '../components/ThemeToggle';
 import { Button, Notice, StatusBadge } from '../components/ui/Primitives';
 import { useUrlTab } from '../lib/useUrlTab';
 
@@ -82,6 +83,7 @@ export default function AlumniHome() {
             {me.board && <StatusBadge tone="info">Board</StatusBadge>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <ThemeToggle />
             {member && <Link to="/" className="ui-button ui-button--secondary ui-button--sm">Member site</Link>}
             <Button variant="secondary" size="sm" onClick={signOut}>Sign out</Button>
           </div>

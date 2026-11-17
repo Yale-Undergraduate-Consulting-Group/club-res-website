@@ -47,7 +47,7 @@ export function EventCard({ event, actions }: { event: PortalEvent; actions?: Re
       {event.place && <p className="text-sm text-slate-600 break-words">{event.place}</p>}
       {online && (
         <p className="text-sm break-all">
-          <a className="text-blue-600 underline" href={online} target="_blank" rel="noopener noreferrer">Join online</a>
+          <a className="text-[var(--link)] underline" href={online} target="_blank" rel="noopener noreferrer">Join online</a>
           <span className="text-slate-500"> · {online}</span>
         </p>
       )}

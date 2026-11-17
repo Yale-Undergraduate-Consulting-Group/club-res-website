@@ -297,8 +297,24 @@
   /* Web exception: the deck bans red, but a blocking error or a destructive
      action must not look like anything else. One muted error colour, used
      only for form errors, failed sends and delete; always with words. */
-  --danger: #9e3a31;
-  --danger-soft: #f5e1df;
+  --error: #9e3a31;
+  --error-strong: #832f28;
+  --error-soft: #f5e1df;
+  --on-error: #ffffff;
+  /* Links and ghost actions: the one blue-600 emphasis. */
+  --link: var(--blue-600);
+  /* A selected chip, tag or marker: a navy-900 bar with white text. */
+  --selected: var(--navy-900);
+  --on-selected: #ffffff;
+  /* A heading bar across a list (a resource group): navy-900 with white text. */
+  --bar: var(--navy-900);
+  --on-bar: #ffffff;
+  /* Table column headers (deck 8.1): steel-600 with white bold text. */
+  --table-head: var(--steel-600);
+  --on-table-head: #ffffff;
+  /* Activity heatmap cells: this colour at the cell's intensity. */
+  --heat: #1a2f5a;
+  color-scheme: light;
   --radius-control: 0;
   --radius-panel: 0;
   /* One control height: buttons, chips, inputs and selects share a line. */
@@ -306,20 +322,12 @@
   --control-height-sm: 2.5rem;
   /* The app's own bar (sticky); a sticky panel below it starts under this. */
   --app-bar-height: 3.5rem;
-  --yale-blue: var(--navy-900);
-  --yale-blue-light: var(--blue-600);
-  --yale-blue-dark: var(--navy-950);
-  --deep-navy: var(--navy-900);
-  --mid-navy: var(--blue-600);
-  --slate-blue: var(--slate-600);
-  --steel-blue: var(--steel-600);
-  --light-steel: var(--steel-300);
-  --pale-sky: var(--mist-100);
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
+  --text-secondary: var(--ink-muted);
   --accent: var(--navy-900);
   --accent-hover: var(--navy-950);
   /* Web exception: control edges. The deck has no form controls and bans
@@ -363,56 +371,94 @@
   --yucg-tint-strong: rgba(5, 36, 87, 0.6);
 }
 
-/* Dark mode. Web exception: the deck is light only. Navy-1000 / navy-950
-   surfaces keep the toggle working; the emphasis flips to sky-200 so it
-   stays readable. Not polished. */
+/* Dark mode. Web exception: the deck is light only. A neutral charcoal
+   ramp, not navy: the page, one step up for cards and the top bar, another
+   for hover and table headers. The club blue appears only as the accent
+   (links, focus, the selected state, the primary button), lightened so it
+   reads on charcoal, with dark text where it is a fill. */
 .dark {
-  --canvas: #001a4d;
-  --surface: var(--navy-950);
-  --surface-subtle: #0b2f66;
-  --surface-raised: #0b2f66;
-  --ink: #e7ecf3;
-  --ink-muted: #aebdd2;
-  --heading: #ffffff;
-  --focus: #aed6ff;
-  --danger: #f0a49c;
-  --danger-soft: #3a1d20;
-  --info-soft: #0b2f66;
-  --success-soft: #0b2f66;
-  --warning-soft: #0b2f66;
+  --canvas: #101114;
+  --surface: #16181c;
+  --surface-subtle: #1e2024;
+  --surface-raised: #1e2024;
+  --ink: #e6e8eb;
+  --ink-muted: #b3b9c3;
+  --heading: #f3f4f6;
+  --focus: #8ab4f8;
+  --error: #f28b82;
+  --error-strong: #f6aea8;
+  --error-soft: #2c1d1d;
+  --on-error: #101114;
+  --link: #8ab4f8;
+  --selected: #8ab4f8;
+  --on-selected: #101114;
+  --bar: #1e2024;
+  --on-bar: #e6e8eb;
+  --table-head: #1e2024;
+  --on-table-head: #e6e8eb;
+  --heat: #8ab4f8;
+  color-scheme: dark;
+  --info-soft: #1e2024;
+  --success-soft: #1e2024;
+  --warning-soft: #1e2024;
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
   /* !important: the accent preference is written inline on <html> and would
-     otherwise paint navy on navy in dark mode. */
-  --accent: #aed6ff !important;
-  --accent-hover: #ffffff !important;
-  --border: #1f4a85;
-  --border-control: #4c6c9c;
-  --chart-1: #aed6ff;
-  --chart-2: #8497b0;
-  --chart-3: #4c6c9c;
-  --chart-4: #c3d0e1;
-  --chart-5: #1164a3;
-  --chart-6: #adbaca;
-  --chart-7: #dfe6ef;
-  --chart-8: #0b2f66;
-  --chart-focus: #aed6ff;
-  --chart-context: #4c6c9c;
-  --chart-text: #e7ecf3;
-  --chart-grid: #1f4a85;
-  --chart-good: #aed6ff;
-  --chart-bad: #8497b0;
-  --chart-idle: #0b2f66;
-  --success: #aed6ff;
-  --warning: #aebdd2;
+     otherwise paint a dark accent on charcoal. */
+  --accent: #8ab4f8 !important;
+  --accent-hover: #aecbfa !important;
+  --border: #2a2f37;
+  --border-control: #3a404a;
+  /* Charts: blues for the series, neutral greys for grid, context and idle. */
+  --chart-1: #8ab4f8;
+  --chart-2: #5b8fd6;
+  --chart-3: #3a6bb0;
+  --chart-4: #c6dafc;
+  --chart-5: #8b929d;
+  --chart-6: #5f6670;
+  --chart-7: #d2e3fc;
+  --chart-8: #2a2f37;
+  --chart-focus: #8ab4f8;
+  --chart-context: #5f6670;
+  --chart-text: #e6e8eb;
+  --chart-grid: #2a2f37;
+  --chart-good: #8ab4f8;
+  --chart-bad: #8b929d;
+  --chart-idle: #2a2f37;
+  --success: #8ab4f8;
+  --warning: #b3b9c3;
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
-  --btn-primary-text: var(--navy-950);
-  --yucg-tint: rgba(5, 36, 87, 0.75);
-  --yucg-tint-strong: rgba(5, 36, 87, 0.75);
+  --btn-primary-text: #101114;
+  /* Photos and scrims darken to charcoal, not navy. */
+  --yucg-tint: rgba(15, 17, 21, 0.8);
+  --yucg-tint-strong: rgba(15, 17, 21, 0.8);
+  /* The brand colours pages name directly (text-deep-navy, border-pale-sky,
+     bg-pale-sky/60 ...) flip with the theme here, so a page written for the
+     light theme reads correctly in dark without a dark: twin for each class. */
+  --color-deep-navy: var(--ink);
+  --color-mid-navy: var(--link);
+  --color-slate-blue: var(--ink-muted);
+  --color-steel-blue: var(--ink-muted);
+  --color-light-steel: var(--ink-muted);
+  --color-pale-sky: #2a2f37;
+  /* The slate ramp pages use for subtle fills and hairlines, inverted: the
+     light end becomes the raised surface and the edges, the dark end
+     the ink. (Neutral text-* utilities are normalised to the ink in shell.css.) */
+  --color-slate-50: var(--surface-subtle);
+  --color-slate-100: var(--surface-subtle);
+  --color-slate-200: var(--border);
+  --color-slate-300: var(--border);
+  --color-slate-400: var(--border-control);
+  --color-slate-500: var(--ink-muted);
+  --color-slate-600: var(--ink-muted);
+  --color-slate-700: var(--ink);
+  --color-slate-800: var(--ink);
+  --color-slate-900: var(--ink);
+  --color-slate-950: #ffffff;
 }
 
 /* Section 7: corners are square everywhere, whatever a page's utility class
@@ -436,21 +482,7 @@
   color: var(--text-primary);
 }
 
-.dark .bg-white { background-color: var(--bg-card); }
-.dark .bg-slate-50 { background-color: var(--surface-subtle); }
-.dark .bg-pale-sky\/50 { background-color: rgba(169, 191, 220, 0.12); }
-.dark .bg-pale-sky\/20 { background-color: rgba(169, 191, 220, 0.08); }
-.dark .bg-pale-sky\/30 { background-color: rgba(169, 191, 220, 0.1); }
-.dark .border-pale-sky,
-.dark .border-slate-200,
-.dark .border-slate-300 { border-color: var(--border); }
-.dark .text-deep-navy { color: var(--text-primary); }
 .dark nav.border-b { border-color: var(--border); }
-.dark .hover\:bg-slate-50:hover { background-color: var(--surface-subtle); }
-.dark .hover\:bg-pale-sky\/30:hover { background-color: rgba(169, 191, 220, 0.1); }
-.dark .bg-red-50 { background-color: rgba(240, 164, 156, 0.12); }
-.dark .bg-green-50 { background-color: var(--info-soft); }
-.dark .bg-amber-50 { background-color: rgba(224, 192, 112, 0.12); }
 .dark code { background-color: var(--surface-subtle); color: var(--text-primary); }
 /* The logo is navy on transparent; in dark mode it is drawn white. */
 .dark img[src*="yucg-logo"] { filter: brightness(0) invert(1); }

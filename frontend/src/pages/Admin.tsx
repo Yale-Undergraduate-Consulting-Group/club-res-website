@@ -346,7 +346,7 @@ export default function Admin() {
                                 alert((err as Error)?.message);
                               }
                             }}
-                            className="ui-button ui-button--danger ui-button--sm"
+                            className={`ui-button ui-button--sm ${u.is_active ? 'ui-button--danger' : 'ui-button--secondary'}`}
                           >
                             {u.is_active ? 'Deactivate' : 'Activate'}
                           </button>
@@ -567,7 +567,7 @@ export default function Admin() {
       {activeTab === 'audit' && (
         <div className="surface-card">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">Audit Log</h2>
+            <h2 className="font-semibold text-deep-navy">Audit Log</h2>
             <button
               onClick={() => api.admin.exportAuditLogExcel().then(() => toast.addToast('Audit log export downloaded.', 'success')).catch((e) => toast.addToast((e as Error).message, 'error'))}
               className="ui-button ui-button--primary"
@@ -609,7 +609,7 @@ export default function Admin() {
             {newKeyResult && (
               <div className="p-4 bg-pale-sky/60 border border-pale-sky">
                 <p className="text-sm font-medium text-deep-navy">Copy this key now. It won&apos;t be shown again:</p>
-                <code className="block mt-2 p-2 bg-white rounded text-sm break-all">{newKeyResult}</code>
+                <code className="block mt-2 p-2 bg-[var(--surface)] rounded text-sm break-all">{newKeyResult}</code>
               </div>
             )}
           </div>
@@ -666,7 +666,7 @@ export default function Admin() {
                     Expires in {qrCountdown}s. Regenerate above if it expires.
                   </p>
                 )}
-                <p className="text-xs text-slate-500 mt-3">Or enter this secret manually: <code className="bg-white px-1 rounded">{twoFactorSetup.secret}</code></p>
+                <p className="text-xs text-slate-500 mt-3">Or enter this secret manually: <code className="bg-[var(--surface)] px-1 rounded">{twoFactorSetup.secret}</code></p>
                 <p className="text-sm text-slate-600 mt-2">Then enter the 6-digit code below to verify.</p>
               </div>
             )}
@@ -734,20 +734,20 @@ export default function Admin() {
         <div className="space-y-8 max-w-6xl">
           <ContactMaintenance />
           <div className="surface-card">
-            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-4">Operations Intelligence</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            <h2 className="font-semibold text-deep-navy mb-4">Operations Intelligence</h2>
+            <p className="text-sm text-slate-600 mb-4">
               Ask questions about club activity and the reference material below.
             </p>
             <div className="flex flex-wrap gap-4 items-center mb-6">
               <label className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Days</span>
-                <select value={opsDays} onChange={(e) => setOpsDays(Number(e.target.value))} className="px-2 py-1.5 border border-pale-sky bg-white dark:bg-slate-700 dark:border-slate-600">
+                <select value={opsDays} onChange={(e) => setOpsDays(Number(e.target.value))} className="px-2 py-1.5 border border-pale-sky bg-[var(--surface)]">
                   {[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </label>
               <label className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Heatmap by</span>
-                <select value={opsGroupBy} onChange={(e) => setOpsGroupBy(e.target.value as 'hour' | 'day_of_week')} className="px-2 py-1.5 border border-pale-sky bg-white dark:bg-slate-700 dark:border-slate-600">
+                <select value={opsGroupBy} onChange={(e) => setOpsGroupBy(e.target.value as 'hour' | 'day_of_week')} className="px-2 py-1.5 border border-pale-sky bg-[var(--surface)]">
                   <option value="hour">Hour Of Day</option>
                   <option value="day_of_week">Day Of Week</option>
                 </select>
@@ -772,7 +772,7 @@ export default function Admin() {
               </button>
             </div>
 
-            <h3 className="text-sm font-semibold text-deep-navy dark:text-[var(--text-primary)] mt-6 mb-2">Usage heatmap (what’s used and when) — horizontal: time × event type</h3>
+            <h3 className="text-sm font-semibold text-deep-navy mt-6 mb-2">Usage heatmap (what’s used and when) — horizontal: time × event type</h3>
             {opsMatrix2d && opsMatrix2d.row_labels.length > 0 && opsMatrix2d.col_labels.length > 0 && Array.isArray(opsMatrix2d.values) ? (
               <div className="overflow-x-auto -mx-2">
                 <div
@@ -782,9 +782,9 @@ export default function Admin() {
                     gridTemplateColumns: `120px repeat(${opsMatrix2d.col_labels.length}, minmax(28px, 1fr))`,
                   }}
                 >
-                  <div className="row-start-1 col-start-1 rounded-tl bg-pale-sky/40 p-1.5 text-xs font-medium text-slate-600 dark:text-slate-400" />
+                  <div className="row-start-1 col-start-1 rounded-tl bg-pale-sky/40 p-1.5 text-xs font-medium text-slate-600" />
                   {opsMatrix2d.col_labels.map((label, c) => (
-                    <div key={c} className="row-start-1 p-1 text-[10px] font-medium text-slate-600 dark:text-slate-400 truncate text-center" style={{ gridColumn: c + 2 }} title={String(label)}>
+                    <div key={c} className="row-start-1 p-1 text-[10px] font-medium text-slate-600 truncate text-center" style={{ gridColumn: c + 2 }} title={String(label)}>
                       {String(label).length > 8 ? String(label).slice(0, 7) + '…' : String(label)}
                     </div>
                   ))}
@@ -794,7 +794,7 @@ export default function Admin() {
                     const max = Math.max(1, ...(opsMatrix2d.values.flat() ?? [0]));
                     return (
                       <Fragment key={r}>
-                        <div className="py-1 pr-2 text-xs text-slate-600 dark:text-slate-400 text-right" style={{ gridRow: r + 2, gridColumn: 1 }}>
+                        <div className="py-1 pr-2 text-xs text-slate-600 text-right" style={{ gridRow: r + 2, gridColumn: 1 }}>
                           {opsGroupBy === 'hour' ? `${rowLabel}:00` : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][parseInt(String(rowLabel), 10)] ?? rowLabel}
                         </div>
                         {rowValues.map((val, c) => {
@@ -804,7 +804,7 @@ export default function Admin() {
                             <div
                               key={`${r}-${c}`}
                               className="min-h-[20px] rounded border border-pale-sky/30"
-                              style={{ gridRow: r + 2, gridColumn: c + 2, backgroundColor: `rgba(26, 47, 90, ${0.12 + intensity * 0.88})` }}
+                              style={{ gridRow: r + 2, gridColumn: c + 2, backgroundColor: `color-mix(in srgb, var(--heat) ${Math.round((0.12 + intensity * 0.88) * 100)}%, transparent)` }}
                               title={`${colLabel}: ${val}`}
                             />
                           );
@@ -824,7 +824,7 @@ export default function Admin() {
                     const intensity = total ? (total / max) : 0;
                     return (
                       <div key={h} title={`${h}:00 - ${total} events`} className="flex flex-col items-center">
-                        <div className="w-full rounded min-h-[24px] border border-pale-sky/50" style={{ backgroundColor: `rgba(26, 47, 90, ${0.15 + intensity * 0.85})` }} />
+                        <div className="w-full rounded min-h-[24px] border border-pale-sky/50" style={{ backgroundColor: `color-mix(in srgb, var(--heat) ${Math.round((0.15 + intensity * 0.85) * 100)}%, transparent)` }} />
                         <span className="text-[10px] text-slate-500 mt-0.5">{h}</span>
                       </div>
                     );
@@ -836,7 +836,7 @@ export default function Admin() {
                     const intensity = total ? (total / max) : 0;
                     return (
                       <div key={d} title={`${d} - ${total} events`} className="flex flex-col items-center">
-                        <div className="w-full rounded min-h-[32px] border border-pale-sky/50" style={{ backgroundColor: `rgba(26, 47, 90, ${0.15 + intensity * 0.85})` }} />
+                        <div className="w-full rounded min-h-[32px] border border-pale-sky/50" style={{ backgroundColor: `color-mix(in srgb, var(--heat) ${Math.round((0.15 + intensity * 0.85) * 100)}%, transparent)` }} />
                         <span className="text-xs text-slate-500 mt-1">{d}</span>
                       </div>
                     );
@@ -848,7 +848,7 @@ export default function Admin() {
             )}
 
 
-            <h3 className="text-sm font-semibold text-deep-navy dark:text-[var(--text-primary)] mt-6 mb-2">Event counts by type (animated)</h3>
+            <h3 className="text-sm font-semibold text-deep-navy mt-6 mb-2">Event counts by type (animated)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
               <AnimatedEventTypeChart aggregates={opsAggregates} />
               <AnimatedResourceChart aggregates={opsAggregates} />
@@ -856,7 +856,7 @@ export default function Admin() {
             {opsAggregates && (opsAggregates.by_event_type?.length > 0 || opsAggregates.by_resource_type?.length > 0) ? (
               <div className="flex flex-wrap gap-6 text-sm">
                 <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">By event type (list)</p>
+                  <p className="text-xs text-slate-500 mb-1">By event type (list)</p>
                   <ul className="space-y-1">
                     {(opsAggregates.by_event_type || []).slice(0, 12).map((r) => (
                       <li key={r.event_type} className="flex justify-between gap-4"><span>{r.event_type}</span><span className="font-medium">{r.count}</span></li>
@@ -864,7 +864,7 @@ export default function Admin() {
                   </ul>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">By resource (list)</p>
+                  <p className="text-xs text-slate-500 mb-1">By resource (list)</p>
                   <ul className="space-y-1">
                     {(opsAggregates.by_resource_type || []).filter((r) => r.resource_type).slice(0, 12).map((r) => (
                       <li key={r.resource_type} className="flex justify-between gap-4"><span>{r.resource_type}</span><span className="font-medium">{r.count}</span></li>
@@ -873,10 +873,10 @@ export default function Admin() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">No aggregates yet.</p>
+              <p className="text-sm text-slate-500">No aggregates yet.</p>
             )}
 
-            <h3 className="text-sm font-semibold text-deep-navy dark:text-[var(--text-primary)] mt-6 mb-2">Recent events (raw data)</h3>
+            <h3 className="text-sm font-semibold text-deep-navy mt-6 mb-2">Recent events (raw data)</h3>
             <div className="max-h-48 overflow-y-auto border border-pale-sky">
               <table className="w-full text-sm">
                 <thead className="bg-pale-sky/30 sticky top-0">
@@ -898,15 +898,15 @@ export default function Admin() {
           </div>
 
           <div className="surface-card">
-            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-2">Assistant knowledge</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">The shared Assistant uses the same private document register as Projects. Access is checked for every retrieval, and Amazon Bedrock receives only the short source excerpts needed for an answer.</p>
+            <h2 className="font-semibold text-deep-navy mb-2">Assistant knowledge</h2>
+            <p className="text-sm text-slate-600 mb-4">The shared Assistant uses the same private document register as Projects. Access is checked for every retrieval, and Amazon Bedrock receives only the short source excerpts needed for an answer.</p>
           </div>
 
           <CatalogBuilderCard />
 
           <div className="surface-card">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">Discovery search (TinyFish / Firecrawl)</h2>
+              <h2 className="font-semibold text-deep-navy">Discovery search (TinyFish / Firecrawl)</h2>
               <button
                 type="button"
                 className="ui-button ui-button--secondary ui-button--sm"
@@ -926,7 +926,7 @@ export default function Admin() {
                 {firecrawlTesting ? 'Testing…' : 'Test web search now'}
               </button>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            <p className="text-sm text-slate-600 mb-4">
               Runs the exact fetch and search calls the discovery pipeline makes, live, against
               TinyFish and the self-hosted Firecrawl instance independently, plus what the
               pipeline actually gets right now (TinyFish first, then Firecrawl). Use this instead

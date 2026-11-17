@@ -99,7 +99,7 @@ function CompanyChip({ company, onRemove }: { company: ChosenCompany; onRemove: 
   return (
     <span className="relative inline-flex max-w-full" data-company-chip={company.name}>
       <span className={`company-chip-body inline-flex h-9 max-w-full items-center gap-2 overflow-hidden border pl-4 pr-0 text-sm ${
-        sure ? 'border-deep-navy bg-deep-navy text-white' : 'border-pale-sky bg-pale-sky/60 text-deep-navy'}`}>
+        sure ? 'border-[var(--selected)] bg-[var(--selected)] text-[var(--on-selected)]' : 'border-pale-sky bg-pale-sky/60 text-deep-navy'}`}>
         <span className="truncate font-medium" title={company.name}>{company.name}</span>
         {(company.targetCountry || company.country) && (
           <span className="shrink-0 text-xs opacity-80" data-testid="chip-country">

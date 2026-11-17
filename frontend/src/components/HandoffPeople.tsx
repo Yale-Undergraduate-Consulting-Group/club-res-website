@@ -59,7 +59,7 @@ export default function HandoffPeople({ companies, contactIds, onOpen, onDismiss
       )}
 
       {listOpen && (
-        <ul className="absolute inset-x-0 top-full z-30 mt-1 grid max-h-72 grid-cols-1 gap-1 overflow-y-auto border border-pale-sky bg-white p-2 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="absolute inset-x-0 top-full z-30 mt-1 grid max-h-72 grid-cols-1 gap-1 overflow-y-auto border border-pale-sky bg-[var(--surface)] p-2 sm:grid-cols-2 xl:grid-cols-3">
           {people.map((p) => (
             <li key={p.id} data-person={p.id}>
               <button type="button" onClick={() => { setListOpen(false); onOpen(p); }}

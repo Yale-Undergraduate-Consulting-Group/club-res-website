@@ -109,7 +109,7 @@ export default function GuideBubble() {
         <div
           role="dialog"
           aria-label={`How ${guide.title} works`}
-          className="fixed top-16 right-5 z-[60] w-[22rem] max-w-[calc(100vw-2.5rem)] border border-[var(--border)] bg-white p-4"
+          className="fixed top-16 right-5 z-[60] w-[22rem] max-w-[calc(100vw-2.5rem)] border border-[var(--border)] bg-[var(--surface)] p-4"
         >
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-deep-navy">{guide.title}</h2>

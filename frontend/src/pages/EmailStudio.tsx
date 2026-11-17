@@ -119,8 +119,8 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
   }, [someSelected]);
 
   return (
-    <div className="border border-pale-sky dark:border-slate-600 overflow-hidden">
-      <div className="flex items-stretch gap-0 bg-white border-b border-[var(--border)] dark:bg-slate-700/40">
+    <div className="border border-pale-sky overflow-hidden">
+      <div className="flex items-stretch gap-0 bg-[var(--surface)] border-b border-[var(--border)]">
         {numericIds.length > 0 ? (
           <label
             className="flex items-center pl-2 pr-1 shrink-0 cursor-pointer self-center"
@@ -133,14 +133,14 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
               checked={allSelected}
               onChange={() => onToggleAllInCompany(contacts)}
               aria-label={`Select all contacts in ${company}`}
-              className="rounded border-slate-400 dark:border-slate-500 text-[var(--accent)] focus:ring-[var(--accent)]"
+              className="rounded border-slate-400 text-[var(--accent)] focus:ring-[var(--accent)]"
             />
           </label>
         ) : null}
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
-          className="flex-1 min-w-0 px-3 py-2 flex items-center gap-2 hover:bg-pale-sky/15 dark:hover:bg-slate-600/50 text-left text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]"
+          className="flex-1 min-w-0 px-3 py-2 flex items-center gap-2 hover:bg-pale-sky/15 text-left text-sm font-medium text-deep-navy"
         >
           <span className="truncate min-w-0" title={company}>{company}</span>
           <span className="text-[var(--text-muted)] text-xs shrink-0">({contacts.length})</span>
@@ -149,12 +149,12 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
       </div>
       <div className="ui-disclosure" data-open={expanded}>
         <div className="overflow-hidden min-h-0">
-          <div className="divide-y divide-slate-100 dark:divide-slate-600">
+          <div className="divide-y divide-slate-100">
           {contacts.map((c) => (
             <div
               key={c.id}
-              className={`flex items-stretch gap-1 px-1 py-0.5 hover:bg-pale-sky/[0.08] dark:hover:bg-slate-700/40 ${
-                selected?.id === c.id ? 'bg-white dark:bg-slate-600/50 border-l-4 border-l-[var(--accent)]' : ''
+              className={`flex items-stretch gap-1 px-1 py-0.5 hover:bg-pale-sky/[0.08] ${
+                selected?.id === c.id ? 'bg-[var(--surface)] border-l-4 border-l-[var(--accent)]' : ''
               }`}
             >
               <input
@@ -162,14 +162,14 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
                 checked={bulkSelectedIds.has(c.id)}
                 onChange={() => onToggleBulk(c.id)}
                 aria-label={`Select ${c.name || c.email}`}
-                className="mt-2.5 ml-1 rounded border-slate-400 dark:border-slate-500 text-[var(--accent)] focus:ring-[var(--accent)] shrink-0"
+                className="mt-2.5 ml-1 rounded border-slate-400 text-[var(--accent)] focus:ring-[var(--accent)] shrink-0"
               />
               <button
                 type="button"
                 onClick={() => onSelect(c)}
                 className="flex-1 min-w-0 text-left py-2 pr-2"
               >
-                <div className="font-medium text-deep-navy dark:text-[var(--text-primary)] text-xs truncate" title={c.name || c.email}>{c.name || c.email}</div>
+                <div className="font-medium text-deep-navy text-xs truncate" title={c.name || c.email}>{c.name || c.email}</div>
                 <div className="text-xs text-[var(--text-muted)] truncate" title={`${c.title ?? ''}${c.company ? ` • ${c.company}` : ''}`}>{c.title}{c.company ? ` • ${c.company}` : ''}</div>
                 {lastSendHint(c) && <div className="text-[11px] text-[var(--text-muted)] truncate" title={lastSendHint(c) ?? undefined}>{lastSendHint(c)}</div>}
               </button>
@@ -763,7 +763,7 @@ export default function EmailStudio() {
               {/* Two rows of one control height. Collapse, New and the tab
                   pair used to share a wrapping row, so at sidebar width the
                   pills stacked and stretched the buttons beside them. */}
-              <div className="px-4 py-3 border-b border-[var(--border)] space-y-2 bg-white dark:bg-[var(--bg-card)]">
+              <div className="px-4 py-3 border-b border-[var(--border)] space-y-2 bg-[var(--surface)]">
                 <div className="flex gap-2 items-stretch">
                   <Button
                     variant="secondary"
@@ -800,7 +800,7 @@ export default function EmailStudio() {
                   <select aria-label="Target list"
                     value={releaseFilter}
                     onChange={(e) => setReleaseFilter(e.target.value)}
-                    className="w-full px-3 py-2 rounded border border-slate-200 dark:border-slate-600 text-sm bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-200"
+                    className="w-full px-3 py-2 rounded border border-slate-200 text-sm bg-[var(--surface)] text-deep-navy"
                   >
                     <option value="">All contacts</option>
                     {releases.map((r) => (
@@ -814,7 +814,7 @@ export default function EmailStudio() {
                     placeholder="Search contacts... (press /)"
                     value={contactSearch}
                     onChange={(e) => setContactSearch(e.target.value)}
-                    className="w-full px-3 py-2 rounded border border-slate-200 dark:border-slate-600 text-sm bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-200 placeholder:text-slate-500 caret-deep-navy dark:caret-slate-200"
+                    className="w-full px-3 py-2 rounded border border-slate-200 text-sm bg-[var(--surface)] text-deep-navy placeholder:text-slate-500 caret-deep-navy"
                     aria-label="Search contacts"
                     data-search-input
                   />
@@ -823,12 +823,12 @@ export default function EmailStudio() {
                   // Text actions on one line, the one real action below it:
                   // four stock buttons wrapped into a ragged stack in this
                   // narrow column, each indented by its own padding.
-                  <div className="px-4 py-2 border-b border-[var(--border)] space-y-2 bg-white dark:bg-[var(--bg-card)]">
+                  <div className="px-4 py-2 border-b border-[var(--border)] space-y-2 bg-[var(--surface)]">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      <span className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">
+                      <span className="font-semibold text-deep-navy">
                         {sidebarSelectedIds.size} selected
                       </span>
-                      <button type="button" onClick={selectAllSidebarContacts} className="underline text-deep-navy dark:text-[var(--text-primary)]">
+                      <button type="button" onClick={selectAllSidebarContacts} className="underline text-deep-navy">
                         Select all
                       </button>
                       <button type="button" onClick={() => setSidebarBulkIds(new Set())} className="underline text-[var(--text-muted)]">
@@ -873,7 +873,7 @@ export default function EmailStudio() {
                 </div>
               ) : (
                 <>
-                  <label className="px-4 py-2 border-b border-[var(--border)] flex items-center gap-2 bg-white dark:bg-[var(--bg-card)] text-xs text-[var(--text-muted)] cursor-pointer">
+                  <label className="px-4 py-2 border-b border-[var(--border)] flex items-center gap-2 bg-[var(--surface)] text-xs text-[var(--text-muted)] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={groupByCompany}
@@ -905,8 +905,8 @@ export default function EmailStudio() {
                     contacts.map((c) => (
                       <div
                         key={c.id}
-                        className={`flex items-stretch gap-1 px-1 border-b border-slate-200/50 dark:border-slate-600/50 hover:bg-pale-sky/[0.08] dark:hover:bg-slate-700/40 ${
-                          selected?.id === c.id ? 'bg-white dark:bg-slate-600/50 border-l-4 border-l-[var(--accent)]' : ''
+                        className={`flex items-stretch gap-1 px-1 border-b border-slate-200/50 hover:bg-pale-sky/[0.08] ${
+                          selected?.id === c.id ? 'bg-[var(--surface)] border-l-4 border-l-[var(--accent)]' : ''
                         }`}
                       >
                         <input
@@ -914,7 +914,7 @@ export default function EmailStudio() {
                           checked={sidebarSelectedIds.has(c.id)}
                           onChange={() => toggleSidebarBulk(c.id)}
                           aria-label={`Select ${c.name || c.email}`}
-                          className="mt-2.5 ml-1 rounded border-slate-400 dark:border-slate-500 text-[var(--accent)] shrink-0"
+                          className="mt-2.5 ml-1 rounded border-slate-400 text-[var(--accent)] shrink-0"
                         />
                         <button
                           type="button"
@@ -925,7 +925,7 @@ export default function EmailStudio() {
                           }}
                           className="flex-1 min-w-0 text-left py-2 pr-2"
                         >
-                          <div className="font-medium text-deep-navy dark:text-[var(--text-primary)] text-xs truncate" title={c.name || c.email}>{c.name || c.email}</div>
+                          <div className="font-medium text-deep-navy text-xs truncate" title={c.name || c.email}>{c.name || c.email}</div>
                           <div className="text-xs text-[var(--text-muted)] truncate" title={`${c.title ?? ''}${c.company ? ` • ${c.company}` : ''}`}>{c.title}{c.company ? ` • ${c.company}` : ''}</div>
                           {lastSendHint(c) && <div className="text-[11px] text-[var(--text-muted)] truncate" title={lastSendHint(c) ?? undefined}>{lastSendHint(c)}</div>}
                         </button>
@@ -942,7 +942,7 @@ export default function EmailStudio() {
                   <select aria-label="Draft order"
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value)}
-                    className="text-sm px-2 py-1 rounded bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-100"
+                    className="text-sm px-2 py-1 rounded bg-[var(--surface)] border border-slate-300 text-deep-navy"
                   >
                     <option value="created_desc">Newest First</option>
                     <option value="created_asc">Oldest First</option>
@@ -957,7 +957,7 @@ export default function EmailStudio() {
                     {generatedClearBusy ? 'Clearing…' : 'Delete all drafts'}
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                <p className="text-[11px] text-slate-500 mb-2">
                   Drafts are stored in the shared app database and remain private to your account.
                 </p>
                 {generatedEmails.length === 0 ? (
@@ -967,7 +967,7 @@ export default function EmailStudio() {
                     {generatedEmails.map((ge) => (
                       <li
                         key={ge.id}
-                        className="p-2 rounded border border-pale-sky bg-white dark:bg-transparent hover:bg-pale-sky/15 dark:hover:bg-slate-700/50 cursor-pointer"
+                        className="p-2 rounded border border-pale-sky bg-[var(--surface)] hover:bg-pale-sky/15 cursor-pointer"
                         onClick={() => loadDraftIntoEditor(ge)}
                       >
                         <div className="font-medium text-sm">{ge.name || ge.email}</div>
@@ -1000,7 +1000,7 @@ export default function EmailStudio() {
         </div>
         <div className="email-studio-main">
           <div id="email-editor-section" className={`studio-step ${mobileStep === 'edit' ? 'is-active' : ''} flex-1 min-w-0 surface-card min-h-0 flex flex-col`}>
-            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] p-4 border-b border-pale-sky dark:border-slate-600 truncate" title={`Email for ${selected?.name || 'Recipient'} (${selected?.email || 'choose a contact'})`}>
+            <h2 className="font-semibold text-deep-navy p-4 border-b border-pale-sky truncate" title={`Email for ${selected?.name || 'Recipient'} (${selected?.email || 'choose a contact'})`}>
               Email for {selected?.name || 'Recipient'} ({selected?.email || 'choose a contact'})
             </h2>
             <AddressCheck email={selected?.email || ''} />
@@ -1008,28 +1008,28 @@ export default function EmailStudio() {
               <button
                 type="button"
                 onClick={() => setCampaignPanelOpen((v) => !v)}
-                className="w-full px-4 py-2.5 flex items-center justify-between text-left text-sm font-semibold text-deep-navy dark:text-[var(--text-primary)] bg-white dark:bg-[var(--bg-card)] hover:bg-pale-sky/10 dark:hover:bg-slate-700/40"
+                className="w-full px-4 py-2.5 flex items-center justify-between text-left text-sm font-semibold text-deep-navy bg-[var(--surface)] hover:bg-pale-sky/10"
               >
                 <span>Add this draft to a campaign</span>
                 <span className="ui-disclosure-chevron text-[var(--text-muted)]" data-open={campaignPanelOpen} aria-hidden>▼</span>
               </button>
               <div className="ui-disclosure" data-open={campaignPanelOpen}>
                 <div className="overflow-hidden min-h-0">
-                <div className="px-4 py-3 space-y-2 text-sm border-t border-[var(--border)] bg-white dark:bg-[var(--bg-card)]">
+                <div className="px-4 py-3 space-y-2 text-sm border-t border-[var(--border)] bg-[var(--surface)]">
                   <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                     Load employees for the companies you tick (generic inboxes like info@ are skipped). Write below, then save or send. Follow-ups run on the daily job only for people who have not replied — sync Gmail on Pipeline.
                   </p>
                   {/* The picker asks the server for a page of companies that
                       match what is typed. Loading every distinct company was
                       fine at a few dozen and unusable at five figures. */}
-                  <div className="border border-slate-200 dark:border-slate-600 overflow-hidden bg-white dark:bg-[var(--bg-card)]">
+                  <div className="border border-slate-200 overflow-hidden bg-[var(--surface)]">
                       <button
                         type="button"
                         onClick={() => setStudioCompanyListOpen((v) => !v)}
-                        className="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left bg-white dark:bg-[var(--bg-card)] border-b border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                        className="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left bg-[var(--surface)] border-b border-slate-200 hover:bg-slate-50"
                         aria-expanded={studioCompanyListOpen}
                       >
-                        <span className="text-sm font-semibold text-deep-navy dark:text-[var(--text-primary)] min-w-0">
+                        <span className="text-sm font-semibold text-deep-navy min-w-0">
                           Companies to include{' '}
                           <span className="font-normal text-[var(--text-muted)]">
                             ({companiesSummary.length}{companiesSummary.length >= COMPANY_PAGE ? '+' : ''})
@@ -1040,7 +1040,7 @@ export default function EmailStudio() {
                       </button>
                       <div className="ui-disclosure" data-open={studioCompanyListOpen}>
                         <div className="overflow-hidden min-h-0">
-                          <div className="p-2 border-t border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800/40">
+                          <div className="p-2 border-t border-slate-100 bg-[var(--surface)]">
                             <input
                               type="search"
                               value={companySearch}
@@ -1050,7 +1050,7 @@ export default function EmailStudio() {
                               className="ui-input ui-input--sm w-full"
                             />
                           </div>
-                          <div className="max-h-48 overflow-y-auto p-2 space-y-1.5 bg-white dark:bg-slate-800/40">
+                          <div className="max-h-48 overflow-y-auto p-2 space-y-1.5 bg-[var(--surface)]">
                             {companiesSummary.length === 0 && (
                               <p className="text-xs text-[var(--text-muted)] px-1 py-2">
                                 {companySearch.trim() ? 'No company matches that search.' : 'No companies in the database yet — find or import contacts first.'}
@@ -1059,13 +1059,13 @@ export default function EmailStudio() {
                             {companiesSummary.map((row) => (
                               <label
                                 key={`${row.company}-${row.company_domain || ''}`}
-                                className="flex items-center gap-2 cursor-pointer text-deep-navy dark:text-[var(--text-primary)] px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                className="flex items-center gap-2 cursor-pointer text-deep-navy px-1 py-0.5 hover:bg-slate-50"
                               >
                                 <input
                                   type="checkbox"
                                   checked={selectedCompanyNames.has(row.company)}
                                   onChange={() => toggleCompanyPick(row.company)}
-                                  className="rounded border-slate-400 dark:border-slate-500 text-[var(--accent)] focus:ring-[var(--accent)] shrink-0"
+                                  className="rounded border-slate-400 text-[var(--accent)] focus:ring-[var(--accent)] shrink-0"
                                 />
                                 <span className="truncate min-w-0" title={row.company}>{row.company}</span>
                                 <span className="text-xs text-[var(--text-muted)] shrink-0">({row.contact_count})</span>
@@ -1120,11 +1120,11 @@ export default function EmailStudio() {
                     )}
                   </div>
                   {studioCampaignContacts.length > 0 && (
-                    <div className="border border-slate-200 dark:border-slate-600 overflow-hidden bg-white dark:bg-[var(--bg-card)]">
+                    <div className="border border-slate-200 overflow-hidden bg-[var(--surface)]">
                       <button
                         type="button"
                         onClick={() => setStudioContactsListOpen((v) => !v)}
-                        className="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left bg-white border-b border-slate-200 hover:bg-slate-50"
+                        className="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left bg-[var(--surface)] border-b border-slate-200 hover:bg-slate-50"
                         aria-expanded={studioContactsListOpen}
                       >
                         <span className="text-sm font-semibold text-deep-navy">
@@ -1135,11 +1135,11 @@ export default function EmailStudio() {
                       </button>
                       <div className="ui-disclosure" data-open={studioContactsListOpen}>
                         <div className="overflow-hidden min-h-0">
-                          <div className="max-h-64 overflow-y-auto bg-white divide-y divide-slate-100">
+                          <div className="max-h-64 overflow-y-auto bg-[var(--surface)] divide-y divide-slate-100">
                             {studioCampaignContacts.map((c) => (
                               <label
                                 key={c.id}
-                                className="flex items-center gap-2 px-3 py-2 cursor-pointer bg-white hover:bg-slate-50"
+                                className="flex items-center gap-2 px-3 py-2 cursor-pointer bg-[var(--surface)] hover:bg-slate-50"
                               >
                                 <input
                                   type="checkbox"
@@ -1174,20 +1174,20 @@ export default function EmailStudio() {
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-medium text-deep-navy dark:text-slate-400 mb-1">Campaign name</label>
+                      <label className="block text-xs font-medium text-deep-navy mb-1">Campaign name</label>
                       <input
                         value={campaignName}
                         onChange={(e) => setCampaignName(e.target.value)}
                         placeholder="e.g. Spring outreach — Acme"
-                        className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-deep-navy dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-500 caret-deep-navy dark:caret-slate-200"
+                        className="w-full px-2 py-1.5 rounded border border-slate-300 bg-[var(--surface)] text-sm text-deep-navy placeholder:text-slate-500 caret-deep-navy"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-deep-navy dark:text-slate-400 mb-1">Follow-up sequence (optional)</label>
+                      <label className="block text-xs font-medium text-deep-navy mb-1">Follow-up sequence (optional)</label>
                       <select aria-label="Follow-up sequence"
                         value={campaignSequenceId}
                         onChange={(e) => setCampaignSequenceId(e.target.value)}
-                        className="w-full px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-deep-navy dark:text-slate-100"
+                        className="w-full px-2 py-1.5 rounded border border-slate-300 bg-[var(--surface)] text-sm text-deep-navy"
                       >
                         <option value="">None</option>
                         {sequences.map((s) => (
@@ -1216,15 +1216,15 @@ export default function EmailStudio() {
                     </Link>
                   </div>
                   {campaignMessage && (
-                    <p className="text-xs text-deep-navy dark:text-slate-300 whitespace-pre-wrap">{campaignMessage}</p>
+                    <p className="text-xs text-deep-navy whitespace-pre-wrap">{campaignMessage}</p>
                   )}
                 </div>
                 </div>
               </div>
             </div>
-            <div className="email-studio-compose divide-x divide-pale-sky dark:divide-slate-600">
+            <div className="email-studio-compose divide-x divide-pale-sky">
               <div className="p-4 min-w-0 email-studio-editor-column">
-                <h3 className="text-sm font-medium text-deep-navy dark:text-slate-400 mb-2">Your draft</h3>
+                <h3 className="text-sm font-medium text-deep-navy mb-2">Your draft</h3>
                 <div className="mb-3 space-y-2 empty:hidden">
                   <CompanyLinesField state={companyLines} disabled={false} />
                   {templateNote && <p className="ui-notice ui-notice--warning text-sm" role="status">{templateNote}</p>}
@@ -1235,18 +1235,18 @@ export default function EmailStudio() {
                 />
                 <div className="email-studio-editor-stack">
                   <div className="min-w-0">
-                    <label htmlFor="studio-subject" className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Subject</label>
+                    <label htmlFor="studio-subject" className="block text-sm text-slate-600 mb-1">Subject</label>
                     <input
                       id="studio-subject"
                       type="text"
                       value={email?.subject ?? ''}
                       onChange={(e) => setEmail((prev) => ({ ...(prev || { subject: '', body: '' }), subject: e.target.value }))}
                       placeholder="Enter subject line..."
-                      className="email-studio-input w-full min-w-0 px-3 py-2 border border-slate-300 bg-white text-deep-navy placeholder:text-slate-500 caret-deep-navy dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:placeholder-slate-500 dark:caret-slate-200"
+                      className="email-studio-input w-full min-w-0 px-3 py-2 border border-slate-300 bg-[var(--surface)] text-deep-navy placeholder:text-slate-500 caret-deep-navy"
                     />
                   </div>
                   <div className="email-studio-body-wrap">
-                    <label id="studio-body-label" className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Message</label>
+                    <label id="studio-body-label" className="block text-sm text-slate-600 mb-1">Message</label>
                     <div className="relative min-w-0 flex-1 min-h-0">
                     <div
                       ref={bodyRef}
@@ -1264,18 +1264,18 @@ export default function EmailStudio() {
                       }}
                       onInput={(e) => setEmail((prev) => ({ ...(prev || { subject: '', body: '' }), body: sanitizeRichText((e.target as HTMLDivElement).innerHTML) }))}
                       style={{ fontFamily: "'Lato', system-ui, sans-serif", fontSize: BASE_FONT_SIZE }}
-                      className="email-studio-body min-h-[280px] h-full w-full px-3 py-2 border border-slate-300 bg-white text-deep-navy caret-deep-navy resize-y overflow-auto focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-0 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:caret-slate-200 dark:focus:ring-offset-transparent"
+                      className="email-studio-body min-h-[280px] h-full w-full px-3 py-2 border border-slate-300 bg-[var(--surface)] text-deep-navy caret-deep-navy resize-y overflow-auto focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-0"
                     />
                     {(!email?.body || email.body === '' || (email.body.replace(/<[^>]*>/g, '').trim() === '')) && (
-                      <span className="absolute left-3 top-2 text-slate-600 dark:text-slate-300 pointer-events-none text-sm">
+                      <span className="absolute left-3 top-2 text-slate-600 pointer-events-none text-sm">
                         Choose a contact to start from the club template, or write here.
                       </span>
                     )}
                   </div>
                   </div>
-                    <div className="email-studio-block w-full border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50/60 dark:bg-slate-800/30 p-3">
+                    <div className="email-studio-block w-full border border-dashed border-slate-300 bg-slate-50/60 p-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]">Attachments</span>
+                        <span className="text-sm font-medium text-deep-navy">Attachments</span>
                         <label className="ui-button ui-button--secondary ui-button--sm cursor-pointer">
                           {attachmentUploading ? 'Uploading…' : 'Add files'}
                           <input
@@ -1305,9 +1305,9 @@ export default function EmailStudio() {
                         </details>
                       )}
                       {selectedAttachments.length > 0 && (
-                        <ul className="mt-3 border-t border-slate-200 dark:border-slate-600 pt-2 space-y-1" aria-label="Attached files">
+                        <ul className="mt-3 border-t border-slate-200 pt-2 space-y-1" aria-label="Attached files">
                           {selectedAttachments.map((item) => (
-                            <li key={item.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                            <li key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
                               <span className="text-xs font-medium text-[var(--text-muted)]">File</span>
                               <span className="truncate" title={item.display_name || item.filename}>{item.display_name || item.filename}</span>
                               <button type="button" onClick={() => toggleAttachment(item.id)} className="ml-auto text-xs text-[var(--text-muted)] hover:text-deep-navy">Remove</button>
@@ -1341,7 +1341,7 @@ export default function EmailStudio() {
                   {(signOff.name || signOff.role) && (
                     // The notice is long for this column; the email preview shows it.
                     <SignOffPreview signOff={{ ...signOff, notice: '' }} logoClassName="w-14"
-                                    className="w-full border-t border-slate-200 dark:border-slate-600 pt-3 text-xs text-slate-600 dark:text-slate-300" />
+                                    className="w-full border-t border-slate-200 pt-3 text-xs text-slate-600" />
                   )}
                   {/* One row, one height. The delivery target used to sit in a
                       sentence beside the buttons, which wrapped the row onto a
@@ -1379,29 +1379,29 @@ export default function EmailStudio() {
                       {sentimentLoading ? 'Analyzing…' : 'Analyze'}
                     </button>
                   </div>
-                  {draftMessage && <p role="status" className="text-sm text-slate-600 dark:text-slate-300">{draftMessage}</p>}
+                  {draftMessage && <p role="status" className="text-sm text-slate-600">{draftMessage}</p>}
                   {sentimentAnalysis && (
-                    <div className="mt-4 p-4 border border-pale-sky dark:border-slate-600 bg-white dark:bg-slate-700/30">
-                      <h4 className="font-medium text-deep-navy dark:text-[var(--text-primary)] mb-2">Sentiment Analysis</h4>
+                    <div className="mt-4 p-4 border border-pale-sky bg-[var(--surface)]">
+                      <h4 className="font-medium text-deep-navy mb-2">Sentiment Analysis</h4>
                       {sentimentAnalysis.error ? (
                         <p className="ui-notice ui-notice--danger">{sentimentAnalysis.error}</p>
                       ) : (
                         <div className="space-y-2 text-sm">
                           <div>
-                            <span className="text-slate-600 dark:text-slate-400">Score:</span>{' '}
+                            <span className="text-slate-600">Score:</span>{' '}
                             <span className="font-medium">{(sentimentAnalysis.sentiment_score ?? 0).toFixed(2)}</span>
                             <span className="text-slate-500 ml-2">({sentimentAnalysis.sentiment_label})</span>
                           </div>
                           {sentimentAnalysis.industry_fit && (
                             <div>
                               <span className="text-slate-600">Industry fit:</span>{' '}
-                              <span className="text-deep-navy dark:text-slate-200">{sentimentAnalysis.industry_fit}</span>
+                              <span className="text-deep-navy">{sentimentAnalysis.industry_fit}</span>
                             </div>
                           )}
                           {sentimentAnalysis.suggested_improvements && (
                             <div>
                               <span className="text-slate-600">Suggestions:</span>
-                              <p className="text-deep-navy dark:text-slate-200 whitespace-pre-wrap mt-1">{sentimentAnalysis.suggested_improvements}</p>
+                              <p className="text-deep-navy whitespace-pre-wrap mt-1">{sentimentAnalysis.suggested_improvements}</p>
                             </div>
                           )}
                         </div>
@@ -1411,7 +1411,7 @@ export default function EmailStudio() {
                 </div>
               </div>
               <div className="email-studio-gmail-rail p-4 min-w-0 border-l border-[var(--border)]">
-                <h3 className="text-sm font-medium text-deep-navy dark:text-[var(--text-primary)] mb-2 flex items-center gap-2">
+                <h3 className="text-sm font-medium text-deep-navy mb-2 flex items-center gap-2">
                   <span className="inline-block w-2 h-2 bg-steel-blue animate-pulse" />
                   Email preview
                 </h3>
@@ -1426,7 +1426,7 @@ export default function EmailStudio() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-deep-navy dark:text-slate-800">{user.name || user.email}</span>
+                          <span className="font-semibold text-deep-navy">{user.name || user.email}</span>
                           <span className="text-slate-500 text-sm">&lt;{user.email}&gt;</span>
                         </div>
                         <div className="text-slate-500 text-sm mt-0.5">To: {selected?.email || 'Choose a recipient'}</div>
@@ -1435,7 +1435,7 @@ export default function EmailStudio() {
                         {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
                       </div>
                     </div>
-                    <div className="text-lg font-medium text-deep-navy dark:text-slate-800 mb-3 border-b border-slate-100 pb-2">
+                    <div className="text-lg font-medium text-deep-navy mb-3 border-b border-slate-100 pb-2">
                       {email?.subject || 'No subject'}
                     </div>
                     <div
