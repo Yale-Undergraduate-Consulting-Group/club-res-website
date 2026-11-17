@@ -129,6 +129,10 @@ const SURFACES: Surface[] = [
   { name: 'Profile integrations', url: '/profile?tab=integrations', ready: /Gmail/ },
   { name: 'Profile settings', url: '/profile?tab=settings', ready: /Accent/ },
   { name: 'Admin Members', url: '/admin', ready: 'Ana Long-Surname' },
+  {
+    name: 'Admin setup reminders dialog', url: '/admin', ready: 'Ana Long-Surname',
+    then: async (page) => { await page.getByRole('button', { name: 'Send setup reminders' }).click(); await page.getByRole('dialog').waitFor(); },
+  },
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },
   { name: 'Admin Costs', url: '/admin?view=costs', ready: /Pay-per-call APIs/ },
   { name: 'Admin Apps', url: '/admin?view=apps', ready: /./ },
