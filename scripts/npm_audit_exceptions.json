@@ -1,0 +1,9 @@
+[
+  {
+    "advisory": "GHSA-fc5q-39xc-vjpf",
+    "package": "picomatch",
+    "expires": "2026-12-01",
+    "approved": "2026-11-17 by the club president",
+    "reason": "ReDoS on crafted glob patterns. picomatch reaches the tree only through build and test tools (vite, @vitejs/plugin-react, vitest, typescript-eslint); none of it ships to browsers or runs on the server, and every pattern comes from this repository's own config. The advisory entered GitHub's reviewed database on 2026-11-17 covering all versions through 4.0.7 (the latest) with no patched version, so nothing can be upgraded. Remove this entry and upgrade as soon as a patched picomatch is published."
+  }
+]
