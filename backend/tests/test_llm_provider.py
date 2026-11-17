@@ -2,10 +2,12 @@
 a key is configured, on Anthropic's own API. From backend/: python3 tests/test_llm_provider.py"""
 from __future__ import annotations
 
+import asyncio
 import os
+import tempfile
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
@@ -175,6 +177,123 @@ def test_a_refused_call_is_not_charged_and_reads_unavailable() -> None:
     assert released == [9], "a refused request spends nothing, so its reservation is released"
     _clear_key()
 
+
+def test_provider_spend_stop_uses_budget_message_and_releases_reservation() -> None:
+    from app.services import generation_policy, llm
+
+    _with_key()
+    released: list[int] = []
+    spent = _Reply(400, {"error": {
+        "type": "invalid_request_error",
+        "message": "You have reached your specified workspace API usage limits.",
+    }})
+    with patch("httpx.post", lambda *a, **k: spent), \
+         patch.object(generation_policy, "reserve_bedrock_invocation", lambda *a, **kw: 12), \
+         patch.object(generation_policy, "release_bedrock_invocation", released.append):
+        try:
+            llm.complete_text("ping", rank_model_id())
+            raise AssertionError("a spent provider limit must stop the batch")
+        except HTTPException as exc:
+            assert exc.status_code == 429
+            assert "budget" in exc.detail.lower()
+    assert released == [12]
+    assert llm._anthropic_spend_stop(_Reply(429, {"error": {
+        "type": "rate_limit_error",
+        "details": {"error_code": "enforced_spend_limit_reached"},
+    }}))
+    _clear_key()
+
+
+def test_haiku_long_prompt_price_is_not_undercounted() -> None:
+    from app.services import llm
+
+    short = llm.cost_usd("claude-haiku-5-5", 100_000, 100)
+    long = llm.cost_usd("claude-haiku-5-5", 100_001, 100)
+    assert long > short * 4
+    assert llm.cost_usd("us.anthropic.claude-haiku-5-5", 100_001, 100) == long * llm.GEO_PREMIUM
+
+
+def test_optional_anthropic_cost_report_uses_admin_key_and_workspace() -> None:
+    from app.services import ai_spend
+
+    captured: dict = {}
+
+    class CostReply:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "data": [{"cost": {"currency": "USD", "amount": "1234.000000"}}],
+                "has_more": False,
+                "data_refreshed_at": "2026-11-16T12:00:00Z",
+            }
+
+    class CostClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, params, headers):
+            captured.update(url=url, params=params, headers=headers)
+            return CostReply()
+
+    with patch.dict(os.environ, {
+        "ANTHROPIC_ADMIN_API_KEY": "sk-ant-admin-test",
+        "ANTHROPIC_COST_WORKSPACE_ID": "wrkspc_test",
+    }), patch.object(ai_spend.httpx, "AsyncClient", lambda **_kw: CostClient()):
+        report = asyncio.run(ai_spend.anthropic_cost_report())
+    assert report == {
+        "enabled": True, "usd": 12.34,
+        "as_of": "2026-11-16T12:00:00Z", "error": None,
+    }
+    assert captured["headers"]["x-api-key"] == "sk-ant-admin-test"
+    assert ("workspace_ids[]", "wrkspc_test") in captured["params"]
+    assert "sk-ant-test" not in str(captured)
+
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("ANTHROPIC_ADMIN_API_KEY", None)
+        assert asyncio.run(ai_spend.anthropic_cost_report())["enabled"] is False
+
+
+def test_local_month_summary_uses_completed_and_reserved_costs() -> None:
+    from app.database import get_db, init_db
+    from app.services import ai_spend
+
+    async def exercise() -> dict:
+        await init_db()
+        db = await get_db()
+        try:
+            await db.executemany(
+                """INSERT INTO usage_events(event_type, resource_type, details_json)
+                   VALUES ('bedrock_reserved', 'test', ?)""",
+                [
+                    ('{"model_id":"claude-haiku-5-5","cost_usd":0.25}',),
+                    ('{"model_id":"claude-sonnet-5-5","estimated_cost_usd":0.5}',),
+                ],
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        with patch.object(ai_spend, "anthropic_cost_report", AsyncMock(return_value={
+            "enabled": False, "usd": None, "as_of": None, "error": None,
+        })):
+            return await ai_spend.month_summary()
+
+    with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+        "DATABASE_URL": f"sqlite:///{tmp}/spend.db",
+        "AI_MONTHLY_BUDGET_USD": "15",
+    }):
+        summary = asyncio.run(exercise())
+    assert summary["calls"] == 2
+    assert summary["month_usd_logged"] == 0.75
+    assert summary["budget_usd"] == 15
+    assert {row["model_id"] for row in summary["by_model"]} == {
+        "claude-haiku-5-5", "claude-sonnet-5-5",
+    }
+
 def test_bedrock_never_gets_more_than_two_calls_at_once() -> None:
     """Eight slots are configured for the Anthropic key; when the key is gone
     the site falls back to Bedrock, which refused most calls above two."""
@@ -217,5 +336,9 @@ if __name__ == "__main__":
     test_key_is_used_through_its_last_day_and_not_after()
     test_tiers_map_to_haiku_and_sonnet_and_tool_calls_round_trip()
     test_a_refused_call_is_not_charged_and_reads_unavailable()
+    test_provider_spend_stop_uses_budget_message_and_releases_reservation()
+    test_haiku_long_prompt_price_is_not_undercounted()
+    test_optional_anthropic_cost_report_uses_admin_key_and_workspace()
     test_bedrock_never_gets_more_than_two_calls_at_once()
+    test_local_month_summary_uses_completed_and_reserved_costs()
     print("ok")
