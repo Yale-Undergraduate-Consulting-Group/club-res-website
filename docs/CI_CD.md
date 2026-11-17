@@ -169,7 +169,7 @@ flowchart TD
   G -->|Yes| OK["Required check succeeds"]
 ```
 
-Verification compares the complete candidate with its destination branch, not only its latest push. Shipping compares the push range, or the first parent on manual delivery.
+Verification compares the complete candidate with its destination branch, not only its latest push. A pull-request run compares with the base the PR was opened on (`pull_request.base.sha`), not the destination's live tip: Promotion can merge a stage PR before a queued run starts, and the live tip would then already hold the candidate and select no checks. Shipping compares the push range, or the first parent on manual delivery.
 
 Source: [`ci_policy.py`](../scripts/ci_policy.py), [composite actions](../.github/actions/).
 

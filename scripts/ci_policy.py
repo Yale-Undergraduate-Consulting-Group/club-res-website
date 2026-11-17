@@ -61,10 +61,15 @@ def check_results(scope, results):
 
 
 def comparison_base(stage, phase, event, head, supplied_base=''):
-    if phase == 'verify':
+    usable = bool(supplied_base) and set(supplied_base) != {'0'}
+    if phase == 'verify' and event != 'pull_request':
         # Compare the complete candidate with its destination, not just its last push.
         ref = 'origin/' + {'intake': 'integration', 'dev': 'dev', 'production': 'prod'}[stage]
-    elif supplied_base and set(supplied_base) != {'0'}:
+    elif usable:
+        # A pull request is judged against the base it was opened on. The destination
+        # branch keeps moving: Promotion merges a stage PR within seconds, and a run
+        # that starts afterwards would otherwise diff against a tip that already holds
+        # the candidate and select no checks at all.
         return supplied_base
     else:
         ref = f'{head}^1'
