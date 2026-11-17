@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import MainApp from './pages/MainApp';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -7,6 +7,10 @@ import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { API_BASE } from './api';
 import { usableModules } from './modules';
+
+// The alumni area has its own session and never shows member pages (backend/app/routers/alumni.py).
+const AlumniLogin = lazy(() => import('./pages/AlumniLogin'));
+const AlumniHome = lazy(() => import('./pages/AlumniHome'));
 
 function AppContent() {
   const [user, setUser] = useState<{ id?: number; email: string; name?: string; picture?: string; role?: string; apps?: string[] } | null>(null);
@@ -69,6 +73,9 @@ function AppContent() {
 
   const routes = (
     <Routes>
+      {/* Alumni: separate sign-in and area, whatever the member session. */}
+      <Route path="/alumni/login" element={<Suspense fallback={<AppLoading label="Opening…" />}><AlumniLogin /></Suspense>} />
+      <Route path="/alumni" element={<Suspense fallback={<AppLoading label="Opening…" />}><AlumniHome /></Suspense>} />
       {/* Login page - only when NOT authenticated */}
       <Route
         path="/login"

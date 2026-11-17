@@ -79,6 +79,13 @@ async def google_login(invitation: str | None = None, join: str | None = None):
     return await _start_oauth(invitation=invitation)
 
 
+@router.get("/alumni/google")
+async def alumni_google_login():
+    """Alumni sign-in (routers/alumni.py): the same Google callback, then the
+    alumni lists decide; never a member session."""
+    return await _start_oauth("alumni")
+
+
 @router.get("/gmail/connect")
 async def connect_gmail(user: dict = Depends(get_current_user)):
     # Return the URL and cookie together so fetch can initiate a browser-bound flow.
@@ -133,13 +140,18 @@ async def google_callback(request: Request, code: str | None = None, state: str 
         response = await _do_google_callback(code, challenge)
     except Exception:
         logger.exception("Google callback failed")
-        response = RedirectResponse(f"{FRONTEND_URL}/login?error=callback_failed")
+        response = RedirectResponse(f"{_login_page(challenge)}?error=callback_failed")
     response.delete_cookie("yucg_oauth_browser",path="/api/auth")
     return response
 
 
+def _login_page(challenge: dict) -> str:
+    return f"{FRONTEND_URL}/alumni/login" if challenge.get("purpose") == "alumni" else f"{FRONTEND_URL}/login"
+
+
 async def _do_google_callback(code: str, challenge: dict | None = None):
     challenge = challenge or {"purpose": "identity"}
+    login = _login_page(challenge)
     async with httpx.AsyncClient(timeout=15.0) as client:
         token_res = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -153,30 +165,27 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if token_res.status_code != 200:
+            # Google's error code only: the body can echo request details.
             try:
-                err_body = token_res.text[:500]
+                err_code = str(token_res.json().get("error") or "")[:64]
             except Exception:
-                err_body = ""
-            logger.warning(
-                "Google token exchange failed: status=%s body=%s",
-                token_res.status_code,
-                err_body,
-            )
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=token_exchange_failed")
+                err_code = ""
+            logger.warning("Google token exchange failed: status=%s error=%s", token_res.status_code, err_code)
+            return RedirectResponse(url=f"{login}?error=token_exchange_failed")
 
         tokens = token_res.json()
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")
         expires_in = tokens.get("expires_in", 3600)
         if not access_token:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_access_token")
+            return RedirectResponse(url=f"{login}?error=no_access_token")
 
         user_res = await client.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
         )
         if user_res.status_code != 200:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=userinfo_failed")
+            return RedirectResponse(url=f"{login}?error=userinfo_failed")
 
         user_info = user_res.json()
         email = (user_info.get("email") or "").strip().lower()
@@ -185,13 +194,18 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
         google_id = user_info.get("id")
 
         if user_info.get("verified_email") is not True:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=email_not_verified")
+            return RedirectResponse(url=f"{login}?error=email_not_verified")
 
         if not google_id:
-            return RedirectResponse(f"{FRONTEND_URL}/login?error=identity_missing")
+            return RedirectResponse(f"{login}?error=identity_missing")
 
         if not email:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_email")
+            return RedirectResponse(url=f"{login}?error=no_email")
+
+        if challenge["purpose"] == "alumni":
+            # Alumni never become members: their own account and session.
+            from app.routers.alumni import sign_in_response
+            return await sign_in_response(FRONTEND_URL, email, str(google_id), name)
 
         if not email.lower().endswith("@yale.edu"):
             return RedirectResponse(url=f"{FRONTEND_URL}/login?error=domain_not_allowed")
@@ -266,7 +280,10 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
         return RedirectResponse(f"{FRONTEND_URL}/profile?tab=integrations")
 
     if totp_secret:
-        pending = create_token(user_id, email, name, picture, role, extra={"2fa": "pending"}, expiry_hours=0.25)
+        # The jti names this one pending sign-in: complete_2fa_login allows it
+        # TWO_FACTOR_MAX_FAILURES wrong codes and one success.
+        pending = create_token(user_id, email, name, picture, role, extra={"2fa": "pending", "jti": secrets.token_urlsafe(16)},
+                               expiry_hours=0.25)
         resp = RedirectResponse(url=f"{FRONTEND_URL}/login?need_2fa=1")
         resp.set_cookie(
             PENDING_2FA_COOKIE,
@@ -291,10 +308,13 @@ def _dev_login_email() -> str:
     Google will only redirect to the registered production callback, so a
     frontend served from localhost can never complete a real sign-in and the
     whole app is unreviewable locally. This is the way in, and it is fenced
-    twice: the variable is unset everywhere except a developer's own machine,
-    and the route additionally refuses any request that did not arrive on a
-    loopback host. Production sets neither.
+    three times: production (``APP_ENV=production``) never offers it, the
+    variable is unset everywhere except a developer's own machine, and the
+    route additionally refuses any request that did not arrive on a loopback
+    host (a header the client controls, so it is the weakest of the three).
     """
+    if (os.getenv("APP_ENV") or "").strip().lower() == "production":
+        return ""
     return (os.getenv("DEV_LOGIN_EMAIL") or "").strip()
 
 
@@ -375,25 +395,55 @@ class TwoFactorLogin(BaseModel):
     code: str
 
 
+#: Wrong codes one pending sign-in may try before Google sign-in must start again.
+TWO_FACTOR_MAX_FAILURES = 5
+
+
+async def create_two_factor_attempts(db) -> None:
+    """Migration core:5. One row per pending sign-in (its jti) that tried a code."""
+    await db.execute(
+        """CREATE TABLE two_factor_attempts (
+               jti TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
+               used INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL)"""
+    )
+
+
 @router.post("/2fa/login")
 async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
+    import time
+
     import pyotp
     from fastapi.responses import JSONResponse
 
     pending = request.cookies.get(PENDING_2FA_COOKIE)
     decoded = decode_token(pending) if pending else None
-    if not decoded or decoded.get("2fa") != "pending" or not decoded.get("sub"):
+    if not decoded or decoded.get("2fa") != "pending" or not decoded.get("sub") or not decoded.get("jti"):
         raise HTTPException(401, "2FA session expired. Sign in again.")
-    user_id = int(decoded["sub"])
+    user_id, jti = int(decoded["sub"]), str(decoded["jti"])
     db = await get_db()
     try:
+        await db.execute("BEGIN IMMEDIATE")
+        now = int(time.time())
+        await db.execute("DELETE FROM two_factor_attempts WHERE expires_at < ?", (now,))
+        attempt = await (await db.execute("SELECT failures, used FROM two_factor_attempts WHERE jti = ?", (jti,))).fetchone()
+        if attempt and (attempt["used"] or attempt["failures"] >= TWO_FACTOR_MAX_FAILURES):
+            await db.commit()
+            raise HTTPException(401, "Too many attempts or already used. Sign in again.")
         cur = await db.execute("SELECT totp_secret, email, name, picture, role FROM users WHERE id = ? AND is_active=1", (user_id,))
         row = row_to_dict(await cur.fetchone())
+        if not row or not row.get("totp_secret"):
+            await db.commit()
+            raise HTTPException(400, "2FA is not enabled")
+        ok = pyotp.TOTP(row["totp_secret"]).verify(payload.code.strip(), valid_window=1)
+        await db.execute(
+            """INSERT INTO two_factor_attempts (jti, failures, used, expires_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(jti) DO UPDATE SET failures = failures + excluded.failures, used = excluded.used""",
+            (jti, 0 if ok else 1, 1 if ok else 0, int(decoded.get("exp") or now + 900)),
+        )
+        await db.commit()
     finally:
         await db.close()
-    if not row or not row.get("totp_secret"):
-        raise HTTPException(400, "2FA is not enabled")
-    if not pyotp.TOTP(row["totp_secret"]).verify(payload.code.strip(), valid_window=1):
+    if not ok:
         raise HTTPException(400, "Invalid code")
     token = create_token(user_id, row["email"], row.get("name"), row.get("picture"), row.get("role") or "standard")
     resp = JSONResponse({"ok": True})
@@ -545,11 +595,7 @@ async def slack_connect(user: dict = Depends(get_current_user)):
 
     SLACK_CLIENT_ID, SLACK_CLIENT_SECRET = _get_slack_credentials()
     if not SLACK_CLIENT_ID or not SLACK_CLIENT_SECRET:
-        raise HTTPException(
-            400,
-            "Slack integration not configured. Add SLACK_CLIENT_ID and SLACK_CLIENT_SECRET to backend/.env. "
-            f"(Debug: client_id present={bool(SLACK_CLIENT_ID)}, client_secret present={bool(SLACK_CLIENT_SECRET)})"
-        )
+        raise HTTPException(400, "Slack integration is not configured on this server. Ask an admin.")
     # The state lives in the database and is bound to a browser secret, the
     # same way the Google flow works. It used to be a process dictionary, so a
     # container replacement or a second worker between connect and callback

@@ -4,7 +4,7 @@ integrations every app shares. Paths here are called from outside the app
 from app import app_access
 from app.migrations import Migration
 from app.modules import Module, Route, Setting
-from app.routers import activity, admin, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
+from app.routers import activity, admin, alumni, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
 from app.services import slack_commands
 
 MODULE = Module(
@@ -24,11 +24,16 @@ MODULE = Module(
         Route(telemetry.router, "/api/telemetry", "telemetry"),
         Route(operations.router, "/api/admin/operations", "operations"),
         Route(app_access.router, "/api/admin/apps", "apps"),
+        # Alumni: their own session (not a member's), checked inside the router.
+        Route(alumni.router, "/api/alumni", "alumni"),
+        Route(alumni.admin_router, "/api/admin/alumni", "alumni-admin"),
     ),
     migrations=(
         Migration(1, "app access", app_access.create_tables),
         Migration(2, "Slack feature requests", slack_commands.create_tables),
         Migration(3, "Join sessions (QR sign-up)", invitations.create_join_tables),
+        Migration(4, "Alumni sign-in: domains, allow-list, accounts, sign-ins", alumni.create_tables),
+        Migration(5, "Two-factor sign-in attempts (limit and single use)", auth.create_two_factor_attempts),
     ),
     settings=(
         Setting("JWT_SECRET", "Signs members' sessions", required=True),

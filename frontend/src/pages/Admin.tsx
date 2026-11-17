@@ -12,6 +12,7 @@ import { StatusBadge } from '../components/ui/Primitives';
 import { useToast } from '../contexts/useToast';
 import { AnimatedEventTypeChart, AnimatedResourceChart } from '../components/AnimatedOperationsCharts';
 import AppTabMenu from '../components/AppTabMenu';
+import AlumniAccess from '../components/admin/AlumniAccess';
 import AppAccess from '../components/admin/AppAccess';
 import ClubMetrics from '../components/admin/ClubMetrics';
 import { useUrlTab } from '../lib/useUrlTab';
@@ -19,8 +20,8 @@ import { useUrlTab } from '../lib/useUrlTab';
 export default function Admin() {
   const { user } = useOutletContext<{ user: { id?: number; email: string; role?: string } }>();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useUrlTab<'users' | 'metrics' | 'apps' | 'projects' | 'audit' | 'apikeys' | '2fa' | 'catalog' | 'operations'>(
-    ['users', 'metrics', 'apps', 'projects', 'audit', 'apikeys', '2fa', 'catalog', 'operations'],
+  const [activeTab, setActiveTab] = useUrlTab<'users' | 'metrics' | 'apps' | 'alumni' | 'projects' | 'audit' | 'apikeys' | '2fa' | 'catalog' | 'operations'>(
+    ['users', 'metrics', 'apps', 'alumni', 'projects', 'audit', 'apikeys', '2fa', 'catalog', 'operations'],
     'users',
   );
   const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof api.admin.catalog>> | null>(null);
@@ -246,7 +247,7 @@ export default function Admin() {
       } />
 
       <AppTabMenu
-        tabs={[{ id: 'users', label: 'Members' }, { id: 'metrics', label: 'Metrics' }, { id: 'apps', label: 'Apps' }, { id: 'projects', label: 'Projects' }, { id: 'audit', label: 'Activity' }, { id: 'apikeys', label: 'Settings' }]}
+        tabs={[{ id: 'users', label: 'Members' }, { id: 'metrics', label: 'Metrics' }, { id: 'apps', label: 'Apps' }, { id: 'alumni', label: 'Alumni' }, { id: 'projects', label: 'Projects' }, { id: 'audit', label: 'Activity' }, { id: 'apikeys', label: 'Settings' }]}
         active={['apikeys', '2fa', 'catalog', 'operations'].includes(activeTab) ? 'apikeys' : activeTab}
         onChange={(id) => setActiveTab(id as typeof activeTab)}
         label="Admin sections"
@@ -263,6 +264,7 @@ export default function Admin() {
 
       {activeTab === 'metrics' && <ClubMetrics />}
       {activeTab === 'apps' && <AppAccess />}
+      {activeTab === 'alumni' && <AlumniAccess />}
 
       {activeTab === 'users' && (
         <div className="space-y-6">
