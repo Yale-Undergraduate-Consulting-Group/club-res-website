@@ -357,6 +357,13 @@ async def run():
             fake.objects[lkey] = (b"late", "text/plain", "v-2", {})
             assert team.post(f"/api/resources/4/files/{s3['file_id']}/uploads/{late['version_id']}/cancel").status_code == 409
             assert team.post(f"/api/resources/4/files/{s3['file_id']}/uploads/{late['version_id']}/complete").status_code == 200
+            # Downloads from the bucket are saved under the uploaded name, not the object key.
+            assert team.get(f"/api/resources/4/files/{s3['file_id']}/download").status_code == 200
+            get = [k for m, k in fake.calls if m == "generate_presigned_url" and k.get("ClientMethod") == "get_object"][-1]
+            assert get["Params"]["ResponseContentDisposition"] == "attachment; filename=\"s3.txt\"; filename*=UTF-8''s3.txt"
+            assert workspace.attachment_disposition('Café "Q3" SOW.pdf') == (
+                "attachment; filename=\"Caf_ _Q3_ SOW.pdf\"; filename*=UTF-8''Caf%C3%A9%20_Q3_%20SOW.pdf")
+            assert "\r" not in workspace.attachment_disposition("a\r\nSet-Cookie: x.pdf")
             # Local-upload links do not exist when a bucket is configured.
             assert team.put("/api/resources/local-upload?token=x", content=b"a").status_code == 404
         finally:
