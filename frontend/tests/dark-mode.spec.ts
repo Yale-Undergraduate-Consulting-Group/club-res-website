@@ -168,6 +168,14 @@ for (const surface of SURFACES) {
     await page.waitForTimeout(500);
     await expect(page.locator('html')).toHaveClass(/\bdark\b/);
     expect(await page.evaluate(audit), surface.name).toEqual([]);
+    // Dark is a neutral charcoal, not navy: the page background is nearly grey.
+    const saturation = await page.evaluate(() => {
+      const [r, g, b] = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!.slice(0, 3).map((c) => Number(c) / 255);
+      const [max, min] = [Math.max(r, g, b), Math.min(r, g, b)];
+      const light = (max + min) / 2;
+      return max === min ? 0 : (max - min) / (1 - Math.abs(2 * light - 1));
+    });
+    expect(saturation, `${surface.name} page background saturation`).toBeLessThan(0.15);
   });
 }
 

@@ -804,7 +804,7 @@ export default function Admin() {
                             <div
                               key={`${r}-${c}`}
                               className="min-h-[20px] rounded border border-pale-sky/30"
-                              style={{ gridRow: r + 2, gridColumn: c + 2, backgroundColor: `rgba(26, 47, 90, ${0.12 + intensity * 0.88})` }}
+                              style={{ gridRow: r + 2, gridColumn: c + 2, backgroundColor: `color-mix(in srgb, var(--heat) ${Math.round((0.12 + intensity * 0.88) * 100)}%, transparent)` }}
                               title={`${colLabel}: ${val}`}
                             />
                           );
@@ -824,7 +824,7 @@ export default function Admin() {
                     const intensity = total ? (total / max) : 0;
                     return (
                       <div key={h} title={`${h}:00 - ${total} events`} className="flex flex-col items-center">
-                        <div className="w-full rounded min-h-[24px] border border-pale-sky/50" style={{ backgroundColor: `rgba(26, 47, 90, ${0.15 + intensity * 0.85})` }} />
+                        <div className="w-full rounded min-h-[24px] border border-pale-sky/50" style={{ backgroundColor: `color-mix(in srgb, var(--heat) ${Math.round((0.15 + intensity * 0.85) * 100)}%, transparent)` }} />
                         <span className="text-[10px] text-slate-500 mt-0.5">{h}</span>
                       </div>
                     );
@@ -836,7 +836,7 @@ export default function Admin() {
                     const intensity = total ? (total / max) : 0;
                     return (
                       <div key={d} title={`${d} - ${total} events`} className="flex flex-col items-center">
-                        <div className="w-full rounded min-h-[32px] border border-pale-sky/50" style={{ backgroundColor: `rgba(26, 47, 90, ${0.15 + intensity * 0.85})` }} />
+                        <div className="w-full rounded min-h-[32px] border border-pale-sky/50" style={{ backgroundColor: `color-mix(in srgb, var(--heat) ${Math.round((0.15 + intensity * 0.85) * 100)}%, transparent)` }} />
                         <span className="text-xs text-slate-500 mt-1">{d}</span>
                       </div>
                     );

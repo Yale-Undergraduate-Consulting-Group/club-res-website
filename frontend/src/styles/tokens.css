@@ -309,6 +309,11 @@
   /* A heading bar across a list (a resource group): navy-900 with white text. */
   --bar: var(--navy-900);
   --on-bar: #ffffff;
+  /* Table column headers (deck 8.1): steel-600 with white bold text. */
+  --table-head: var(--steel-600);
+  --on-table-head: #ffffff;
+  /* Activity heatmap cells: this colour at the cell's intensity. */
+  --heat: #1a2f5a;
   color-scheme: light;
   --radius-control: 0;
   --radius-panel: 0;
@@ -366,64 +371,71 @@
   --yucg-tint-strong: rgba(5, 36, 87, 0.6);
 }
 
-/* Dark mode. Web exception: the deck is light only. Navy-1000 / navy-950
-   surfaces keep the toggle working; the emphasis flips to sky-200 so it
-   stays readable. Not polished. */
+/* Dark mode. Web exception: the deck is light only. A neutral charcoal
+   ramp, not navy: the page, one step up for cards and the top bar, another
+   for hover and table headers. The club blue appears only as the accent
+   (links, focus, the selected state, the primary button), lightened so it
+   reads on charcoal, with dark text where it is a fill. */
 .dark {
-  --canvas: #001a4d;
-  --surface: var(--navy-950);
-  --surface-subtle: #0b2f66;
-  --surface-raised: #0b2f66;
-  --ink: #e7ecf3;
-  --ink-muted: #aebdd2;
-  --heading: #ffffff;
-  --error: #f0a49c;
-  --error-strong: #f6c3bd;
-  --error-soft: #3a1d20;
-  --on-error: var(--navy-950);
-  --link: #aed6ff;
-  --selected: #aed6ff;
-  --on-selected: var(--navy-950);
-  /* Bars take the table-header steel, so they stand off the navy without glaring. */
-  --bar: var(--steel-600);
-  --on-bar: #ffffff;
+  --canvas: #101114;
+  --surface: #16181c;
+  --surface-subtle: #1e2024;
+  --surface-raised: #1e2024;
+  --ink: #e6e8eb;
+  --ink-muted: #b3b9c3;
+  --heading: #f3f4f6;
+  --focus: #8ab4f8;
+  --error: #f28b82;
+  --error-strong: #f6aea8;
+  --error-soft: #2c1d1d;
+  --on-error: #101114;
+  --link: #8ab4f8;
+  --selected: #8ab4f8;
+  --on-selected: #101114;
+  --bar: #1e2024;
+  --on-bar: #e6e8eb;
+  --table-head: #1e2024;
+  --on-table-head: #e6e8eb;
+  --heat: #8ab4f8;
   color-scheme: dark;
-  --info-soft: #0b2f66;
-  --success-soft: #0b2f66;
-  --warning-soft: #0b2f66;
+  --info-soft: #1e2024;
+  --success-soft: #1e2024;
+  --warning-soft: #1e2024;
   --bg-primary: var(--canvas);
   --bg-secondary: var(--surface);
   --bg-card: var(--surface);
   --text-primary: var(--ink);
   --text-muted: var(--ink-muted);
   /* !important: the accent preference is written inline on <html> and would
-     otherwise paint navy on navy in dark mode. */
-  --accent: #aed6ff !important;
-  --accent-hover: #ffffff !important;
-  --border: #1f4a85;
-  --border-control: #4c6c9c;
-  --chart-1: #aed6ff;
-  --chart-2: #8497b0;
-  --chart-3: #4c6c9c;
-  --chart-4: #c3d0e1;
-  --chart-5: #1164a3;
-  --chart-6: #adbaca;
-  --chart-7: #dfe6ef;
-  --chart-8: #0b2f66;
-  --chart-focus: #aed6ff;
-  --chart-context: #4c6c9c;
-  --chart-text: #e7ecf3;
-  --chart-grid: #1f4a85;
-  --chart-good: #aed6ff;
-  --chart-bad: #8497b0;
-  --chart-idle: #0b2f66;
-  --success: #aed6ff;
-  --warning: #aebdd2;
+     otherwise paint a dark accent on charcoal. */
+  --accent: #8ab4f8 !important;
+  --accent-hover: #aecbfa !important;
+  --border: #2a2f37;
+  --border-control: #3a404a;
+  /* Charts: blues for the series, neutral greys for grid, context and idle. */
+  --chart-1: #8ab4f8;
+  --chart-2: #5b8fd6;
+  --chart-3: #3a6bb0;
+  --chart-4: #c6dafc;
+  --chart-5: #8b929d;
+  --chart-6: #5f6670;
+  --chart-7: #d2e3fc;
+  --chart-8: #2a2f37;
+  --chart-focus: #8ab4f8;
+  --chart-context: #5f6670;
+  --chart-text: #e6e8eb;
+  --chart-grid: #2a2f37;
+  --chart-good: #8ab4f8;
+  --chart-bad: #8b929d;
+  --chart-idle: #2a2f37;
+  --success: #8ab4f8;
+  --warning: #b3b9c3;
   --btn-primary-bg: var(--accent);
   --btn-primary-hover: var(--accent-hover);
-  --btn-primary-text: var(--navy-950);
-  --yucg-tint: rgba(5, 36, 87, 0.75);
-  --yucg-tint-strong: rgba(5, 36, 87, 0.75);
+  --btn-primary-text: #101114;
+  /* Photos and scrims darken to charcoal, not navy. */
+  --yucg-tint: rgba(15, 17, 21, 0.8);
+  --yucg-tint-strong: rgba(15, 17, 21, 0.8);
   /* The brand colours pages name directly (text-deep-navy, border-pale-sky,
      bg-pale-sky/60 ...) flip with the theme here, so a page written for the
      light theme reads correctly in dark without a dark: twin for each class. */
@@ -432,9 +444,9 @@
   --color-slate-blue: var(--ink-muted);
   --color-steel-blue: var(--ink-muted);
   --color-light-steel: var(--ink-muted);
-  --color-pale-sky: #1f4a85;
+  --color-pale-sky: #2a2f37;
   /* The slate ramp pages use for subtle fills and hairlines, inverted: the
-     light end becomes the raised navy surface and the edges, the dark end
+     light end becomes the raised surface and the edges, the dark end
      the ink. (Neutral text-* utilities are normalised to the ink in shell.css.) */
   --color-slate-50: var(--surface-subtle);
   --color-slate-100: var(--surface-subtle);

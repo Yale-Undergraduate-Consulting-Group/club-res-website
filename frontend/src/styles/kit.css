@@ -122,7 +122,7 @@
   border-color: var(--blue-600);
 }
 
-/* In dark the bar is sky, so it lightens instead: blue-600 under navy text is unreadable. */
+/* In dark the bar is a light blue, so it lightens instead: blue-600 under dark text is unreadable. */
 .dark .ui-button--primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
@@ -245,8 +245,8 @@ select:not([multiple]):not([size]) {
    a page's own classes still win. */
 :where(th) {
   padding: 0.75rem 1rem;
-  background: var(--steel-600);
-  color: #ffffff;
+  background: var(--table-head);
+  color: var(--on-table-head);
   font-size: 0.8125rem;
   font-weight: 700;
   text-align: left;
