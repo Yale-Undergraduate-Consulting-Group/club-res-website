@@ -5,7 +5,7 @@
  * decides what each person may do (backend/app/routers/alumni_portal.py).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ApiError, api } from '../api';
 import AppTabMenu from '../components/AppTabMenu';
 import ContactBoard from '../components/alumni/ContactBoard';
@@ -31,11 +31,13 @@ export default function AlumniHome() {
   const [loadError, setLoadError] = useState('');
   const [unread, setUnread] = useState<number | null>(null);
   const [portalError, setPortalError] = useState('');
+  // Also signed in as a member (YUCG Connect signs someone who is both into both).
+  const [member, setMember] = useState(false);
 
   // A 401 means the alumni session ended; anything else is shown where it happened.
   const fail = useCallback((error: unknown) => {
     if (error instanceof ApiError && error.status === 401) {
-      navigate('/alumni/login', { replace: true });
+      navigate('/login', { replace: true });
       return '';
     }
     return error instanceof Error ? error.message : 'Something went wrong.';
@@ -43,6 +45,7 @@ export default function AlumniHome() {
 
   useEffect(() => {
     api.alumni.me().then(setMe).catch((e: unknown) => setLoadError(fail(e)));
+    api.auth.me().then((session) => setMember(session.authenticated === true), () => setMember(false));
   }, [fail]);
 
   const board = me?.board ?? false;
@@ -57,9 +60,10 @@ export default function AlumniHome() {
   const [view, setView] = useUrlTab(allowed, 'home');
   const context = useMemo<PortalContextValue>(() => ({ api: api.alumniPortal, canWrite: board, fail }), [board, fail]);
 
+  // Ends the member session too (one sign-in made both); a full load so the app forgets it.
   const signOut = async () => {
     await api.alumni.logout().catch(() => {});
-    navigate('/alumni/login', { replace: true });
+    window.location.assign('/login');
   };
 
   if (loadError) return <div className="app-workspace max-w-4xl mx-auto px-4 py-6"><Notice tone="danger">Could not open the alumni portal: {loadError}</Notice></div>;
@@ -72,12 +76,15 @@ export default function AlumniHome() {
           <div className="flex items-center gap-3 min-w-0">
             <img src="/yucg-logo.png" alt="YUCG" className="h-10 w-auto" decoding="async" />
             <div className="min-w-0">
-              <h1 className="text-xl font-bold text-deep-navy">YUCG Alumni</h1>
+              <h1 className="text-xl font-bold text-deep-navy">YUCG Connect · Alumni</h1>
               <p className="text-sm text-slate-600 break-all">{me.name || me.email}</p>
             </div>
             {me.board && <StatusBadge tone="info">Board</StatusBadge>}
           </div>
-          <Button variant="secondary" size="sm" onClick={signOut}>Sign out</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {member && <Link to="/" className="ui-button ui-button--secondary ui-button--sm">Member site</Link>}
+            <Button variant="secondary" size="sm" onClick={signOut}>Sign out</Button>
+          </div>
         </header>
 
         <AppTabMenu

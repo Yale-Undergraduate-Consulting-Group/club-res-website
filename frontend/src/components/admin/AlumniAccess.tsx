@@ -29,7 +29,7 @@ const OUTCOMES: Record<AlumniOverview['sign_ins'][number]['outcome'], { label: s
 };
 
 /**
- * Admin → Alumni: who may sign in on the alumni portal (/alumni/login), who did, who is on the board, and revocation,
+ * Admin → Alumni: who may sign in to the alumni portal (through YUCG Connect, /login), who did, who is on the board, and revocation,
  * plus the portal's news, events, board inbox and directory, which club admins manage as the board.
  * The server re-checks these lists on every alumni request, so a removal takes effect at once.
  */
@@ -102,10 +102,11 @@ function AccessSection() {
   return (
     <div className="space-y-6">
       <Notice>
-        Alumni sign in at <strong>/alumni/login</strong> with Google and use the alumni portal: news, events, the alumni
-        directory and a way to contact the board. They see no club data: no members’ pages, contacts, outreach, projects or
-        resources. Board members, marked below, post news and events and read the board inbox. Only club admins manage who may
-        sign in.
+        Alumni sign in on YUCG Connect (<strong>/login</strong>) with Google, like members, and land in the alumni portal:
+        news, events, the alumni directory and a way to contact the board. A member whose address is also listed here lands
+        on the member site and can switch to the portal. Alumni see no club data: no members’ pages, contacts, outreach,
+        projects or resources. Board members, marked below, post news and events and read the board inbox. Only club admins
+        manage who may sign in.
       </Notice>
 
       <section className="surface-card space-y-3" aria-labelledby="alumni-domains">

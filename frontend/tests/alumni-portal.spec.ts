@@ -155,7 +155,7 @@ test.describe('alumni portal', () => {
   test('home shows the latest post, the next event, a profile prompt, the directory link and a working contact form', async ({ page }) => {
     const portal = await mockPortal(page, { profile: null });
     await page.goto('/alumni');
-    await expect(page.getByRole('heading', { name: 'YUCG Alumni' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'YUCG Connect · Alumni' })).toBeVisible();
     await expect(page.getByText('Sam Alumnus')).toBeVisible();
     await expect(page.getByText('Board', { exact: true })).toHaveCount(0);
 
@@ -207,15 +207,15 @@ test.describe('alumni portal', () => {
   });
 
 
-  test('a signed-out visitor is sent to the alumni sign-in', async ({ page }) => {
+  test('a signed-out visitor is sent to YUCG Connect', async ({ page }) => {
     await page.route('**/api/**', (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { authenticated: false } });
       return route.fulfill({ status: 401, json: { detail: 'Not signed in' } });
     });
     await page.goto('/alumni');
-    await expect(page).toHaveURL(/\/alumni\/login/);
-    await expect(page.getByText('News, events and the alumni directory from the YUCG alumni board.')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole('heading', { name: 'YUCG Connect' })).toBeVisible();
   });
 
   test('a board member writes a post, sanitised, and sees Draft and Pinned badges', async ({ page }) => {
@@ -500,7 +500,7 @@ test('Admin → Alumni: a club admin makes an account a board member', async ({ 
     return route.fulfill({ json: [] });
   });
   await page.goto('/admin?view=alumni');
-  await expect(page.getByText(/They see no club data/)).toBeVisible();
+  await expect(page.getByText(/Alumni see no club data/)).toBeVisible();
   await expect(page.getByText('Board member', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Make board member' }).click();
   await expect.poll(() => bodies).toEqual([{ board: true }]);

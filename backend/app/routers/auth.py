@@ -14,7 +14,7 @@ import httpx
 from datetime import datetime, timedelta
 from app.database import get_db, row_to_dict
 from app.auth_deps import get_current_user, get_current_user_optional
-from app.jwt_utils import JWT_SECRET, PENDING_2FA_COOKIE, create_token, decode_token, session_cookie_kwargs
+from app.jwt_utils import JWT_SECRET, PENDING_2FA_COOKIE, create_token, decode_token, end_sessions, session_cookie_kwargs
 from app.token_crypto import encrypt_token
 
 router = APIRouter()
@@ -79,13 +79,6 @@ async def google_login(invitation: str | None = None, join: str | None = None):
     return await _start_oauth(invitation=invitation)
 
 
-@router.get("/alumni/google")
-async def alumni_google_login():
-    """Alumni sign-in (routers/alumni.py): the same Google callback, then the
-    alumni lists decide; never a member session."""
-    return await _start_oauth("alumni")
-
-
 @router.get("/gmail/connect")
 async def connect_gmail(user: dict = Depends(get_current_user)):
     # Return the URL and cookie together so fetch can initiate a browser-bound flow.
@@ -140,18 +133,57 @@ async def google_callback(request: Request, code: str | None = None, state: str 
         response = await _do_google_callback(code, challenge)
     except Exception:
         logger.exception("Google callback failed")
-        response = RedirectResponse(f"{_login_page(challenge)}?error=callback_failed")
+        response = RedirectResponse(f"{FRONTEND_URL}/login?error=callback_failed")
     response.delete_cookie("yucg_oauth_browser",path="/api/auth")
     return response
 
 
-def _login_page(challenge: dict) -> str:
-    return f"{FRONTEND_URL}/alumni/login" if challenge.get("purpose") == "alumni" else f"{FRONTEND_URL}/login"
+async def _member_admission(db, challenge: dict, email: str, name, google_id, picture):
+    """The member rules for a verified Google identity, in the caller's write
+    transaction: ``(user id, role, existing users row, invitation)`` for a
+    member, else the refusal code. A refusal has written nothing."""
+    import time
+    if not email.endswith("@yale.edu"):
+        return "domain_not_allowed"
+    cursor = await db.execute(
+        "SELECT id, email, name, picture, google_id, role, is_active, totp_secret FROM users WHERE lower(email) = ?",
+        (email,),
+    )
+    row = await cursor.fetchone()
+    invitation = None
+    if challenge.get("invitation_id"):
+        invitation = await (await db.execute("SELECT * FROM membership_invitations WHERE id=? AND email=? AND state='pending' AND expires_at>?", (challenge["invitation_id"],email,int(time.time())))).fetchone()
+        if not invitation:
+            return "invitation_invalid"
+    if row:
+        row = row_to_dict(row)
+        if not row.get("is_active"):
+            return "account_deactivated"
+        if row.get("google_id") and row["google_id"] != google_id:
+            return "identity_mismatch"
+        return row["id"], row.get("role") or "standard", row, invitation
+    if invitation and challenge["purpose"] == "identity":
+        cursor = await db.execute("INSERT INTO users(email,name,role,google_id,picture) VALUES (?,?,?,?,?)",(email,name,'standard',google_id,picture))
+        return cursor.lastrowid, "standard", None, invitation
+    if challenge.get("join_session_id") and challenge["purpose"] == "identity":
+        from app.routers.invitations import admit_through_join_session
+        user_id = await admit_through_join_session(db, challenge["join_session_id"], email, name, google_id, picture)
+        return (user_id, "standard", None, invitation) if user_id else "join_closed"
+    return "invitation_required"
 
 
 async def _do_google_callback(code: str, challenge: dict | None = None):
+    """YUCG Connect: one Google sign-in, routed here by who the verified
+    identity is. A member (the rules above, unchanged) gets the member outcome,
+    plus the alumni session when the address is also on the alumni lists. Anyone
+    else gets the alumni portal if the alumni lists admit them
+    (routers/alumni.py), else the member refusal, so a refusal never says
+    whether an address is on an alumni list. Alumni never become members."""
+    from app.routers import alumni
+
     challenge = challenge or {"purpose": "identity"}
-    login = _login_page(challenge)
+    signing_in = challenge["purpose"] == "identity"
+    login = f"{FRONTEND_URL}/login"
     async with httpx.AsyncClient(timeout=15.0) as client:
         token_res = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -202,53 +234,26 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
         if not email:
             return RedirectResponse(url=f"{login}?error=no_email")
 
-        if challenge["purpose"] == "alumni":
-            # Alumni never become members: their own account and session.
-            from app.routers.alumni import sign_in_response
-            return await sign_in_response(FRONTEND_URL, email, str(google_id), name)
-
-        if not email.lower().endswith("@yale.edu"):
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=domain_not_allowed")
-
     from datetime import datetime as dt
     token_expires_at = (dt.utcnow().timestamp() + expires_in) if expires_in else None
     stored_access = encrypt_token(access_token)
     stored_refresh = encrypt_token(refresh_token)
 
     totp_secret = None
+    alumni_id = None
     db = await get_db()
     try:
         await db.execute("BEGIN IMMEDIATE")
-        cursor = await db.execute(
-            "SELECT id, email, name, picture, google_id, role, is_active, totp_secret FROM users WHERE lower(email) = ?",
-            (email,),
-        )
-        row = await cursor.fetchone()
-        invitation = None
-        if challenge.get("invitation_id"):
-            import time
-            invitation = await (await db.execute("SELECT * FROM membership_invitations WHERE id=? AND email=? AND state='pending' AND expires_at>?", (challenge["invitation_id"],email,int(time.time())))).fetchone()
-            if not invitation:
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=invitation_invalid")
-        if row:
-            row = row_to_dict(row)
-            if not row.get("is_active"):
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=account_deactivated")
-            if row.get("google_id") and row["google_id"] != google_id:
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=identity_mismatch")
-            user_id, role = row["id"], row.get("role") or "standard"
-        elif invitation and challenge["purpose"] == "identity":
-            cursor = await db.execute("INSERT INTO users(email,name,role,google_id,picture) VALUES (?,?,?,?,?)",(email,name,'standard',google_id,picture))
-            user_id, role = cursor.lastrowid, 'standard'
-            row = None
-        elif challenge.get("join_session_id") and challenge["purpose"] == "identity":
-            from app.routers.invitations import admit_through_join_session
-            user_id = await admit_through_join_session(db, challenge["join_session_id"], email, name, google_id, picture)
-            if not user_id:
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=join_closed")
-            role, row = 'standard', None
-        else:
-            return RedirectResponse(f"{FRONTEND_URL}/login?error=invitation_required")
+        admitted = await _member_admission(db, challenge, email, name, google_id, picture)
+        if isinstance(admitted, str):
+            # Not a member: the alumni lists decide (recorded in alumni_sign_ins).
+            if signing_in:
+                alumni_id, _ = await alumni.sign_in(db, email, str(google_id), name)
+                await db.commit()
+            if alumni_id is None:
+                return RedirectResponse(f"{login}?error={admitted}")
+            return alumni.with_session(RedirectResponse(f"{FRONTEND_URL}/alumni"), alumni_id)
+        user_id, role, row, invitation = admitted
         if challenge["purpose"] == "gmail":
             if challenge.get("user_id") != user_id:
                 return RedirectResponse(f"{FRONTEND_URL}/profile?error=gmail_account_mismatch")
@@ -267,6 +272,10 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             await db.execute("INSERT INTO audit_log(user_id,action,resource_type,resource_id,details) VALUES (?,'invitation_accept','invitation',?,'Verified invited Google identity accepted membership')",(user_id,str(invitation['id'])))
         if challenge["purpose"] == "gmail":
             await db.execute("INSERT INTO audit_log(user_id,action,resource_type,resource_id,details) VALUES (?,'gmail_connect','user',?,'Connected own verified Google account')",(user_id,str(user_id)))
+        if signing_in and await alumni.allowed(db, email):
+            # Also an alumnus: the alumni session too, so "Switch to alumni"
+            # needs no second sign-in. It never changes the member outcome.
+            alumni_id, _ = await alumni.sign_in(db, email, str(google_id), name)
         totp_secret = (row or {}).get("totp_secret")
         await db.execute(
             "INSERT INTO login_log (user_id, email, name) VALUES (?, ?, ?)",
@@ -294,12 +303,12 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             max_age=900,
             path="/",
         )
-        return resp
-    token = create_token(user_id, email, name, picture, role)
-    resp = RedirectResponse(url=f"{FRONTEND_URL}/")
-    ck = session_cookie_kwargs()
-    resp.set_cookie(ck.pop("key"), token, **ck)
-    return resp
+    else:
+        token = create_token(user_id, email, name, picture, role)
+        resp = RedirectResponse(url=f"{FRONTEND_URL}/")
+        ck = session_cookie_kwargs()
+        resp.set_cookie(ck.pop("key"), token, **ck)
+    return alumni.with_session(resp, alumni_id) if alumni_id else resp
 
 
 def _dev_login_email() -> str:
@@ -455,13 +464,7 @@ async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
 
 @router.post("/logout")
 async def logout():
-    from fastapi.responses import JSONResponse
-    from app.jwt_utils import COOKIE_NAME
-
-    resp = JSONResponse({"ok": True})
-    resp.delete_cookie(COOKIE_NAME, path="/")
-    resp.delete_cookie(PENDING_2FA_COOKIE, path="/")
-    return resp
+    return end_sessions(JSONResponse({"ok": True}))
 
 
 @router.get("/notification-preferences")

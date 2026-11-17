@@ -100,3 +100,12 @@ def decode_alumni_token(token: str) -> dict | None:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], audience=ALUMNI_AUDIENCE)
     except Exception:
         return None
+
+
+def end_sessions(response):
+    """Sign-out from either area ends both: one YUCG Connect sign-in set them
+    (app/routers/auth.py), so neither outlives the other on a shared computer."""
+    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(PENDING_2FA_COOKIE, path="/")
+    response.delete_cookie(ALUMNI_COOKIE, path="/api/alumni")
+    return response

@@ -9,8 +9,32 @@ Written before the code, as AGENTS.md requires for a new data store.
 
 ### Who may sign in
 
-An alumnus signs in on a separate page, `/alumni/login`, with Google. No password
-is stored. The server accepts the Google account only if:
+Updated 2026-11-17 (YUCG Connect): members and alumni sign in on one page,
+`/login`, with one Google sign-in (`/api/auth/google`, the same registered
+callback); the former `/alumni/login` redirects there with its `?error=` code. No
+password is stored. The server decides at the callback, from the verified Google
+identity:
+
+- **A member** under the member rules, which did not change (`@yale.edu`; an
+  existing active account with the same Google id, a valid invitation, or an open
+  join QR code; two-factor when enabled) gets exactly the member outcome. If the
+  address is also on the alumni lists below, the alumni sign-in runs too and sets
+  the alumni cookie, so "Switch to alumni" (Home's account links and the menu)
+  needs no second sign-in. It is set at the callback, before a member's
+  two-factor step: alumni access never required two-factor, and the member
+  session still waits for the code. The alumni portal shows "Member site" when a
+  member session is valid. A Gmail connection never sets the alumni cookie.
+- **Anyone else** gets the alumni portal if the rule below admits them.
+- **Otherwise** the member refusal (`domain_not_allowed`, `invitation_required`,
+  and the other member codes), whatever the alumni lists hold: a refusal never
+  says whether an address is listed, revoked or bound to another Google account.
+  The alumni outcome is still recorded in `alumni_sign_ins`.
+
+Being on the alumni lists never makes anyone a member: the member rules run
+first and alone decide membership, and the alumni path never writes `users`.
+Signing out of either area ends both sessions (`jwt_utils.end_sessions`), since
+one sign-in set them. The server accepts a non-member's Google account into the
+alumni portal only if:
 
 1. Google reports the address as verified (`verified_email: true`) and gives an
    account id; and
@@ -86,7 +110,7 @@ projects was removed; `/alumni` is now the alumni portal
 | `alumni_domains` | domain, added_by (member id), added_at | club admins | admins (Admin → Alumni) | until an admin removes it |
 | `alumni_allowlist` | email, optional note (≤200 chars, e.g. "Class of 2022, ex-president"), added_by, added_at | club admins | admins | until an admin removes it |
 | `alumni_accounts` | email, Google account id, Google display name, created_at, last_sign_in_at, revoked_at, revoked_by, board_since, board_set_by (migration `core:7`) | club admins | admins; the alumnus reads only their own email, name and board status | until an admin deletes it. Revoke keeps the row (so the person stays out even if their domain is allowed); delete removes the row, its sign-in records and its directory profile |
-| `alumni_sign_ins` | time, account id (when known), **domain only** of the address, outcome (`signed_in`, `not_eligible`, `revoked`, `identity_mismatch`) | club admins | admins | rows older than 365 days are deleted at each new sign-in; deleted with the account |
+| `alumni_sign_ins` | time, account id (when known), **domain only** of the address, outcome (`signed_in`, `not_eligible`, `revoked`, `identity_mismatch`); one row per sign-in by a non-member, and per sign-in by a member whose address is on the lists | club admins | admins | rows older than 365 days are deleted at each new sign-in; deleted with the account |
 
 The portal's own tables (posts, cover images, events, directory profiles, board
 messages, rate-limit records) are specified in
@@ -125,11 +149,11 @@ try are not recorded by name).
 | Piece | Where |
 |---|---|
 | Tables, sign-in rule, per-request check, alumni API, admin API | `backend/app/routers/alumni.py`, migration `core:4` in `app/modules/core.py` |
-| Google start `/api/auth/alumni/google`; the shared callback branches on the challenge's purpose before the `@yale.edu` rule | `backend/app/routers/auth.py` |
+| One Google start `/api/auth/google` for members and alumni; the callback applies the member rules (`_member_admission`), then the alumni lists (`_do_google_callback`) | `backend/app/routers/auth.py` |
 | Alumni token, cookie, audience | `backend/app/jwt_utils.py` |
 | Alumni portal: board, posts, covers, events, directory, board inbox (migration `core:7`) | `backend/app/routers/alumni_portal.py`, `backend/app/services/alumni_covers.py`, `backend/app/services/safe_html.py` |
-| Pages `/alumni/login`, `/alumni` (portal); Admin → Alumni (access, board, news, events, inbox, directory) | `frontend/src/pages/AlumniLogin.tsx`, `AlumniHome.tsx`, `components/alumni/`, `components/admin/AlumniAccess.tsx` |
-| Tests: sign-in rules, no club data, revocation, denial matrix; portal authorization matrix (anonymous, member, admin, alumnus, board), sanitiser, covers, events, directory, inbox, rate limits | `backend/tests/test_alumni.py`, `backend/tests/test_alumni_portal.py` |
+| Pages `/login` (YUCG Connect; `/alumni/login` redirects to it), `/alumni` (portal); "Switch to alumni" on Home and in the menu; Admin → Alumni (access, board, news, events, inbox, directory) | `frontend/src/pages/LoginPage.tsx`, `AlumniHome.tsx`, `Hub.tsx`, `components/shell/AppShell.tsx`, `components/alumni/`, `components/admin/AlumniAccess.tsx` |
+| Tests: sign-in rules, no club data, revocation, denial matrix; YUCG Connect routing (member, alumnus, both, neither, revoked, two-factor); portal authorization matrix (anonymous, member, admin, alumnus, board), sanitiser, covers, events, directory, inbox, rate limits | `backend/tests/test_alumni.py`, `backend/tests/test_yucg_connect.py`, `backend/tests/test_alumni_portal.py` |
 
 Before an admin adds anything, nothing changes for anyone: members' sign-in, pages
 and APIs are untouched (the alumni 401 never signs a member out of the UI).

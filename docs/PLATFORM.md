@@ -86,14 +86,16 @@ while it is open can join, so close it when the room is done.
 
 Alumni (`routers/alumni.py` and `routers/alumni_portal.py`, migrations `core:4`
 and `core:7`; sign-in design in [night/security.md](night/security.md), portal
-data rules in [product/ALUMNI-PORTAL.md](product/ALUMNI-PORTAL.md)): a separate
-sign-in at `/alumni/login` with Google, open to a verified address an admin
-allow-listed or in a domain an admin listed (Admin → Alumni; both lists start
-empty). Alumni are not members: they live in `alumni_accounts`, never in
-`users`, and their session is the `yucg_alumni` cookie (path `/api/alumni`)
-holding a token the member session check refuses. `/alumni` is the alumni
-portal: news posts, events, an opt-in directory and a contact form to the alumni
-board. Alumni get no club data (no Resources, projects, members or clients).
+data rules in [product/ALUMNI-PORTAL.md](product/ALUMNI-PORTAL.md)): sign-in on
+YUCG Connect (`/login`, the members' Google sign-in), open to a verified address
+an admin allow-listed or in a domain an admin listed (Admin → Alumni; both lists
+start empty) when it is not a member; a member also on the lists gets both
+sessions and a "Switch to alumni" link. Alumni are not members: they live in
+`alumni_accounts`, never in `users`, and their session is the `yucg_alumni`
+cookie (path `/api/alumni`) holding a token the member session check refuses.
+`/alumni` is the alumni portal: news posts, events, an opt-in directory and a
+contact form to the alumni board. Alumni get no club data (no Resources,
+projects, members or clients).
 Club admins mark alumni board members; the board and club admins (through
 `/api/admin/alumni`) write posts and events and read the board inbox. Every
 alumni request re-checks the lists, so a removal or revocation applies at once.

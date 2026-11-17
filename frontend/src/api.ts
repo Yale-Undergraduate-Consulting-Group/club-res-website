@@ -1270,6 +1270,8 @@ export const api = {
     exportUrl: (filter: DirectoryFilter) => `${API_BASE}/api/directory/export?${directoryQuery(filter)}`,
   },
   auth: {
+    /** Whether a member session exists (the alumni portal's "Member site" link). */
+    me: () => fetchApi<{ authenticated: boolean }>('/api/auth/me'),
     profile: {
       get: () => fetchApi<MemberProfile>('/api/auth/profile'),
       update: (data: { projects?: string; experience?: string; role_title?: string; linkedin_url?: string; slack_handle?: string; other_handles?: string }) =>

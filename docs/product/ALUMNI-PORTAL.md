@@ -6,8 +6,13 @@ The alumni portal is a separate signed-in area at `/alumni`, for alumni (mainly
 the alumni board) to communicate and keep in touch: news posts, events, an
 opt-in directory, and messages to the alumni board. Alumni get no club data: no
 Resources, projects, members, clients, outreach or any other member page or API.
-The sign-in itself (who may sign in, the alumni session, revocation) is described
-in [../night/security.md](../night/security.md).
+Alumni sign in on YUCG Connect (`/login`), the same page and Google sign-in as
+members; the server sends each person to the member site or the portal. Someone
+who is both a member and on the alumni lists lands on the member site with a
+"Switch to alumni" link, and the portal shows a "Member site" link while their
+member session is valid; signing out of either ends both. The sign-in itself (who
+may sign in, the alumni session, revocation) is described in
+[../night/security.md](../night/security.md).
 
 Club admins decide who may sign in (Admin → Alumni → Access: domains and the
 allow-list) and which alumni accounts are board members. Board members and club

@@ -60,10 +60,11 @@ def member(user_id: int, role: str) -> TestClient:
 
 
 def alumni_sign_in(email: str, google_id: str, verified: bool = True) -> tuple[str, TestClient]:
-    """Start the alumni sign-in, let Google answer with this identity; returns
-    where the browser lands and the browser (holding whatever cookies it got)."""
+    """Sign in on YUCG Connect, let Google answer with this identity; returns
+    where the browser lands and the browser (holding whatever cookies it got).
+    The addresses here are not members, so no member session may appear."""
     browser = TestClient(main.app, raise_server_exceptions=False)
-    start = browser.get("/api/auth/alumni/google", follow_redirects=False)
+    start = browser.get("/api/auth/google", follow_redirects=False)
     state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
     identity.update(email=email, id=google_id, verified_email=verified)
     original = httpx.AsyncClient
@@ -95,8 +96,9 @@ async def setup() -> None:
 def sign_in_rules(admin: TestClient, standard: TestClient) -> None:
     users_before = sql("SELECT COUNT(*) FROM users")[0][0]
     # Both lists start empty: nobody gets in, and the refusal records only the domain.
+    # A refusal is the member refusal: it never says whether an alumni list was checked.
     landed, _ = alumni_sign_in("alum@aya.yale.edu", "g-alum")
-    assert landed == "/alumni/login?error=not_eligible", landed
+    assert landed == "/login?error=domain_not_allowed", landed
     assert sql("SELECT account_id, email_domain, outcome FROM alumni_sign_ins") == [(None, "aya.yale.edu", "not_eligible")]
     assert sql("SELECT COUNT(*) FROM alumni_accounts")[0][0] == 0
 
@@ -108,15 +110,15 @@ def sign_in_rules(admin: TestClient, standard: TestClient) -> None:
     assert admin.post("/api/admin/alumni/domains", json={"domain": "@AYA.yale.edu"}).json() == {"domain": "aya.yale.edu"}
 
     landed, _ = alumni_sign_in("alum@aya.yale.edu", "g-alum", verified=False)
-    assert landed == "/alumni/login?error=email_not_verified", landed
+    assert landed == "/login?error=email_not_verified", landed
     landed, alum = alumni_sign_in("alum@aya.yale.edu", "g-alum")
     assert landed == "/alumni", landed
     assert alum.get("/api/alumni/me").json() == {"email": "alum@aya.yale.edu", "name": "Alum", "board": False}
     # Subdomains and look-alikes are not the domain.
     for outsider in ("x@evil.aya.yale.edu", "x@aya.yale.edu.evil.test", "x@gmail.com"):
-        assert alumni_sign_in(outsider, "g-x")[0] == "/alumni/login?error=not_eligible", outsider
+        assert alumni_sign_in(outsider, "g-x")[0] == "/login?error=domain_not_allowed", outsider
     # Another Google account with the same address does not take the account over.
-    assert alumni_sign_in("alum@aya.yale.edu", "g-other")[0] == "/alumni/login?error=identity_mismatch"
+    assert alumni_sign_in("alum@aya.yale.edu", "g-other")[0] == "/login?error=domain_not_allowed"
 
     # One allow-listed address from any provider.
     assert standard.post("/api/admin/alumni/emails", json={"email": "friend@gmail.com"}).status_code == 403
@@ -155,7 +157,7 @@ def revocation(admin: TestClient, alum: TestClient, friend: TestClient) -> None:
     alum_id = sql("SELECT id FROM alumni_accounts WHERE email = 'alum@aya.yale.edu'")[0][0]
     assert admin.post(f"/api/admin/alumni/accounts/{alum_id}/revoke").status_code == 200
     assert alum.get("/api/alumni/me").status_code == 401
-    assert alumni_sign_in("alum@aya.yale.edu", "g-alum")[0] == "/alumni/login?error=revoked"
+    assert alumni_sign_in("alum@aya.yale.edu", "g-alum")[0] == "/login?error=domain_not_allowed"
     assert admin.post(f"/api/admin/alumni/accounts/{alum_id}/restore").status_code == 200
     assert alum.get("/api/alumni/me").status_code == 200
     # Removing the domain ends the domain's sessions at once; the allow-listed address stays.
@@ -169,9 +171,9 @@ def revocation(admin: TestClient, alum: TestClient, friend: TestClient) -> None:
     assert admin.delete(f"/api/admin/alumni/accounts/{alum_id}").status_code == 404
     actions = {r[0] for r in sql("SELECT action FROM audit_log WHERE user_id = ?", ADMIN)}
     assert {"alumni_revoke", "alumni_restore", "alumni_domain_remove", "alumni_email_remove", "alumni_delete"} <= actions
-    # Logout clears the alumni cookie only.
+    # Logout ends the alumni session and, since one sign-in made both, the member one.
     out = alum.post("/api/alumni/logout")
-    assert out.status_code == 200 and "yucg_alumni=" in out.headers["set-cookie"]
+    assert out.status_code == 200 and {"yucg_alumni", "yucg_session"} <= {c.split("=", 1)[0] for c in out.headers.get_list("set-cookie")}
 
 
 def denial_matrix(alumni_token: str, standard: TestClient) -> None:

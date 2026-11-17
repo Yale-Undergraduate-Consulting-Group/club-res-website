@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import MainApp from './pages/MainApp';
@@ -9,8 +9,13 @@ import { API_BASE } from './api';
 import { usableModules } from './modules';
 
 // The alumni area has its own session and never shows member pages (backend/app/routers/alumni.py).
-const AlumniLogin = lazy(() => import('./pages/AlumniLogin'));
 const AlumniHome = lazy(() => import('./pages/AlumniHome'));
+
+/** The former alumni sign-in page: everyone signs in on /login now. Keeps old links and their ?error= codes. */
+function AlumniLoginRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/login', search }} replace />;
+}
 
 function AppContent() {
   const [user, setUser] = useState<{ id?: number; email: string; name?: string; picture?: string; role?: string; apps?: string[] } | null>(null);
@@ -73,8 +78,8 @@ function AppContent() {
 
   const routes = (
     <Routes>
-      {/* Alumni: separate sign-in and area, whatever the member session. */}
-      <Route path="/alumni/login" element={<Suspense fallback={<AppLoading label="Opening…" />}><AlumniLogin /></Suspense>} />
+      {/* Alumni: their own area, whatever the member session. */}
+      <Route path="/alumni/login" element={<AlumniLoginRedirect />} />
       <Route path="/alumni" element={<Suspense fallback={<AppLoading label="Opening…" />}><AlumniHome /></Suspense>} />
       {/* Login page - only when NOT authenticated */}
       <Route

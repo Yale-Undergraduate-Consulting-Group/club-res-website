@@ -1,9 +1,10 @@
-"""Alumni: a separate sign-in into the alumni portal (docs/night/security.md,
+"""Alumni: the alumni portal's accounts and session (docs/night/security.md,
 docs/product/ALUMNI-PORTAL.md).
 
-An alumnus signs in with Google on ``/alumni/login`` (``/api/auth/alumni/google``,
-the same registered callback as members) when their verified address is on the
-admin's allow-list or its domain is on the admin's domain list. Alumni are not
+Everyone signs in on YUCG Connect, ``/login``, with one Google flow
+(routers/auth.py). A verified identity that is not a member gets the alumni
+portal when its address is on the admin's allow-list or its domain is on the
+admin's domain list; a member on those lists gets both sessions. Alumni are not
 member accounts: they live in ``alumni_accounts``, never in ``users``, so no
 member route, job, digest, Slack tool or export can see or act for one. Their
 session is the ``yucg_alumni`` cookie (path ``/api/alumni``) holding a token with
@@ -21,12 +22,12 @@ import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.auth_deps import get_current_admin
 from app.database import get_db
-from app.jwt_utils import ALUMNI_COOKIE, alumni_cookie_kwargs, create_alumni_token, decode_alumni_token
+from app.jwt_utils import ALUMNI_COOKIE, alumni_cookie_kwargs, create_alumni_token, decode_alumni_token, end_sessions
 from app.services.transaction_audit import audit
 
 router = APIRouter()
@@ -123,18 +124,8 @@ async def sign_in(db, email: str, google_id: str, name: str | None) -> tuple[int
     return (account_id if outcome == "signed_in" else None), outcome
 
 
-async def sign_in_response(frontend_url: str, email: str, google_id: str, name: str | None) -> RedirectResponse:
-    """The end of the Google callback for an alumni sign-in (routers/auth.py)."""
-    db = await get_db()
-    try:
-        await db.execute("BEGIN IMMEDIATE")
-        account_id, outcome = await sign_in(db, email, google_id, name)
-        await db.commit()
-    finally:
-        await db.close()
-    if account_id is None:
-        return RedirectResponse(f"{frontend_url}/alumni/login?error={outcome}")
-    response = RedirectResponse(f"{frontend_url}/alumni")
+def with_session(response, account_id: int):
+    """``response`` carrying the alumni session for ``account_id``."""
     cookie = alumni_cookie_kwargs()
     response.set_cookie(cookie.pop("key"), create_alumni_token(account_id), **cookie)
     return response
@@ -163,10 +154,7 @@ async def dev_login(request: Request):
         await db.close()
     if account_id is None:
         raise HTTPException(403, f"Alumni sign-in refused: {outcome}")
-    response = JSONResponse({"ok": True, "email": email, "dev": True})
-    cookie = alumni_cookie_kwargs()
-    response.set_cookie(cookie.pop("key"), create_alumni_token(account_id), **cookie)
-    return response
+    return with_session(JSONResponse({"ok": True, "email": email, "dev": True}), account_id)
 
 
 async def get_current_alumni(request: Request) -> dict:
@@ -185,7 +173,7 @@ async def get_current_alumni(request: Request) -> dict:
                 return {"id": row["id"], "email": row["email"], "name": row["name"], "board": bool(row["board_since"])}
         finally:
             await db.close()
-    raise HTTPException(401, "Sign in on the alumni page")
+    raise HTTPException(401, "Sign in on YUCG Connect")
 
 
 # --- The alumni session ----------------------------------------------------------
@@ -197,9 +185,7 @@ async def me(alumnus: dict = Depends(get_current_alumni)):
 
 @router.post("/logout")
 async def logout():
-    response = JSONResponse({"ok": True})
-    response.delete_cookie(ALUMNI_COOKIE, path="/api/alumni")
-    return response
+    return end_sessions(JSONResponse({"ok": True}))
 
 
 # --- Admin: who may sign in, who did, and revocation -----------------------------
