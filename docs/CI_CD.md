@@ -129,6 +129,8 @@ GitHub references: [organization ruleset API](https://docs.github.com/en/rest/or
 
 Intake does not require Docker, static export, Terraform, or cloud credentials. A Terraform-only Intake change still gets secret scanning but no Terraform compatibility gate.
 
+The dependency audit (`scripts/npm_audit_gate.sh`) fails on any high or critical npm advisory. The only way past one is an entry in `scripts/npm_audit_exceptions.json`: the advisory ID, its reason, who approved it and an expiry date. It applies only while unexpired and only to that advisory, so any other finding still fails. Use it only when no patched version exists, and remove it when one does. Current entry: GHSA-fc5q-39xc-vjpf (picomatch, build and test tools only), approved 2026-11-17, expires 2026-12-01.
+
 Unit tests cannot be skipped by omission. Any change to a workflow, action, script, test, `docker/`, or `.dockerignore` reruns every unit-test lane at every stage, and the aggregate `*-required-checks` status fails when a selected lane did not succeed. A frontend change without unit tests fails because Vitest exits non-zero when it finds none.
 
 Dev and Production check all non-image lanes for every non-documentation change. The image lane requires a runtime path change (`frontend/`, `backend/`, `docker/`, `ops/`, `.dockerignore`). Ship runs retain these checks; they do not replace verification with a build-only shortcut.
