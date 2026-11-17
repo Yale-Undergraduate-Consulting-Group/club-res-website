@@ -147,6 +147,19 @@ const PORTAL_OVERVIEW = {
   sign_ins: [{ at: 1760000000, outcome: 'signed_in', email_domain: 'example.org', email: LONG_EMAIL }],
 };
 
+/** Admin → Members → Send setup reminders: the longest names and a full list of missing items. */
+export const REMINDERS = {
+  slack_connected: true,
+  members: [
+    { user_id: 2, name: 'Ana Long-Surname', email: 'ana.long.surname@yale.edu', reminded_at: null, missing: [
+      { key: 'gmail', label: 'Gmail' }, { key: 'role', label: 'Signature role' }, { key: 'linkedin', label: 'LinkedIn' },
+      { key: 'phone', label: 'Phone' }, { key: 'sign_off', label: 'Sign-off name' }, { key: 'slack', label: 'Slack' }] },
+    { user_id: 3, name: 'Bartholomew Featherstonehaugh-Montgomery', email: 'bartholomew.featherstonehaugh.montgomery@aya.yale.edu', reminded_at: null, missing: [
+      { key: 'role', label: 'Signature role' }, { key: 'phone', label: 'Phone' }] },
+    { user_id: 4, name: '', email: 'cal@yale.edu', reminded_at: '2026-11-15 09:30:00', missing: [{ key: 'linkedin', label: 'LinkedIn' }] },
+  ],
+};
+
 export async function mockApi(page: Page, authenticated: boolean) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -156,6 +169,7 @@ export async function mockApi(page: Page, authenticated: boolean) {
     else if (path === '/api/analytics/dashboard') body = DASHBOARD;
     else if (path === '/api/analytics/club-metrics') body = METRICS;
     else if (path === '/api/admin/costs') body = COSTS;
+    else if (path === '/api/admin/setup-reminders') body = REMINDERS;
     else if (path === '/api/analytics/due-follow-ups') body = { count: 0 };
     else if (path === '/api/contacts') body = { items: CONTACTS, total: CONTACTS.length, limit: 100, offset: 0 };
     else if (path === '/api/contacts/pipeline-metrics' || path === '/api/outreach/metrics/pipeline') body = { by_status: [{ status: 'cold', count: 1 }, { status: 'contacted', count: 1 }, { status: 'replied', count: 1 }] };

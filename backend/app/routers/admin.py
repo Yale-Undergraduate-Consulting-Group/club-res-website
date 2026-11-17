@@ -94,6 +94,31 @@ async def users_readiness(admin: dict = Depends(get_current_admin)):
     return [{"user_id": uid, **facts} for uid, facts in rows.items()]
 
 
+class SetupReminderRequest(BaseModel):
+    user_ids: list[int]
+
+
+@router.get("/setup-reminders")
+async def setup_reminders_preview(admin: dict = Depends(get_current_admin)):
+    """Each incomplete active member with exactly what they are missing."""
+    from app.services import setup_reminders
+
+    return await setup_reminders.preview()
+
+
+@router.post("/setup-reminders")
+async def setup_reminders_send(body: SetupReminderRequest, admin: dict = Depends(get_current_admin)):
+    """Slack-DM the named members what is still missing from their setup (worked out now, not by the client)."""
+    from app.services import setup_reminders
+
+    if not 0 < len(body.user_ids) <= setup_reminders.MAX_MEMBERS_PER_REQUEST:
+        raise HTTPException(422, f"Name between 1 and {setup_reminders.MAX_MEMBERS_PER_REQUEST} members")
+    try:
+        return {"results": await setup_reminders.send(body.user_ids, int(admin["id"]))}
+    except setup_reminders.SlackNotConnected as exc:
+        raise HTTPException(409, str(exc))
+
+
 @router.get("/users/export", response_class=Response)
 async def export_users_excel(admin: dict = Depends(get_current_admin)):
     """Export all users and profile data to a styled Excel file. Admin only."""
