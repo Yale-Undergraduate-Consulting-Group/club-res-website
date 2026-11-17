@@ -4,6 +4,7 @@ import JoinQr from '../components/JoinQr';
 import ContactMaintenance from '../components/admin/ContactMaintenance';
 import CatalogBuilderCard from '../components/admin/CatalogBuilderCard';
 import SearchProviderStatus from '../components/admin/SearchProviderStatus';
+import SetupReminders from '../components/admin/SetupReminders';
 import { useEffect, useState, Fragment } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import QRCode from 'qrcode';
@@ -282,20 +283,23 @@ export default function Admin() {
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await api.admin.users.exportExcel();
-                    toast.addToast('Export downloaded.', 'success');
-                  } catch (e) {
-                    toast.addToast((e as Error)?.message || 'Export failed', 'error');
-                  }
-                }}
-                className="ui-button ui-button--primary"
-              >
-                Export to Excel
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <SetupReminders />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await api.admin.users.exportExcel();
+                      toast.addToast('Export downloaded.', 'success');
+                    } catch (e) {
+                      toast.addToast((e as Error)?.message || 'Export failed', 'error');
+                    }
+                  }}
+                  className="ui-button ui-button--primary"
+                >
+                  Export to Excel
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
