@@ -108,7 +108,7 @@ export default function PortalEditor({ label, initialHtml, onChange }: Props) {
           </Button>
         ))}
       </div>
-      {linkError && <p className="text-sm text-red-700" role="alert">{linkError}</p>}
+      {linkError && <p className="text-sm text-[var(--error)]" role="alert">{linkError}</p>}
       <div
         ref={editor}
         className="portal-editor portal-html"

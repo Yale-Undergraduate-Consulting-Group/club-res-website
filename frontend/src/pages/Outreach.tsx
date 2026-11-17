@@ -61,7 +61,7 @@ function ContactCard({ c, selectedContact, selectedIds, onSelect, onToggleSelect
         value={c.pipeline_status || 'cold'}
         onChange={(e) => { e.stopPropagation(); onUpdatePipeline(c.id, e.target.value); }}
         onClick={(e) => e.stopPropagation()}
-        className="mt-2 w-full text-xs px-2 py-1.5 rounded border border-pale-sky bg-white"
+        className="mt-2 w-full text-xs px-2 py-1.5 rounded border border-pale-sky bg-[var(--surface)]"
       >
         {PIPELINE_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
@@ -104,7 +104,7 @@ function CompanyFolder({ company, contacts, outcome, selectedContact, selectedId
         <span className="text-slate-500">{expanded ? '▼' : '▶'}</span>
       </button>
       {expanded && (
-        <div className="p-2 space-y-1 bg-white">
+        <div className="p-2 space-y-1 bg-[var(--surface)]">
           {contacts.map((c) => (
             <ContactCard key={c.id} c={c} selectedContact={selectedContact} selectedIds={selectedIds} onSelect={onSelect} onToggleSelect={onToggleSelect} onUpdatePipeline={onUpdatePipeline} draggable={draggable} />
           ))}
@@ -457,7 +457,7 @@ export default function Outreach() {
           label="Pipeline views"
         />
         {activeTab === 'resources' && (
-          <p className="app-tab-panel text-sm text-slate-600 dark:text-slate-400">
+          <p className="app-tab-panel text-sm text-slate-600">
             Templates hold reusable copy. Follow-up sequences and their schedule have their own tab.
           </p>
         )}
@@ -481,7 +481,7 @@ export default function Outreach() {
                 <select
                   value={contactPipelineFilter}
                   onChange={(e) => setContactPipelineFilter(e.target.value)}
-                  className="px-3 py-2 border border-pale-sky text-sm bg-white"
+                  className="px-3 py-2 border border-pale-sky text-sm bg-[var(--surface)]"
                   aria-label="Filter by pipeline status"
                 >
                   <option value="">All Statuses</option>
@@ -523,7 +523,7 @@ export default function Outreach() {
                 <select
                   value={mobileStatus}
                   onChange={(event) => setMobileStatus(event.target.value)}
-                  className="min-h-11 flex-1 border border-[var(--border)] bg-white px-3"
+                  className="min-h-11 flex-1 border border-[var(--border)] bg-[var(--surface)] px-3"
                 >
                   {PIPELINE_STATUSES.map((status) => (
                     <option key={status} value={status}>{status}</option>
@@ -539,10 +539,10 @@ export default function Outreach() {
               )}
               {selectedContactIds.size > 0 && (
                 <div className="flex flex-wrap items-center gap-2 p-3 surface-card border border-[var(--border)]">
-                  <span className="text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]">{selectedContactIds.size} selected</span>
+                  <span className="text-sm font-medium text-deep-navy">{selectedContactIds.size} selected</span>
                   <select
                     onChange={(e) => { const v = e.target.value; if (v) handleBulkMove(v); e.target.value = ''; }}
-                    className="text-sm px-2 py-1.5 border border-[var(--border)] bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-100"
+                    className="text-sm px-2 py-1.5 border border-[var(--border)] bg-[var(--surface)] text-deep-navy"
                   >
                     <option value="">Move To...</option>
                     {PIPELINE_STATUSES.map((s) => (
@@ -551,7 +551,7 @@ export default function Outreach() {
                   </select>
                   <select
                     onChange={(e) => { const v = e.target.value; if (v) handleBulkAddToCampaign(parseInt(v, 10)); e.target.value = ''; }}
-                    className="text-sm px-2 py-1.5 border border-[var(--border)] bg-white dark:bg-slate-700 text-deep-navy dark:text-slate-100"
+                    className="text-sm px-2 py-1.5 border border-[var(--border)] bg-[var(--surface)] text-deep-navy"
                   >
                     <option value="">Add To Campaign...</option>
                     {outreachCampaigns.map((oc) => (
@@ -600,7 +600,7 @@ export default function Outreach() {
                     >
                       <div className="px-4 py-3 border-b border-pale-sky bg-pale-sky/20 flex justify-between items-center">
                         <h3 className="font-semibold text-deep-navy capitalize">{status}</h3>
-                        <span className="text-sm font-medium text-slate-600 bg-white px-2 py-0.5 rounded">
+                        <span className="text-sm font-medium text-slate-600 bg-[var(--surface)] px-2 py-0.5 rounded">
                           {count}
                         </span>
                       </div>
@@ -698,7 +698,7 @@ export default function Outreach() {
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-medium text-slate-800">{oc.name}</span>
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${oc.type === 'community' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${oc.type === 'community' ? 'bg-[var(--selected)] text-[var(--on-selected)]' : 'bg-slate-100 text-slate-600'}`}>
                           {oc.type}
                         </span>
                       </div>
@@ -724,7 +724,7 @@ export default function Outreach() {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="font-semibold text-deep-navy">{selectedCampaign.name}</h3>
-                  <span className={`text-xs px-1.5 py-0.5 ${selectedCampaign.type === 'community' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 ${selectedCampaign.type === 'community' ? 'bg-[var(--selected)] text-[var(--on-selected)]' : 'bg-slate-100 text-slate-600'}`}>
                     {selectedCampaign.type}
                   </span>
                   <p className="text-sm text-slate-500 mt-1">
@@ -832,7 +832,7 @@ export default function Outreach() {
                 <div className="flex flex-wrap gap-2 items-center mb-4">
                   <span className="text-sm text-slate-600">{selectedContact.email}</span>
                   <select
-                    className="px-2 py-1 rounded text-xs border border-pale-sky bg-white"
+                    className="px-2 py-1 rounded text-xs border border-pale-sky bg-[var(--surface)]"
                     onChange={async (e) => {
                       const cid = parseInt(e.target.value, 10);
                       if (!cid || !selectedContact?.id) return;
@@ -1095,7 +1095,7 @@ export default function Outreach() {
                     <div>
                       <div className="font-medium text-slate-800">
                         {t.name}
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${t.scope === 'club' ? 'bg-deep-navy text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 ${t.scope === 'club' ? 'bg-[var(--selected)] text-[var(--on-selected)]' : 'bg-slate-100 text-slate-600'}`}>
                           {t.scope === 'club' ? 'Club' : 'Private'}
                         </span>
                       </div>

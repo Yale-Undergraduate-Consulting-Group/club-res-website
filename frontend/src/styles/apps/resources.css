@@ -61,12 +61,11 @@
 .resource-facet .ui-chip:hover:not(:disabled) { background: var(--surface-subtle); border-color: transparent; }
 .resource-facet .ui-chip[aria-pressed="true"],
 .resource-facet .ui-chip[aria-pressed="true"]:hover:not(:disabled) {
-  border-left-color: var(--navy-900);
+  border-left-color: var(--selected);
   background: var(--surface-subtle);
-  color: var(--navy-900);
+  color: var(--ink);
   font-weight: 700;
 }
-.dark .resource-facet .ui-chip[aria-pressed="true"] { border-left-color: var(--accent); color: var(--text-primary); }
 .resource-facet__count {
   flex: 0 0 auto;
   min-width: 1.5rem;
@@ -101,8 +100,8 @@
   gap: 0.5rem;
   padding: 0.625rem 0.875rem;
   border: 0;
-  background: var(--navy-900);
-  color: #ffffff;
+  background: var(--bar);
+  color: var(--on-bar);
   font: inherit;
   font-size: 0.9375rem;
   font-weight: 700;
@@ -208,10 +207,9 @@
   min-width: 0;
   padding: 0.75rem 1rem;
   border: 1px solid var(--border-control);
-  border-left: 4px solid var(--navy-900);
+  border-left: 4px solid var(--selected);
   background: var(--surface);
 }
-.dark .resource-admin { border-left-color: var(--accent); }
 .resource-admin > h3 { margin: 0 0 0.5rem; font-size: 0.875rem; }
 .resource-admin dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.5rem 1.5rem; margin: 0; }
 .resource-admin dd { margin: 0; font-size: 0.8125rem; }

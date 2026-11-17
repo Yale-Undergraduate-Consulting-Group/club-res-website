@@ -47,7 +47,7 @@ export default function CompanyLinesField({ state, disabled }: { state: CompanyL
               {line.sources && line.sources.length > 0 && (
                 <p className="text-xs text-slate-500">From {line.sources.join(', ')}.</p>
               )}
-              {line.error && <p className="text-xs text-red-700" role="alert">{line.error}</p>}
+              {line.error && <p className="text-xs text-[var(--error)]" role="alert">{line.error}</p>}
             </li>
           );
         })}

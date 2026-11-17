@@ -7,9 +7,7 @@ import type { MemberProfile, Project, CustomFormat, LogEntry, Attachment } from 
 import { useEffect, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
-import { useTheme } from '../contexts/useTheme';
 import AppTabMenu from '../components/AppTabMenu';
-import AppSubnav from '../components/AppSubnav';
 import SlackIntegration from '../components/SlackIntegration';
 import SignOffPreview from '../components/SignOffPreview';
 import { EMPTY_SIGN_OFF, signOffFrom } from '../lib/signOff';
@@ -18,7 +16,6 @@ import { getStoredPreferences, savePreferences, applyUserPreferences, resetPrefe
 
 export default function Profile() {
   const { user } = useOutletContext<{ user: { email: string; name?: string; picture?: string; role?: string } }>();
-  const { theme, setTheme } = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useUrlTab<'profile' | 'integrations' | 'settings'>(
     ['profile', 'integrations', 'settings'],
@@ -283,19 +280,10 @@ export default function Profile() {
       {activeTab === 'settings' && (
         <div className="space-y-8">
           <div className="surface-card">
-            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] mb-4">Appearance</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">Choose light or dark theme.</p>
-            <AppSubnav
-              items={[
-                { id: 'light', label: 'Light' },
-                { id: 'dark', label: 'Dark' },
-              ]}
-              active={theme}
-              onChange={(id) => setTheme(id as 'light' | 'dark')}
-            />
-            <div className="mt-6 pt-4 border-t border-pale-sky dark:border-slate-600 space-y-4">
+            <h2 className="font-semibold text-deep-navy mb-4">Appearance</h2>
+            <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]">Accent Color</label>
+                <label className="text-sm font-medium text-deep-navy">Accent Color</label>
                 <input
                   type="color"
                   value={accentColor}
@@ -305,9 +293,9 @@ export default function Profile() {
                     savePreferences({ accent: v });
                     applyUserPreferences({ ...getStoredPreferences(), accent: v });
                   }}
-                  className="w-10 h-10 rounded border border-pale-sky dark:border-slate-500 cursor-pointer"
+                  className="w-10 h-10 rounded border border-pale-sky cursor-pointer"
                 />
-                <span className="text-xs text-slate-500 dark:text-slate-400">Buttons and links</span>
+                <span className="text-xs text-slate-500">Buttons and links</span>
               </div>
               <label className="flex items-center gap-2">
                 <input
@@ -320,10 +308,10 @@ export default function Profile() {
                     applyUserPreferences({ ...getStoredPreferences(), compact: v });
                   }}
                 />
-                <span className="text-sm text-deep-navy dark:text-[var(--text-primary)]">Compact Mode (tighter spacing)</span>
+                <span className="text-sm text-deep-navy">Compact Mode (tighter spacing)</span>
               </label>
               <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-deep-navy dark:text-[var(--text-primary)]">UI Font Size</label>
+                <label className="text-sm font-medium text-deep-navy">UI Font Size</label>
                 <select
                   value={uiFontSize}
                   onChange={(e) => {
@@ -332,7 +320,7 @@ export default function Profile() {
                     savePreferences({ fontSize: v });
                     applyUserPreferences({ ...getStoredPreferences(), fontSize: v });
                   }}
-                  className="px-3 py-2 border border-pale-sky dark:border-slate-600 bg-white dark:bg-slate-700 text-deep-navy dark:text-[var(--text-primary)]"
+                  className="px-3 py-2 border border-pale-sky bg-[var(--surface)] text-deep-navy"
                 >
                   <option value="small">Small</option>
                   <option value="medium">Medium</option>
@@ -350,10 +338,10 @@ export default function Profile() {
                     applyUserPreferences({ ...getStoredPreferences(), reduceMotion: v });
                   }}
                 />
-                <span className="text-sm text-deep-navy dark:text-[var(--text-primary)]">Reduce Motion</span>
+                <span className="text-sm text-deep-navy">Reduce Motion</span>
               </label>
             </div>
-            <div className="mt-6 pt-4 border-t border-pale-sky dark:border-slate-600">
+            <div className="mt-6 pt-4 border-t border-pale-sky">
               <button
                 type="button"
                 onClick={() => {
@@ -367,7 +355,7 @@ export default function Profile() {
               >
                 Revert to Default
               </button>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Restore Original Appearance Settings.</p>
+              <p className="text-xs text-slate-500 mt-2">Restore Original Appearance Settings.</p>
             </div>
           </div>
           <div className="surface-card">

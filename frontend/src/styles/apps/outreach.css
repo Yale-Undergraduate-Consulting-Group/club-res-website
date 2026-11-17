@@ -3,25 +3,19 @@
 
 .email-studio-input,
 .email-studio-body {
-  background-color: #ffffff;
+  background-color: var(--surface);
   color: var(--text-primary);
   font-family: var(--yucg-font);
 }
-.dark .email-studio-input,
-.dark .email-studio-body {
-  background-color: transparent;
-  color: var(--text-primary);
-}
 
-/* Email Studio: attachments + editor blocks white in light mode */
+/* Email Studio: attachments + editor blocks; a soft tint in dark so they stand off the column. */
 .email-studio-block {
-  background-color: #ffffff;
+  background-color: var(--surface);
   border-color: var(--border);
   border-width: 1px;
 }
 .dark .email-studio-block {
   background-color: var(--info-soft);
-  border-color: var(--border);
 }
 
 /* Email Studio: editor column matches theme surfaces */
@@ -39,46 +33,26 @@
   font-family: var(--yucg-font);
 }
 
-/*
- * Email Studio — Gmail preview: explicit colors so .dark .bg-slate-* hacks don't flatten contrast.
- */
+/* Email Studio — Gmail preview: the message on the page surface, in either theme. */
 .email-studio-gmail-rail {
-  background-color: var(--pale-sky);
-}
-.dark .email-studio-gmail-rail {
   background-color: var(--surface-subtle);
 }
 .email-studio-gmail-card {
-  background-color: #ffffff;
+  background-color: var(--surface);
   border: 1px solid var(--border-control);
   box-shadow: none;
 }
-.dark .email-studio-gmail-card {
-  background-color: #f8fafc;
-  border-color: var(--border-control);
-  box-shadow: none;
-}
 .email-studio-gmail-body {
-  background-color: #ffffff;
-}
-.dark .email-studio-gmail-body {
-  background-color: #f8fafc;
+  background-color: var(--surface);
 }
 .email-studio-gmail-toolbar {
   background-color: var(--surface-subtle);
   border-bottom: 1px solid var(--border);
 }
-.dark .email-studio-gmail-toolbar {
-  background-color: var(--surface-subtle);
-  border-bottom-color: var(--border);
-}
 .email-studio-gmail-toolbar button,
 .email-studio-gmail-toolbar span {
   color: var(--text-primary);
   font-size: 0.75rem;
-}
-.dark .email-studio-gmail-toolbar span {
-  color: var(--text-primary);
 }
 
 @layer components {
@@ -390,7 +364,7 @@
 .research-evidence p { margin: 0; color: var(--ink-muted); }
 .research-evidence blockquote { margin: 0.25rem 0 0; padding: 0.5rem; border-left: 3px solid var(--border); background: var(--surface-subtle); color: var(--ink); }
 .research-sources li { display: grid; gap: 0.25rem; }
-.research-error { color: var(--navy-1000, #002060); font-weight: 700; }
+.research-error { color: var(--error); font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) {
   .research-workspace * { transition: none !important; animation: none !important; }

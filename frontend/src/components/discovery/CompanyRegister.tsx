@@ -191,7 +191,7 @@ export default function CompanyRegister() {
             <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="register-sector">Sector</label>
             <select
               id="register-sector"
-              className="w-full border border-pale-sky px-3 py-2 text-sm bg-white"
+              className="w-full border border-pale-sky px-3 py-2 text-sm bg-[var(--surface)]"
               value={sector}
               onChange={(event) => setSector(event.target.value)}
             >
@@ -223,7 +223,7 @@ export default function CompanyRegister() {
       {error && <p className="ui-notice ui-notice--danger">{error}</p>}
 
       {picked.size > 0 && (
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 border border-deep-navy bg-white px-4 py-3">
+        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 border border-deep-navy bg-[var(--surface)] px-4 py-3">
           <span className="text-sm font-semibold text-deep-navy">
             {picked.size} compan{picked.size === 1 ? 'y' : 'ies'} selected
           </span>

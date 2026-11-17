@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { mockApi } from './support/clubMock';
 
 /**
  * The club's maintainer reported buttons of differing sizes, mixed fonts and
@@ -98,4 +99,39 @@ test('charts stay inside the club palette: blues and greys, no stock green or re
     // a green or red slice while still allowing greys.
     expect(b, `fill ${fill}`).toBeGreaterThanOrEqual(Math.max(r, g));
   }
+});
+
+// The president asked for destructive buttons (Deactivate, Delete, Remove,
+// Revoke) to be white with an edge at rest and to turn red only when pointed
+// at or tabbed to, with a short colour transition.
+test('a destructive button is white with an edge at rest and turns the error colour on hover and focus', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await mockApi(page, true);
+  await page.goto('/admin');
+  const deactivate = page.getByRole('button', { name: 'Deactivate' });
+  await expect(deactivate).toBeVisible();
+  const look = (button: Locator) => button.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { background: s.backgroundColor, border: s.borderTopColor, color: s.color, transition: s.transitionProperty, duration: s.transitionDuration };
+  });
+  const reddish = (rgb: string) => { const [r, g, b] = rgb.match(/\d+/g)!.map(Number); return r > g + 40 && r > b + 40; };
+
+  const rest = await look(deactivate);
+  expect(rest.background).toBe('rgb(255, 255, 255)');
+  expect(reddish(rest.border)).toBe(false);
+  expect(rest.transition).toContain('background-color');
+  expect(rest.transition).toContain('border-color');
+  expect(parseFloat(rest.duration)).toBeGreaterThanOrEqual(0.15);
+  expect(parseFloat(rest.duration)).toBeLessThanOrEqual(0.2);
+
+  await deactivate.hover();
+  await expect.poll(async () => reddish((await look(deactivate)).background)).toBe(true);
+  await expect.poll(async () => (await look(deactivate)).color).toBe('rgb(255, 255, 255)');
+
+  await page.mouse.move(0, 0);
+  await expect.poll(async () => (await look(deactivate)).background).toBe('rgb(255, 255, 255)');
+  await deactivate.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect.poll(async () => reddish((await look(deactivate)).background)).toBe(true);
 });

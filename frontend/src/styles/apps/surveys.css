@@ -61,8 +61,8 @@
 }
 .survey-msg--user {
   align-self: flex-end;
-  background: var(--deep-navy);
-  color: #ffffff;
+  background: var(--selected);
+  color: var(--on-selected);
 }
 .survey-msg--note,
 .survey-msg--error {
@@ -73,7 +73,7 @@
   color: var(--ink-muted);
 }
 .survey-msg--error {
-  color: var(--danger);
+  color: var(--error);
 }
 
 .survey-compose {

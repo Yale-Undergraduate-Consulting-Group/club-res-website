@@ -8,10 +8,10 @@ export default function SignOffPreview({ signOff, className = '', logoClassName 
   const logo = signOff.logoUrl || signOff.logoDefault;
   return (
     <div className={className} style={{ fontFamily: 'Arial, Helvetica, sans-serif' }} data-testid="sign-off-preview">
-      <div className="text-black dark:text-slate-100">--</div>
+      <div className="text-[var(--text-primary)]">--</div>
       <div className="mt-2 flex items-center gap-3">
         {logo && <img src={logo} alt="YUCG" className={`${logoClassName} h-auto object-contain`} />}
-        <div className={`text-black dark:text-slate-100 ${logo ? 'border-l border-slate-300 pl-3' : ''}`}>
+        <div className={`text-[var(--text-primary)] ${logo ? 'border-l border-slate-300 pl-3' : ''}`}>
           <div className="font-bold">
             {signOff.name || 'Your name'}{signOff.pronouns && <> (<em>{signOff.pronouns}</em>)</>}
           </div>
@@ -19,7 +19,7 @@ export default function SignOffPreview({ signOff, className = '', logoClassName 
           <div>{signOff.organization}</div>
           {(signOff.linkedin || signOff.phone) && (
             <div>
-              {signOff.linkedin && <a href={signOff.linkedin} target="_blank" rel="noreferrer" className="text-[#1155cc] underline">LinkedIn</a>}
+              {signOff.linkedin && <a href={signOff.linkedin} target="_blank" rel="noreferrer" className="text-[var(--link)] underline">LinkedIn</a>}
               {signOff.linkedin && signOff.phone ? ' | ' : ''}{signOff.phone}
             </div>
           )}

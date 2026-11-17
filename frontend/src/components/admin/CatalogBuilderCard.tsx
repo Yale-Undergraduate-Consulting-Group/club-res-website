@@ -54,7 +54,7 @@ export default function CatalogBuilderCard() {
   return (
     <div className="surface-card" data-section="catalog-builder">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">Catalog builder</h2>
+        <h2 className="font-semibold text-deep-navy">Catalog builder</h2>
         <button
           type="button"
           className={`ui-button ui-button--sm ${status?.enabled ? 'ui-button--secondary' : 'ui-button--primary'}`}
@@ -65,7 +65,7 @@ export default function CatalogBuilderCard() {
           {busy ? 'Saving…' : status?.enabled ? 'Turn off' : 'Turn on'}
         </button>
       </div>
-      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+      <p className="text-sm text-slate-600 mb-4">
         Works down the company register day and night (largest US listed companies first, then the
         biggest UK groups, then the rest by size), running the same Find people search a member would.
         Everyone it finds shows on the Find page for that company; members still keep them before

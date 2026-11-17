@@ -98,7 +98,7 @@ export default function Campaigns() {
                 if (event.key === 'Enter') void createCampaign();
               }}
               placeholder="Campaign name"
-              className="mt-1 min-h-11 w-full border border-[var(--border)] bg-white px-3 text-slate-800"
+              className="mt-1 min-h-11 w-full border border-[var(--border)] bg-[var(--surface)] px-3 text-slate-800"
             />
           </label>
           <Button onClick={createCampaign} disabled={loading || !newName.trim()}>

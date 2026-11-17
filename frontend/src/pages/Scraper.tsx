@@ -156,11 +156,11 @@ export default function Scraper() {
       </div>
       )}
 
-      {error && <p className="text-[#ff3b30] text-[13px] px-1 mt-4" role="alert">{error}</p>}
+      {error && <p className="text-[var(--error)] text-[13px] px-1 mt-4" role="alert">{error}</p>}
       {infoMessage && <p className="text-deep-navy text-[13px] px-1 mt-2">{infoMessage}</p>}
 
       {contacts.length > 0 && (
-        <div className="mt-8 bg-white overflow-hidden border border-pale-sky">
+        <div className="mt-8 bg-[var(--surface)] overflow-hidden border border-pale-sky">
           <div className="px-5 py-4 border-b border-pale-sky flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-[15px] font-semibold text-deep-navy">Discovered ({contacts.length})</h2>
             {discoveryLog.length > 0 && (
@@ -214,7 +214,7 @@ export default function Scraper() {
               <p className="text-[12px] font-semibold text-deep-navy mb-2">AI audit log{scrapeRunId ? ` · run ${scrapeRunId.slice(0, 8)}…` : ''}</p>
               <ul className="space-y-2">
                 {discoveryLog.map((e, i) => (
-                  <li key={`${e.email}-${i}`} className="text-[12px] text-slate-700 border border-pale-sky/60 px-3 py-2 bg-white/80">
+                  <li key={`${e.email}-${i}`} className="text-[12px] text-slate-700 border border-pale-sky/60 px-3 py-2 bg-[var(--surface)]/80">
                     <span className="font-medium text-deep-navy">{e.name || '—'}</span> <span className="text-steel-blue">{e.email}</span>
                     {e.ai_reason && <p className="mt-1 text-slate-600">{e.ai_reason}</p>}
                   </li>
