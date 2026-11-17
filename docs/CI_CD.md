@@ -117,7 +117,7 @@ GitHub references: [organization ruleset API](https://docs.github.com/en/rest/or
 | Requirement | Intake: contributor → integration | Dev: integration → dev | Production: dev → prod |
 |---|---|---|---|
 | Frontend | Locked install, **unit tests (`npm run test:unit`)**, lint, dependency audit, ordinary build | Same checks plus `frontend/dist/index.html` static export | Same checks plus required `test:ui`, run as three parallel `ui` jobs (Playwright `--shard`); every shard must pass |
-| Backend | Full pytest suite (`backend/scripts/test_suite.py`): branch coverage, 80% floor on critical modules | Same | Same |
+| Backend | Full backend suite of standalone test scripts (`backend/scripts/test_suite.py`; no pytest): branch coverage, 80% floor on critical modules | Same | Same |
 | Container image | None | Build for `linux/amd64`, Trivy HIGH/CRITICAL scan, non-root import smoke with no network, for runtime changes; every deployment rebuilds and rescans | Same |
 | Terraform | **Not installed or validated** | Format, validate, mocked plan tests | Same checks repeated |
 | Source scanning | Workflow lint, secrets, Python audit/code scan when present | Adds configuration misconfiguration scan | Same checks repeated |
