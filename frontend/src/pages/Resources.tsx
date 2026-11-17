@@ -6,7 +6,7 @@ import {
 } from '../api';
 import AppTabMenu from '../components/AppTabMenu';
 import PageHeader from '../components/PageHeader';
-import { Button, Chip, ConfirmDialog, EmptyState, Notice } from '../components/ui/Primitives';
+import { Button, Chip, ConfirmDialog, EmptyState, Notice, StatusBadge } from '../components/ui/Primitives';
 import {
   clientText, disclosureLabel, editableLink, facetOptions, fileCountText, formatFileSize, formatRevenue, groupResources, groupTeam,
   hasAdminDetails, hiddenFilesNote, kindLabel, kindSingular, linkLabel, orderKinds,
@@ -21,6 +21,8 @@ type Filter = { q: string; kind: string; semester: string; industry: string; dis
 
 const EMPTY_FACETS: Facets = { kinds: [], semesters: [], industries: [], disclosures: [] };
 const DISCLOSURES: ResourceDisclosure[] = ['public', 'name_only', 'private'];
+/** Open to all, name only, team only: the label's dot colour. */
+const DISCLOSURE_TONE: Record<string, 'success' | 'warning' | 'info'> = { public: 'success', name_only: 'warning', private: 'info' };
 /** Past projects open first; every other type is one tab away instead of below every semester. */
 const DEFAULT_FILTER: Filter = { q: '', kind: 'past_project', semester: '', industry: '', disclosure: '' };
 /** The "All" tab's id; its filter value is the empty kind. */
@@ -341,9 +343,9 @@ function ResourceRow({ item, isAdmin, onChange, onDelete }: {
           {item.industry && <span className="resource-row__industry resource-wrap">{item.industry}</span>}
           <span className="resource-row__labels">
             {item.kind === 'past_project' && (
-              <span className={`resource-tag resource-tag--${item.disclosure}`}>{disclosureLabel(item.disclosure)}</span>
+              <StatusBadge tone={DISCLOSURE_TONE[item.disclosure] ?? 'neutral'}>{disclosureLabel(item.disclosure)}</StatusBadge>
             )}
-            {item.status && <span className="resource-tag resource-tag--status">{item.status}</span>}
+            {item.status && <StatusBadge>{item.status}</StatusBadge>}
             {count && <span className="resource-file-count">{count}</span>}
           </span>
         </button>
@@ -464,7 +466,7 @@ function ResourceFileRow({ item, file, onChange }: { item: ResourceItem; file: R
       <div className="resource-file__line">
         <span className="resource-file__name resource-wrap">
           {file.filename}<span className="resource-file__size"> {formatFileSize(file.byte_size)}</span>
-          {file.admin_only && <span className="resource-tag resource-tag--private">Admin only</span>}
+          {file.admin_only && <StatusBadge tone="info">Admin only</StatusBadge>}
         </span>
         <span className="resource-file__actions">
           <Button size="sm" variant="secondary" aria-label={`Open ${file.filename}`} disabled={busy === 'open'}
@@ -566,7 +568,7 @@ function FileVersions({ item, file, onChange }: { item: ResourceItem; file: Reso
                 </span>
               </span>
               {version.current ? (
-                <span className="resource-tag resource-tag--public">Current</span>
+                <StatusBadge tone="success">Current</StatusBadge>
               ) : (
                 <span className="resource-file__actions">
                   <Button size="sm" variant="secondary" disabled={busy === version.id} aria-label={`Open version from ${new Date(version.created_at * 1000).toLocaleDateString()}`}

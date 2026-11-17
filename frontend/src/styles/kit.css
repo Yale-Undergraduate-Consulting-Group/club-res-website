@@ -286,35 +286,34 @@ select:not([multiple]):not([size]) {
 .ui-notice--danger::before { content: "Error: "; font-weight: 900; }
 .dark .ui-notice--danger { color: var(--text-primary); }
 
-/* Status badges: the navy scale with the word always printed. Strong navy-900
-   white, medium blue-600 white, weak mist-100 navy, completed / N/A gray-350.
-   Danger is the muted error colour (failed). One minimum width, word centred,
-   so a column of statuses lines up whatever each one says; longer labels grow. */
+/* Status labels: plain text with a coloured dot, never a box, so only buttons
+   look clickable. The dot carries the tone; the word is always printed. */
 .ui-status {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 6rem;
-  min-height: 1.5rem;
-  padding: 0.1rem 0.5rem;
-  border: 0;
-  border-radius: 0;
-  background: var(--gray-350);
-  color: var(--navy-900);
+  gap: 0.375rem;
+  color: var(--text-secondary);
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
+.ui-status::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--steel-400);
+}
 
-.ui-status--info { background: var(--blue-600); color: #ffffff; }
-.ui-status--success { background: var(--navy-900); color: #ffffff; }
-.ui-status--warning { background: var(--mist-100); color: var(--navy-900); }
-.ui-status--danger { background: var(--slate-700); color: #ffffff; }
+.ui-status--info::before { background: var(--blue-600); }
+.ui-status--success::before { background: var(--success, #2e7d32); }
+.ui-status--warning::before { background: var(--warning, #b7791f); }
+.ui-status--danger { color: var(--error, #b42318); }
+.ui-status--danger::before { background: var(--error, #b42318); }
 
-.dark .ui-status { background: var(--surface-subtle); color: var(--text-primary); }
-.dark .ui-status--info { background: var(--blue-600); color: #ffffff; }
-.dark .ui-status--success { background: var(--accent); color: var(--navy-950); }
-.dark .ui-status--danger { background: var(--steel-600); color: #ffffff; }
+.dark .ui-status { color: var(--text-secondary); }
+.dark .ui-status--info::before { background: var(--accent); }
 
 /* Empty state: a plain white panel with a hairline, not a filled block. */
 .ui-empty {

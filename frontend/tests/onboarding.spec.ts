@@ -51,14 +51,16 @@ test('a connected member reconnects Slack only from settings, and only after con
   await expect(overviewCard.getByRole('button')).toHaveCount(0);
 
   await page.goto('/profile?tab=integrations');
-  const badge = page.getByRole('button', { name: 'Connected. Reconnect Slack' });
-  await badge.click();
+  const card = page.locator('section[aria-labelledby="slack-heading"]');
+  await expect(card.getByText('Connected', { exact: true })).toBeVisible();
+  const reconnect = card.getByRole('button', { name: 'Reconnect' });
+  await reconnect.click();
   const dialog = page.getByRole('dialog', { name: "You're already connected" });
   await expect(dialog).toContainText('already connected to YUCG');
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(page).toHaveURL(/tab=integrations/);
 
-  await badge.click();
+  await reconnect.click();
   await page.getByRole('dialog').getByRole('button', { name: 'Reconnect' }).click();
   await expect(page).toHaveURL(/slack=connected/);
 });
