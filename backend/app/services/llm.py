@@ -64,12 +64,6 @@ GEO_PREMIUM = 1.10
 #: cannot slip past the club budget.
 _UNPRICED = max(PRICES_PER_MILLION.values(), key=lambda price: price[1])
 
-#: The models a member may choose; the ids are each tier's best model.
-BEDROCK_ANTHROPIC: list[dict[str, str]] = [
-    {"id": TIERS["fast"][0], "label": "Claude Haiku", "tier": "haiku", "blurb": "Fastest and cheapest"},
-    {"id": TIERS["write"][0], "label": "Claude Sonnet", "tier": "sonnet", "blurb": "Default for writing and analysis"},
-    {"id": TIERS["deep"][0], "label": "Claude Opus", "tier": "opus", "blurb": "Most capable; about twice Sonnet's price"},
-]
 _ALLOWED = {model for chain in TIERS.values() for model in chain}
 
 #: Model calls in flight at once. Anthropic's own API takes LLM_INFERENCE_SLOTS
@@ -179,21 +173,6 @@ def model_chain(model_id: str) -> tuple[str, ...]:
         if model_id in chain:
             return chain[chain.index(model_id):]
     return (model_id,)
-
-
-def list_models() -> dict[str, Any]:
-    if llm_provider() == "anthropic":
-        # The deep tier runs on Sonnet here, so offering "Opus" would mislead.
-        models = [m for m in BEDROCK_ANTHROPIC if m["tier"] != "opus"]
-        label = "Claude (Anthropic API)"
-    else:
-        models = [m for m in BEDROCK_ANTHROPIC if m['id'] in allowed_bedrock_models()]
-        label = "Claude on Bedrock"
-    return {
-        "provider": llm_provider(),
-        "default": default_model_id(),
-        "groups": [{"id": "anthropic", "label": label, "models": models}],
-    }
 
 
 def complete_text(

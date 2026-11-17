@@ -111,10 +111,6 @@ export type Worklist = { owner_email?: string; owner_name?: string; id: number; 
 export type ReleasePerson = { id: number; full_name?: string; title?: string; email?: string; company?: string; company_domain?: string; kept: number; email_status?: string; vendor_check?: string };
 export type Release = { id: number; name: string; status: string; people?: ReleasePerson[]; targets?: { id: number; company: string; company_domain?: string }[] };
 export type InboxItem = { name?: string; email?: string; status?: string; email_verification_status?: string; id: number; subject?: string; body?: string; from_email?: string; received_at?: string };
-export type CitationSuggestions = {
-  projects: { id: number; client_name?: string; description?: string; semester?: string }[];
-  team_experience: { user_name?: string; role_in_project?: string; client_name?: string; semester?: string }[];
-};
 export type Member = { id: number; email: string; name?: string; role: string; is_active: number };
 /** A member's setup steps; only Gmail blocks sending (backend/app/services/member_readiness.py). */
 export type Readiness = { signed_in: boolean; gmail: boolean; sign_off: boolean; slack: boolean; project: boolean; has_sent: boolean; ready_to_send: boolean };
@@ -814,18 +810,8 @@ export const api = {
   },
   projects: {
     list: () => fetchApi<Project[]>('/api/workspace/projects'),
-    suggestCitations: (company: string) =>
-      fetchApi<CitationSuggestions>(`/api/projects/suggest-citations?company=${encodeURIComponent(company)}`),
   },
   health: () => fetchApi<{ status: string }>('/api/health'),
-  ai: {
-    models: () =>
-      fetchApi<{
-        provider: string;
-        default: string;
-        groups: { id: string; label: string; models: { id: string; label: string; tier: string; blurb: string }[] }[];
-      }>('/api/ai/models'),
-  },
   telemetry: {
     event: (data: { event_type: string; resource_type?: string; details?: Record<string, unknown> }) =>
       fetchApi<unknown>('/api/telemetry/event', { method: 'POST', body: JSON.stringify(data) }).catch(() => {}),
@@ -1039,19 +1025,6 @@ export const api = {
       ),
   },
   emails: {
-    generate: (data: {
-      contact_id: number;
-      tone?: string;
-      length?: string;
-      angle?: string;
-      custom_instructions?: string;
-      value_proposition?: string;
-      model?: string;
-    }) =>
-      fetchApi<{ subject: string; body: string; contact_id: number }>('/api/emails/generate', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
     testSend: (data: { to_email: string; subject: string; body: string; attachment_ids?: number[] }) =>
       fetchApi<unknown>('/api/emails/test-send', { method: 'POST', body: JSON.stringify(data) }),
     generated: (params?: { contact_id?: number; sort?: string }) =>
@@ -1064,34 +1037,8 @@ export const api = {
       fetchApi<{ ok: boolean; id: number }>(`/api/emails/generated/${id}`, { method: 'DELETE' }),
     clearGeneratedCache: () =>
       fetchApi<{ ok: boolean; deleted: number }>('/api/emails/generated', { method: 'DELETE' }),
-    generateTemplate: (data: {
-      name?: string;
-      company?: string;
-      title?: string;
-      email?: string;
-      tone?: string;
-      length?: string;
-      angle?: string;
-      custom_instructions?: string;
-      value_proposition?: string;
-      model?: string;
-    }) =>
-      fetchApi<{ subject: string; body: string; contact_id?: number | null }>('/api/emails/generate-template', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
   },
   campaigns: {
-    /** One AI draft for a whole group, or one per company when asked. */
-    draftTemplate: (data: { companies: string[]; roles?: string; goal: string; proof?: string; length?: string; per_company?: boolean }) =>
-      fetchApi<{
-        subject?: string;
-        body?: string;
-        messages?: Record<string, { subject: string; body: string }>;
-        grounded?: string[];
-      }>('/api/campaigns/draft-template', {
-        method: 'POST', body: JSON.stringify(data),
-      }),
     /** Render one written message per recipient; preview_only stops before creating. */
     build: (data: BuildRequest) =>
       fetchApi<BuildResult>('/api/campaigns/build', { method: 'POST', body: JSON.stringify(data) }),

@@ -64,13 +64,13 @@ const STOPS: Stop[] = [
     route: '/studio',
     target: '.email-studio-contacts',
     title: 'Drafts',
-    body: 'Optional: to read and edit each email before it goes, tick people here and press "Write to each of these", or arrive from "Open these in Drafts" on Find people. "Draft an advisory email for each" writes every person a note proposing two or three projects a YUCG team could build for their company.',
+    body: 'Optional: to read and edit each email before it goes, tick people here and press "Write to each of these", or arrive from "Open these in Drafts" on Find people. Each opens written from the club template, with its company\'s line to confirm.',
   },
   {
     route: '/studio',
     target: '#email-editor-section',
     title: 'Read, edit, test',
-    body: 'Open anyone to read and change their draft. "Send test" mails it to you first, so you see exactly what they would. Then save the drafts as a campaign.',
+    body: 'Open anyone to read and change their email. "Send test" mails it to you first, so you see exactly what they would. Then save the drafts as a campaign.',
   },
   {
     route: '/outreach',

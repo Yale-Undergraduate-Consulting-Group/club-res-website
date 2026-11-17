@@ -90,12 +90,11 @@ while it is open can join, so close it when the room is done.
 |---|---|---|---|
 | `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home (the hub), Profile, Admin | — |
 | `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Overview (`/campaigns`), Find contacts, Drafts, Pipeline, Directory, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
-| `projects` | `/api/projects` | (inside Admin) | — |
 | `surveys` | `/api/surveys` | Survey builder | — |
 | `sentiment` | `/api/sentiment` | Market sentiment (Interviews, Reddit, Google reviews) | stale-run reaper (fails runs left `running` by a restart) |
 | `resources` | `/api/resources` | Resources | — |
 
-`/api/health` and `/api/ai/models` belong to the server itself.
+`/api/health` belongs to the server itself.
 
 ### Resources (`resources`)
 

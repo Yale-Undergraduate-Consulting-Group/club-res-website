@@ -66,8 +66,8 @@ API=$!
 curl -sf --retry 40 --retry-all-errors --retry-delay 1 "http://127.0.0.1:$PORT/api/health"
 sqlite3 /tmp/verify.db "INSERT INTO users (id, email, name, role, is_active) VALUES (1, 'admin@yale.edu', 'Admin', 'admin', 1)"
 TOKEN=$(.venv/bin/python -c "from app.jwt_utils import create_token; print(create_token(1, 'admin@yale.edu', role='admin'))" | tail -1)
-curl -s -o /dev/null -w "anonymous: %{http_code}\n" "http://127.0.0.1:$PORT/api/ai/models"
-curl -s -o /dev/null -w "admin: %{http_code}\n" -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/api/ai/models"
+curl -s -o /dev/null -w "anonymous: %{http_code}\n" "http://127.0.0.1:$PORT/api/settings"
+curl -s -o /dev/null -w "admin: %{http_code}\n" -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/api/settings"
 kill $API; rm -f /tmp/verify.db* /tmp/verify-api.log
 ```
 

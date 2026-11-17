@@ -559,7 +559,7 @@ export default function Outreach() {
                     ))}
                   </select>
                   {/* Hands the exact people ticked to Drafts, where each
-                      gets an advisory draft of their own - the same panel
+                      opens written from the club template - the same panel
                       Find people and Drafts' own sidebar open. */}
                   <button
                     type="button"

@@ -113,7 +113,8 @@ async function mockApi(page: Page, authenticated: boolean) {
     else if (path === '/api/admin/projects') body = [{ id: 1, name: 'Project Lego', semester: 'Spring 2026', description: '', client_name: '', discussable: false }];
     else if (path === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (path === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (path === '/api/ai/models') body = { groups: [] };
+    else if (path === '/api/outreach/templates') body = [{ id: 11, name: 'Intro', subject: 'Introduction from the Yale Undergraduate Consulting Group', body: "Hi {first},\n\nI'd love to work with {company} on a project in the new year. {personalisation}\n\nBest,\n{sender_first_name}", use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false }];
+    else if (path === '/api/campaigns/build') body = { recipients: 1, ready: 1, held: [], skipped: 0, companies: ['Acme Industrial Holdings'], sample: { email: 'jordan.rivers@acme-industrial-holdings.com', subject: 'Introduction from the Yale Undergraduate Consulting Group', body: "Hi Jordan,\n\nI'd love to work with Acme Industrial Holdings on a project in the new year.\n\nBest,\nAlice" } };
     else if (path === '/api/settings' || path === '/api/auth/profile' || path.startsWith('/api/gmail')) body = {};
     else if (path.startsWith('/api/auth/') && path.endsWith('/status')) body = { connected: false };
     else if (path.startsWith('/api/yucg/rosters')) body = { rosters: [] };
@@ -266,8 +267,8 @@ const SURFACES: Surface[] = [
     steps: [
       draftsStep('1. Contact'),
       async (page) => { await page.getByText('Jordan Rivers', { exact: true }).first().click(); },
-      draftsStep('2. AI assistance'),
-      draftsStep('3. Write'),
+      draftsStep('2. Write'),
+      async (page) => { await page.getByTestId('company-lines').waitFor(); },
       async (page) => { await page.locator('.email-studio-body').evaluate((el) => el.scrollIntoView({ block: 'center' })); },
     ],
   },

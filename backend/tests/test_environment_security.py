@@ -102,9 +102,13 @@ async def tests():
     for raw, expected in [('prefix {"ok":true} suffix', {'ok': True}), ('invalid', None), ('{bad}', None)]:
         with patch.object(llm, 'complete_text', return_value=raw):
             assert llm.complete_json('test') == expected
-    with patch.dict(os.environ, {'LLM_PROVIDER': 'bedrock'}):
-        with patch.dict(os.environ, {'BEDROCK_ALLOWED_MODEL_IDS': llm.rank_model_id()}):
-            assert all(m['id'] == llm.rank_model_id() for m in llm.list_models()['groups'][0]['models'])
+    with patch.dict(os.environ, {'LLM_PROVIDER': 'bedrock', 'BEDROCK_ALLOWED_MODEL_IDS': llm.rank_model_id()}):
+        assert llm.validate_model(llm.rank_model_id()) == llm.rank_model_id()
+        try:
+            llm.validate_model('us.anthropic.not-allowed')
+            raise AssertionError('A model outside the allowlist was accepted')
+        except HTTPException as exc:
+            assert exc.status_code == 400
     with patch.dict(os.environ, {'LLM_PROVIDER': 'ollama'}), patch('boto3.client') as factory:
         factory.return_value.converse.return_value = {'output': {'message': {'content': [{'text': 'hosted'}]}}}
         assert llm.complete_text('brief') == 'hosted'
@@ -128,14 +132,6 @@ async def tests():
                 raise AssertionError('Concurrency guard bypassed')
             except HTTPException as error:
                 assert error.status_code == 429
-    from app.services.ollama_email_service import generate_email
-    for error in (HTTPException(429, 'Quota reached'), RuntimeError('provider unavailable')):
-        with patch.object(llm, 'complete_json', side_effect=error):
-            try:
-                generate_email(None, None, None, None)
-                raise AssertionError('Generation failure became a fabricated draft')
-            except HTTPException as result:
-                assert result.status_code == (429 if isinstance(error, HTTPException) else 502)
     await init_db()
     async def reset_paid():
         db=await get_db()

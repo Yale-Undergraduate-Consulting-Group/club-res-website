@@ -41,7 +41,7 @@ const DIRECTORY = [
   dirPerson('Ada Lovelace', 'ada@acme.com', { contact_id: 23, ready: false, reach: { state: 'contacted', by: 'Ana', by_me: false, at: null, sends: 1, claimed_by: null } }),
 ];
 
-async function mockServer(page: Page, opts: { aiDown?: boolean; clubIntro?: boolean } = {}) {
+async function mockServer(page: Page, opts: { clubIntro?: boolean } = {}) {
   const builds: Record<string, unknown>[] = [];
   const imports: Record<string, unknown>[] = [];
   const releases: string[] = [];
@@ -50,7 +50,6 @@ async function mockServer(page: Page, opts: { aiDown?: boolean; clubIntro?: bool
     const request = route.request();
     const path = new URL(request.url()).pathname;
     let body: unknown = {};
-    let status = 200;
     if (path === '/api/auth/me') body = { authenticated: true, user };
     else if (path === '/api/outreach/templates') body = opts.clubIntro ? CLUB_INTRO : TEMPLATES;
     else if (path === '/api/campaigns/personalisation') {
@@ -97,13 +96,10 @@ async function mockServer(page: Page, opts: { aiDown?: boolean; clubIntro?: bool
       const ready = new URL(request.url()).searchParams.get('ready');
       const items = DIRECTORY.filter((p) => !ready || p.ready);
       body = { items, total: items.length, limit: 50, offset: 0, capped: false };
-    } else if (path === '/api/emails/generate' && opts.aiDown) {
-      status = 503;
-      body = { detail: 'The language model is unavailable right now.' };
-    } else if (path === '/api/projects/suggest-citations') body = { projects: [], team_experience: [] };
+    }
     else if (path === '/api/outreach/metrics/pipeline') body = { by_status: [] };
     else if (/\/companies\/summary$|\/sequences$|\/generated$|\/releases$|\/my-projects$|\/attachments$/.test(path)) body = [];
-    await route.fulfill({ status, json: body });
+    await route.fulfill({ json: body });
   });
   return { builds, releases, imports, suggested };
 }
@@ -160,18 +156,13 @@ test('ticked Directory people are queued; a search result is added to contacts f
   expect(builds.at(-1)).toEqual({ contact_ids: [21, 22, 31], template_id: 11, name: 'Directory selection: Intro' });
 });
 
-test('when the AI model is unavailable the member is told, and can use a template instead', async ({ page }) => {
-  const { builds } = await mockServer(page, { aiDown: true });
+test('people handed to Drafts are queued together through the same panel', async ({ page }) => {
+  const { builds } = await mockServer(page);
   await page.goto('/studio?companies=Acme%20Corp&contact_ids=1%2C2');
 
-  const batch = page.getByTestId('advisory-batch');
-  await batch.getByRole('button', { name: /Draft an advisory email for each/ }).click();
-  await expect(batch).toContainText('AI drafting is unavailable right now — use a template.');
-  // Not the provider's error, and not a row of failed drafts.
-  await expect(batch).not.toContainText('language model');
-  await expect(batch).not.toContainText('failed');
-
-  await batch.getByRole('button', { name: 'Use a template' }).click();
+  const handoff = page.getByTestId('handoff-people');
+  await expect(handoff).not.toContainText(/advisory|AI/);
+  await handoff.getByRole('button', { name: 'Queue all 2' }).click();
   await pickTemplateAndQueue(page);
   expect(builds.at(-1)).toMatchObject({ contact_ids: [1, 2], template_id: 11 });
 });

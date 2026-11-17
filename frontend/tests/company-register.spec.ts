@@ -94,7 +94,6 @@ async function mockRegister(page: Page, opts: { many?: number } = {}) {
     else if (path === '/api/yucgoutreach/runs') body = [];
     else if (path === '/api/outreach/flows') body = [];
     else if (path === '/api/contacts') body = { items: [], total: 0, limit: 100, offset: 0 };
-    else if (path === '/api/ai/models') body = { groups: [] };
     else if (path.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (/\/companies\/summary$|\/sequences$|\/custom-formats$/.test(path)) body = [];
     await route.fulfill({ json: body });

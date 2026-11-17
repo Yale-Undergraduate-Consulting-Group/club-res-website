@@ -1,4 +1,4 @@
-import type { SendWarning } from '../api';
+import type { SendWarning, Template } from '../api';
 import { companyKey } from './recipients';
 
 /**
@@ -22,6 +22,13 @@ export const PERSONALISATION = '{personalisation}';
 
 export function usesPersonalisation(text: string): boolean {
   return text.includes(PERSONALISATION);
+}
+
+/** The club's Intro if there is one, else the first club template: what the
+ *  Send panel and a new draft start from. */
+export function clubTemplate(list: Template[]): Template | undefined {
+  const club = list.filter((t) => t.scope === 'club');
+  return club.find((t) => t.name.trim().toLowerCase() === 'intro') ?? club[0] ?? list[0];
 }
 
 /** The companies a send writes to, once each, in the order the people come. */

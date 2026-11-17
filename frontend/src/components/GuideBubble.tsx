@@ -61,8 +61,8 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
     guide: {
       title: 'Drafts',
       steps: [
-        'Studio writes one bespoke email to one named person.',
-        'To write to several people, tick them and use "Write to each of these N": each gets an advisory draft of their own.',
+        'A contact with no saved draft opens written from the club template; confirm their company\'s line, then edit by hand if you like.',
+        'To write to several people, tick them and use "Write to each of these N": open them one by one, or queue them all with the club template.',
       ],
       next: { to: '/scraper?view=company', label: 'Find people' },
     },

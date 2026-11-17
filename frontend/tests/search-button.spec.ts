@@ -41,7 +41,6 @@ async function mock(page: Page, opts: { sheetRows?: string[][] } = {}) {
       const id = Number(path.split('/').pop());
       body = { id, company_name: runsCreated[id - 101]?.company_name, status: 'running', progress_pct: 10, progress_message: 'Searching…' };
     } else if (path === '/api/contacts') body = { items: [], total: 0, limit: 2000, offset: 0 };
-    else if (path === '/api/ai/models') body = { groups: [] };
     else if (/\/companies\/summary$|\/sequences$|\/custom-formats$|\/rosters$/.test(path)) body = [];
     else if (path.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     await route.fulfill({ status, json: body });

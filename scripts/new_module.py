@@ -77,7 +77,7 @@ def plan(root: Path, app_id: str, title: str, purpose: str) -> dict[Path, str]:
     out[modules] = text
 
     docs = root / "docs" / "PLATFORM.md"
-    out[docs] = insert(docs.read_text(), r"^(\| `projects` \|.*\|\n(?:\|.*\|\n)*)",
+    out[docs] = insert(docs.read_text(), r"^(\| `outreach` \|.*\|\n(?:\|.*\|\n)*)",
                        rf"\1| `{app_id}` | `/api/{app_id}` | {title} | — |\n", "the table of apps in docs/PLATFORM.md")
     return out
 

@@ -1,15 +1,9 @@
 """Member-owned email drafts and controlled test delivery."""
 from fastapi import APIRouter, HTTPException, Depends
-import hashlib
-import json
-from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
 from app.auth_deps import get_current_user, get_current_user_optional
-from app.models import EmailGenerateRequest, EmailGenerateResponse, EmailGenerateTemplateRequest
-from app.services.ollama_email_service import generate_email
-from app.services.usage_service import log_event
 
 router = APIRouter()
 
@@ -29,225 +23,6 @@ class DraftSaveRequest(BaseModel):
 class DraftUpdateRequest(BaseModel):
     subject: str
     body: str
-
-
-
-@router.post("/generate", response_model=EmailGenerateResponse)
-async def generate_email_for_contact(req: EmailGenerateRequest, user: dict = Depends(get_current_user)):
-    """Generate a grounded starting draft for a contact."""
-    db = await get_db()
-    try:
-        from app.services.contact_access import require_contact_access
-        row = await require_contact_access(db, req.contact_id, user)
-        contact = dict(row)
-
-        from app.services.contact_scraper import normalize_domain
-        company_domain = normalize_domain(contact.get("company_domain") or "")
-        from app.services.generation_policy import draft_evidence
-        evidence = await draft_evidence(db, contact, user["id"])
-        # The register's notes on the company steer which projects an
-        # advisory draft proposes; the other angles do not use them.
-        company_context = ""
-        if req.angle == "advisory" and contact.get("company"):
-            from app.routers.campaigns import _company_notes
-            notes = await _company_notes(db, [contact["company"]])
-            company_context = notes.get(contact["company"].strip().lower(), "")
-
-        # A draft is a pure function of its brief. Regenerating an unchanged
-        # brief bills a second Bedrock call to produce a near-identical email,
-        # which is the most common wasted spend in the app: members press
-        # Generate again while reading. Fingerprint the inputs and reuse.
-        brief_hash = hashlib.sha256(json.dumps({
-            "contact": [contact.get("name"), contact.get("title"), contact.get("company"), company_domain],
-            "tone": req.tone, "length": req.length, "angle": req.angle,
-            "instructions": req.custom_instructions, "value": req.value_proposition,
-            "model": req.model, "company_context": company_context,
-            "evidence": sorted(str(s.get("id")) for s in (evidence or {}).get("sources", [])),
-        }, sort_keys=True, default=str).encode()).hexdigest()
-
-        cached = await (await db.execute(
-            """SELECT subject, body FROM generated_emails
-               WHERE user_id=? AND contact_id=? AND brief_hash=?
-               ORDER BY id DESC LIMIT 1""",
-            (user["id"], req.contact_id, brief_hash),
-        )).fetchone()
-        if cached and cached["subject"] and cached["body"]:
-            await log_event(
-                user["id"], "email_generation_reused", "email",
-                {"contact_id": req.contact_id},
-            )
-            return EmailGenerateResponse(
-                subject=cached["subject"], body=cached["body"], contact_id=req.contact_id,
-            )
-
-        subject, body = await run_in_threadpool(
-            generate_email,
-            contact_name=contact.get("name"),
-            contact_title=contact.get("title"),
-            company_name=contact.get("company"),
-            company_domain=company_domain,
-            tone=req.tone,
-            length=req.length.replace("-", "_"),
-            angle=req.angle,
-            custom_instructions=req.custom_instructions,
-            value_proposition=req.value_proposition,
-            model=req.model,
-            evidence=evidence,
-            company_context=company_context,
-        )
-        await db.execute(
-            """INSERT INTO generated_emails (user_id, contact_id, subject, body, evidence_json, brief_hash)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (user["id"], req.contact_id, subject, body, json.dumps(evidence), brief_hash),
-        )
-        await db.commit()
-
-        await log_event(
-            user["id"], "email_generated", "email",
-            {"contact_id": req.contact_id, "tone": req.tone, "length": req.length, "angle": req.angle},
-        )
-        return EmailGenerateResponse(
-            subject=subject,
-            body=body,
-            contact_id=req.contact_id,
-        )
-    finally:
-        await db.close()
-
-
-async def _upsert_contact_by_email(
-    db,
-    *,
-    email: str,
-    name: str | None,
-    title: str | None,
-    company: str | None,
-) -> int:
-    from app.services.contact_scraper import normalize_domain, sanitize_email
-
-    em = sanitize_email(email).strip().lower()
-    if not em or "@" not in em:
-        raise HTTPException(400, "Valid email required to save a catalog contact")
-    domain = normalize_domain(company or "") if company else ""
-    cur = await db.execute("SELECT id FROM contacts WHERE lower(email) = ?", (em,))
-    row = await cur.fetchone()
-    if row:
-        cid = int(row["id"])
-        await db.execute(
-            """UPDATE contacts SET
-                   name = COALESCE(NULLIF(?, ''), name),
-                   title = COALESCE(NULLIF(?, ''), title),
-                   company = COALESCE(NULLIF(?, ''), company),
-                   company_domain = COALESCE(NULLIF(?, ''), company_domain)
-               WHERE id = ?""",
-            ((name or "").strip(), (title or "").strip(), (company or "").strip(), domain, cid),
-        )
-        return cid
-    cur = await db.execute(
-        """INSERT INTO contacts (name, email, title, company, company_domain, contact_source)
-           VALUES (?, ?, ?, ?, ?, 'studio')""",
-        (name, em, title, company, domain or None),
-    )
-    return int(cur.lastrowid)
-
-
-@router.post("/generate-template", response_model=EmailGenerateResponse)
-async def generate_email_template(
-    req: EmailGenerateTemplateRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Generate a quick-compose draft, reusing the same unchanged brief."""
-    from app.services.contact_scraper import normalize_domain, sanitize_email
-
-    company_domain = normalize_domain(req.company or "") if req.company else ""
-    em = sanitize_email(req.email or "").strip().lower()
-    evidence = {
-        "sources": [],
-        "context_origin": "user_provided",
-        "user_provided": {"name": req.name, "title": req.title, "company": req.company},
-    }
-    contact_id = None
-    brief_hash = None
-    if em:
-        db = await get_db()
-        try:
-            from app.services.delivery_policy import require_recipient_allowed
-            await require_recipient_allowed(db, em)
-            existing = await (await db.execute(
-                "SELECT * FROM contacts WHERE lower(email)=?", (em,)
-            )).fetchone()
-            if existing:
-                from app.services.contact_access import require_contact_access
-                await require_contact_access(db, existing["id"], user)
-                contact_id = int(existing["id"])
-                from app.services.generation_policy import draft_evidence
-                evidence = {
-                    **await draft_evidence(db, dict(existing), user["id"]),
-                    "user_provided": evidence["user_provided"],
-                }
-            else:
-                contact_id = await _upsert_contact_by_email(
-                    db, email=em, name=req.name, title=req.title, company=req.company
-                )
-                from app.services.contact_intelligence import ingest_contact
-                await ingest_contact(
-                    db, actor_id=user["id"], origin="user_supplied",
-                    contact={"id": contact_id, "email": em, "name": req.name,
-                             "title": req.title, "company": req.company},
-                )
-                await db.commit()
-
-            brief_hash = hashlib.sha256(json.dumps({
-                "contact": [req.name, req.title, req.company, company_domain, em],
-                "tone": req.tone, "length": req.length, "angle": req.angle,
-                "instructions": req.custom_instructions, "value": req.value_proposition,
-                "model": req.model,
-                "evidence": sorted(str(s.get("id")) for s in evidence.get("sources", [])),
-            }, sort_keys=True, default=str).encode()).hexdigest()
-            cached = await (await db.execute(
-                """SELECT subject, body FROM generated_emails
-                   WHERE user_id=? AND contact_id=? AND brief_hash=?
-                   ORDER BY id DESC LIMIT 1""",
-                (user["id"], contact_id, brief_hash),
-            )).fetchone()
-            if cached and cached["subject"] and cached["body"]:
-                await log_event(
-                    user["id"], "email_generation_reused", "email",
-                    {"contact_id": contact_id},
-                )
-                return EmailGenerateResponse(
-                    subject=cached["subject"], body=cached["body"], contact_id=contact_id,
-                )
-        finally:
-            await db.close()
-
-    subject, body = await run_in_threadpool(
-        generate_email,
-        contact_name=req.name,
-        contact_title=req.title,
-        company_name=req.company,
-        company_domain=company_domain,
-        tone=req.tone,
-        length=req.length.replace("-", "_"),
-        angle=req.angle,
-        custom_instructions=req.custom_instructions,
-        value_proposition=req.value_proposition,
-        model=req.model,
-        evidence=evidence,
-    )
-    if contact_id is not None:
-        db = await get_db()
-        try:
-            await db.execute(
-                """INSERT INTO generated_emails
-                   (user_id, contact_id, subject, body, evidence_json, brief_hash)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (user["id"], contact_id, subject, body, json.dumps(evidence), brief_hash),
-            )
-            await db.commit()
-        finally:
-            await db.close()
-    return EmailGenerateResponse(subject=subject, body=body, contact_id=contact_id)
 
 
 @router.post("/test-send")
@@ -339,33 +114,6 @@ async def delete_generated_email_draft(
     finally:
         await db.close()
 
-@router.get("/generated/{draft_id}/evidence")
-async def get_generated_email_evidence(draft_id: int, user: dict = Depends(get_current_user)):
-    """Show the exact evidence a member-owned draft was grounded in."""
-    db = await get_db()
-    try:
-        row = await (await db.execute(
-            "SELECT id, user_id, contact_id, evidence_json FROM generated_emails WHERE id = ?",
-            (draft_id,),
-        )).fetchone()
-        if not row:
-            raise HTTPException(404, "Draft not found")
-        if row["user_id"] != user["id"]:
-            raise HTTPException(403, "Drafts are member-owned")
-        try:
-            evidence = json.loads(row["evidence_json"] or "{}")
-        except ValueError:
-            evidence = {}
-        return {
-            "id": row["id"],
-            "contact_id": row["contact_id"],
-            "context_origin": evidence.get("context_origin") or "user_provided",
-            "sources": evidence.get("sources", []),
-            "checked_at": evidence.get("checked_at"),
-        }
-    finally:
-        await db.close()
-
 
 @router.get("/generated")
 async def list_generated_emails(
@@ -406,7 +154,7 @@ async def list_generated_emails(
 
 @router.delete("/generated")
 async def clear_generated_emails_cache(user: dict = Depends(get_current_user)):
-    """Remove all AI-generated email records for the current user (studio cache only — does not delete contacts)."""
+    """Remove all of the current member's saved Studio drafts (does not delete contacts)."""
     db = await get_db()
     try:
         await db.execute("DELETE FROM generated_emails WHERE user_id = ?", (user["id"],))
@@ -417,30 +165,3 @@ async def clear_generated_emails_cache(user: dict = Depends(get_current_user)):
         return {"ok": True, "deleted": n}
     finally:
         await db.close()
-
-
-@router.post("/generate-batch")
-async def generate_emails_batch(requests: list[EmailGenerateRequest], user: dict = Depends(get_current_user)):
-    """Generate emails for multiple contacts (batch)."""
-    if len(requests) > 20:
-        raise HTTPException(413, 'Generate at most 20 drafts per batch')
-    results = []
-    for req in requests:
-        try:
-            resp = await generate_email_for_contact(req, user)
-            results.append(resp.model_dump())
-        except HTTPException as exc:
-            results.append({
-                "contact_id": req.contact_id,
-                "error": exc.detail,
-                "subject": None,
-                "body": None,
-            })
-        except Exception:
-            results.append({
-                "contact_id": req.contact_id,
-                "error": "Draft generation failed. Your existing draft is unchanged; please retry.",
-                "subject": None,
-                "body": None,
-            })
-    return {"results": results}

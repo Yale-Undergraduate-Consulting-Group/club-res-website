@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type BuildResult, type Contact, type SendAllowance, type Template } from '../../api';
-import { beyondMostSenior, companiesOf, liveWarnings, usesPersonalisation, warningText } from '../../lib/sendChecks';
+import { beyondMostSenior, clubTemplate, companiesOf, liveWarnings, usesPersonalisation, warningText } from '../../lib/sendChecks';
 import { useCompanyLines } from '../../lib/useCompanyLines';
 import CompanyLinesField, { LinesPending } from '../CompanyLinesField';
 import { Button, ConfirmDialog, Notice } from '../ui/Primitives';
@@ -30,12 +30,6 @@ export type Held = { name: string; reason: string };
 type Sent = { campaignId: number; queued: number; allowance?: SendAllowance };
 
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
-
-/** The club's Intro template if there is one, else the first club template. */
-function defaultTemplate(list: Template[]): Template | undefined {
-  const club = list.filter((t) => t.scope === 'club');
-  return club.find((t) => t.name.trim().toLowerCase() === 'intro') ?? club[0] ?? list[0];
-}
 
 export default function SendPanel({ ticked, recipients, held, heldPeople, leftOut, searching, companyLabel, draftsHref, onHeld, onUntick }: {
   /** Everyone ticked who has an address: who the server is asked about. */
@@ -82,7 +76,7 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
         if (!live) return;
         const list = Array.isArray(response) ? response : [];
         setTemplates(list);
-        choose(defaultTemplate(list));
+        choose(clubTemplate(list));
       })
       .catch((e) => { if (live) { setTemplates([]); setError(message(e, 'Could not load templates')); } });
     return () => { live = false; };

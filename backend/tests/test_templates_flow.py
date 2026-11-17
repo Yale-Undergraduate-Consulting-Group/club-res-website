@@ -1,11 +1,11 @@
 """Saved templates, one-click target-list builds, and "what earns replies".
 
-A template is the club's when an administrator owns it (or it is a starter),
-and private to its author otherwise; every route that reads or uses one goes
-through the same rule. /build renders a template per recipient and explains the
-people it cannot render for, can take its recipients from a target list the
-member may read, and files each row under its template and approach so Admin →
-Metrics can compare them. Without a model, drafting answers with what to do.
+A template is the club's when an administrator owns it (or it is the club's
+seeded Intro), and private to its author otherwise; every route that reads or
+uses one goes through the same rule. /build renders a template per recipient and
+explains the people it cannot render for, can take its recipients from a target
+list the member may read, and files each row under its template and approach so
+Admin → Metrics can compare them.
 From backend/: python tests/test_templates_flow.py
 """
 import asyncio
@@ -13,13 +13,11 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("JWT_SECRET", "templates-flow-test-secret-0123456789abc")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()) / 't.db'}"
 
-from fastapi import HTTPException  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
@@ -145,15 +143,6 @@ def tests() -> None:
     assert asyncio.run(run("SELECT template_id, angle, email_subject FROM campaign_contacts WHERE campaign_id = ?", (draft,))) == [(private, "intro", "Hello Dana")]
     other = ben.post("/api/campaigns", json={"name": "Ben"}).json()["id"]
     assert ben.post(f"/api/campaigns/{other}/contacts", json={"contact_ids": [5], "template_id": private}).status_code == 404
-
-    # No model: drafting says what to do instead, and other failures are left alone.
-    with patch("app.services.ollama_email_service.generate_group_template",
-               side_effect=HTTPException(503, "The language model is unavailable right now.")):
-        down = ana.post("/api/campaigns/draft-template", json={"companies": ["Acme"], "goal": "intro"})
-    assert down.status_code == 503, down.text
-    assert down.json()["detail"] == {"message": "AI drafting is unavailable right now — use a template.", "fallback": "template"}
-    with patch("app.services.ollama_email_service.generate_group_template", side_effect=HTTPException(429, "busy")):
-        assert ana.post("/api/campaigns/draft-template", json={"companies": ["Acme"], "goal": "intro"}).status_code == 429
 
     metrics()
 

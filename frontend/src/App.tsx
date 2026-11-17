@@ -5,7 +5,6 @@ import MainApp from './pages/MainApp';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { AiModelProvider } from './contexts/AiModelContext';
 import { API_BASE } from './api';
 import { usableModules } from './modules';
 
@@ -120,13 +119,11 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <AiModelProvider>
         <ToastProvider>
           <BrowserRouter>
             <AppContent />
           </BrowserRouter>
         </ToastProvider>
-        </AiModelProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

@@ -437,26 +437,6 @@ async def _pipeline_recipients(db, payload: BuildFromTemplate, user: dict) -> tu
     return [dict(r) for r in rows], chosen
 
 
-class DraftGroupTemplate(BaseModel):
-    """Ask for one message that will personalise itself per recipient."""
-
-    companies: list[str] = []
-    roles: str = ""
-    goal: str
-    proof: str = ""
-    length: str = "short"
-    # One message each, written from what the club already recorded about that
-    # company, instead of one message for all of them.
-    per_company: bool = False
-
-
-#: Drafting is a model call and a quota unit per company, so a run stays
-#: something a member waits through rather than abandons.
-MAX_DRAFTED_COMPANIES = 12
-
-AI_DRAFTING_UNAVAILABLE = "AI drafting is unavailable right now — use a template."
-
-
 def _angle(explicit: str | None, template: dict | None) -> str | None:
     """The approach a send is filed under: what the member named, else the
     template's use case. Lower-cased so "Intro" and "intro" count together."""
@@ -494,63 +474,6 @@ async def _company_notes(db, companies: list[str]) -> dict[str, str]:
             if row["display_name"]:
                 notes.setdefault(row["display_name"].strip().lower(), text)
     return notes
-
-
-@router.post("/draft-template")
-async def draft_group_template(payload: DraftGroupTemplate, user: dict = Depends(get_current_user)):
-    """Write the campaign's message: one for the group, or one per company.
-
-    Studio drafts to one person, which is right for a bespoke email and wrong
-    for a campaign. Without this a member either writes the same message
-    twenty times or sends twenty identical notes addressed to nobody.
-    """
-    from starlette.concurrency import run_in_threadpool
-
-    from app.services.ollama_email_service import generate_group_template
-
-    async def write(companies: list[str], notes: str) -> tuple[str, str]:
-        try:
-            return await run_in_threadpool(
-                generate_group_template,
-                companies=companies,
-                goal=payload.goal,
-                proof=payload.proof,
-                roles=payload.roles,
-                length=payload.length,
-                company_notes=notes,
-            )
-        except HTTPException as exc:
-            # The model is switched off or unreachable. Say what to do instead
-            # of surfacing the provider's error.
-            if exc.status_code == 503:
-                raise HTTPException(503, {"message": AI_DRAFTING_UNAVAILABLE, "fallback": "template"}) from exc
-            raise
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-
-    if not payload.per_company:
-        subject, body = await write(payload.companies, "")
-        return {"subject": subject, "body": body}
-
-    named = [c.strip() for c in payload.companies if c.strip()]
-    if not named:
-        raise HTTPException(422, "Name at least one company")
-    if len(named) > MAX_DRAFTED_COMPANIES:
-        raise HTTPException(
-            422,
-            f"{len(named)} companies chosen; a message each is written for at most "
-            f"{MAX_DRAFTED_COMPANIES}. Write one message for the group, or split the campaign.",
-        )
-    db = await get_db()
-    try:
-        notes = await _company_notes(db, named)
-    finally:
-        await db.close()
-    messages: dict[str, dict[str, str]] = {}
-    for company in named:
-        subject, body = await write([company], notes.get(company.lower(), ""))
-        messages[company] = {"subject": subject, "body": body}
-    return {"messages": messages, "grounded": sorted(c for c in named if notes.get(c.lower()))}
 
 
 class PersonalisationRequest(BaseModel):
