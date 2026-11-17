@@ -15,15 +15,31 @@ set -uo pipefail
 
 LEVEL="${AUDIT_LEVEL:-high}"
 ATTEMPTS="${AUDIT_ATTEMPTS:-3}"
+# Reviewed, expiring exceptions for advisories with no fix (one entry per
+# advisory, with its reason and an expiry date). An expired entry, or any
+# other high/critical advisory, fails the gate as before.
+EXCEPTIONS="${AUDIT_EXCEPTIONS:-$(dirname "$0")/npm_audit_exceptions.json}"
+TODAY="${AUDIT_TODAY:-$(date -u +%F)}"
 report=""
 
 for attempt in $(seq 1 "$ATTEMPTS"); do
-  report="$(npm audit --audit-level="$LEVEL" --json 2>/dev/null)"
+  if [ -n "${AUDIT_REPORT_FILE:-}" ]; then report="$(cat "$AUDIT_REPORT_FILE")"; else report="$(npm audit --audit-level="$LEVEL" --json 2>/dev/null)"; fi
   if printf '%s' "$report" | jq -e '.metadata.vulnerabilities' >/dev/null 2>&1; then
     high="$(printf '%s' "$report" | jq '.metadata.vulnerabilities.high // 0')"
     critical="$(printf '%s' "$report" | jq '.metadata.vulnerabilities.critical // 0')"
     if [ "$high" -gt 0 ] || [ "$critical" -gt 0 ]; then
-      echo "::error::npm audit found $critical critical and $high high advisories"
+      allowed="$(jq -c --arg today "$TODAY" '[.[] | select(.expires >= $today) | .advisory]' "$EXCEPTIONS" 2>/dev/null || echo '[]')"
+      # Every high/critical finding traces back to advisory objects in .via;
+      # the gate passes only if each of those advisories is excepted.
+      blocking="$(printf '%s' "$report" | jq -r --argjson allowed "$allowed" '
+        [(.vulnerabilities // {})[] | .via[] | select(type == "object")
+         | select(.severity == "high" or .severity == "critical")
+         | (.url | split("/") | last) as $id | select(($allowed | index($id)) | not) | $id] | unique | join(" ")')"
+      if [ -z "$blocking" ]; then
+        echo "::warning::npm audit: $critical critical and $high high findings, all from excepted advisories: $(printf '%s' "$allowed" | jq -r 'join(", ")') (see scripts/npm_audit_exceptions.json)"
+        exit 0
+      fi
+      echo "::error::npm audit found $critical critical and $high high advisories; not excepted: $blocking"
       printf '%s' "$report" | jq -r '
         (.vulnerabilities // {}) | to_entries[]
         | select(.value.severity == "high" or .value.severity == "critical")
