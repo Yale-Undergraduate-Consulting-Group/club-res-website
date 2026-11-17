@@ -17,6 +17,7 @@ from fastapi import HTTPException
 # The Bedrock cases below must not pick up a key from the developer's shell.
 os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("ANTHROPIC_API_KEY_EXPIRES", None)
+os.environ.setdefault("JWT_SECRET", "llm-provider-test-secret-0123456789abcdef")
 from app.services.llm import complete_text, default_model_id, llm_provider, rank_model_id  # noqa: E402
 
 
