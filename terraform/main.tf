@@ -136,12 +136,6 @@ variable "data_volume_gb" {
   }
 }
 
-variable "office_hours_enabled" {
-  type        = bool
-  default     = false
-  description = "Start the box weekdays 12:00 UTC and stop it 04:00 UTC the next day. Mail jobs run only while the box is on."
-}
-
 variable "catalog_operator_principal_arns" {
   type        = list(string)
   default     = []
