@@ -1,7 +1,9 @@
 """Alumni sign-in (app/routers/alumni.py, docs/night/security.md): who may sign
-in, what they may read, revocation, and the denial matrix - an alumni session
-gets nothing from any other route that an anonymous request would not get.
-Google is faked; the resources are the synthetic library from test_resources.
+in, that alumni get no club data, revocation, and the denial matrix - an alumni
+session gets nothing from any other route that an anonymous request would not
+get, and a member session gets nothing from the alumni routes.
+Google is faked; the resources are the synthetic library from test_resources,
+there to prove alumni cannot reach data that exists.
 From backend/: python tests/test_alumni.py
 """
 import asyncio
@@ -109,7 +111,7 @@ def sign_in_rules(admin: TestClient, standard: TestClient) -> None:
     assert landed == "/alumni/login?error=email_not_verified", landed
     landed, alum = alumni_sign_in("alum@aya.yale.edu", "g-alum")
     assert landed == "/alumni", landed
-    assert alum.get("/api/alumni/me").json() == {"email": "alum@aya.yale.edu", "name": "Alum"}
+    assert alum.get("/api/alumni/me").json() == {"email": "alum@aya.yale.edu", "name": "Alum", "board": False}
     # Subdomains and look-alikes are not the domain.
     for outsider in ("x@evil.aya.yale.edu", "x@aya.yale.edu.evil.test", "x@gmail.com"):
         assert alumni_sign_in(outsider, "g-x")[0] == "/alumni/login?error=not_eligible", outsider
@@ -135,50 +137,18 @@ def sign_in_rules(admin: TestClient, standard: TestClient) -> None:
     assert {"alumni_domain_add", "alumni_email_add"} <= actions, actions
 
 
-def resources_for_alumni(admin: TestClient, alum: TestClient, standard: TestClient) -> None:
-    listed = alum.get("/api/alumni/resources").json()
-    titles = {item["title"]: item for item in listed["items"]}
-    # Only the past project whose client agreed to public disclosure: not the
-    # name-only or private projects, not the guides or templates.
-    member_titles = {i["title"] for i in standard.get("/api/resources?limit=100").json()["items"]}
-    public = [t for t in titles]
-    assert len(public) == 1 and public[0] in member_titles and len(member_titles) > 1, (public, member_titles)
-    item = titles[public[0]]
-    assert item["kind"] == "past_project" and item["disclosure"] == "public"
-    for key in ("team", "link", "code_name", "revenue", "contacts", "stored_link", "can_manage"):
-        assert key not in item, key
-    # Positive control: an admin does get the admin-only fields on the same resource.
-    admin_item = next(i for i in admin.get("/api/resources?limit=100").json()["items"] if i["id"] == item["id"])
-    assert "revenue" in admin_item and "contacts" in admin_item and admin_item["team"]
-    # The statement of work (admin-only) is neither listed nor downloadable.
-    assert [f["filename"] for f in item["files"]] == ["Final Deliverable.pptx"], item["files"]
-    sow = next(f for f in admin_item["files"] if f["admin_only"])
-    assert alum.get(f"/api/alumni/resources/{item['id']}/files/{sow['id']}/download").status_code == 404
-    # Search finds the public deck's text; a private deck's words find nothing.
-    assert [i["title"] for i in alum.get("/api/alumni/resources?q=giraffe").json()["items"]] == [item["title"]]
-    assert alum.get("/api/alumni/resources?q=quokka").json()["total"] == 0
-
-    # Download: the alumni link works for the alumnus, not for anyone else.
-    deck = item["files"][0]
-    link = alum.get(f"/api/alumni/resources/{item['id']}/files/{deck['id']}/download").json()
-    assert link["url"].startswith("/api/alumni/local-file?") and link["filename"] == "Final Deliverable.pptx", link
-    assert alum.get(link["url"]).status_code == 200
-    assert TestClient(main.app).get(link["url"]).status_code == 401
-    assert standard.get(link["url"]).status_code == 401
-    # A file of a resource that is not public: 404 by id and by signed link.
-    hidden = next(i for i in admin.get("/api/resources?limit=100").json()["items"]
-                  if i["kind"] == "past_project" and i["disclosure"] != "public" and i["files"])
-    hidden_file = hidden["files"][0]
-    assert alum.get(f"/api/alumni/resources/{hidden['id']}/files/{hidden_file['id']}/download").status_code == 404
-    admin_link = admin.get(f"/api/resources/{hidden['id']}/files/{hidden_file['id']}/download").json()["url"]
-    assert alum.get("/api/alumni/local-file?" + admin_link.split("?", 1)[1]).status_code == 404
-    assert sql("SELECT COUNT(*) FROM audit_log WHERE action = 'alumni_resource_download'")[0][0] == 1
-
-    # Restricting the Resources app closes it to alumni too.
-    assert admin.put("/api/admin/apps/resources", json={"restricted": True, "member_ids": []}).status_code == 200
-    assert alum.get("/api/alumni/resources").status_code == 403
-    assert admin.put("/api/admin/apps/resources", json={"restricted": False, "member_ids": []}).status_code == 200
-    assert alum.get("/api/alumni/resources").status_code == 200
+def no_club_data(admin: TestClient, alum: TestClient) -> None:
+    """Alumni get no Resources or projects: no alumni route serves them and the
+    member routes refuse the alumni session. Positive control: the data exists."""
+    assert admin.get("/api/resources?limit=100").json()["total"] > 0
+    public = next(i for i in admin.get("/api/resources?limit=100").json()["items"]
+                  if i["kind"] == "past_project" and i["disclosure"] == "public" and i["files"])
+    for path in ("/api/alumni/resources", f"/api/alumni/resources/{public['id']}/files/{public['files'][0]['id']}/download",
+                 "/api/alumni/local-file?token=x"):
+        assert alum.get(path).status_code == 404, path
+    for path in ("/api/resources", f"/api/resources/{public['id']}", "/api/workspace/projects", "/api/projects"):
+        assert alum.get(path).status_code in (401, 404), path
+    assert not [p for p in main.app.openapi()["paths"] if p.startswith("/api/alumni") and ("resource" in p or "project" in p)]
 
 
 def revocation(admin: TestClient, alum: TestClient, friend: TestClient) -> None:
@@ -234,13 +204,16 @@ def denial_matrix(alumni_token: str, standard: TestClient) -> None:
             if got != expected:
                 gaps.append((method, path, how, got, expected))
     assert not gaps, gaps
-    # Member sessions (and anonymous requests) get nothing from the alumni area.
-    assert {p for p, _ in alumni_routes} >= {"/api/alumni/me", "/api/alumni/resources"}
+    # Member sessions (and anonymous requests) get nothing from the alumni area,
+    # even with a member token put in the alumni cookie.
+    assert {p for p, _ in alumni_routes} >= {"/api/alumni/me", "/api/alumni/home", "/api/alumni/posts", "/api/alumni/inbox"}
+    member_as_alumni = TestClient(main.app, raise_server_exceptions=False)
+    member_as_alumni.cookies.set("yucg_alumni", standard.cookies.get("yucg_session"))
     for path, method in alumni_routes:
         if path == "/api/alumni/logout":
             continue
         url = path.replace("{", "").replace("}", "")
-        for client in (anonymous, standard):
+        for client in (anonymous, standard, member_as_alumni):
             assert client.request(method, url).status_code == 401, (method, path)
     print(f"denial matrix: {len(routes) - len(alumni_routes)} routes x 3 alumni presentations = {checked} checks, no gaps")
 
@@ -254,7 +227,7 @@ def tests() -> None:
     alum.cookies.set("yucg_alumni", create_alumni_token(alum_id))
     friend = TestClient(main.app, raise_server_exceptions=False)
     friend.cookies.set("yucg_alumni", create_alumni_token(sql("SELECT id FROM alumni_accounts WHERE email = 'friend@gmail.com'")[0][0]))
-    resources_for_alumni(admin, alum, standard)
+    no_club_data(admin, alum)
     denial_matrix(create_alumni_token(alum_id), standard)
     revocation(admin, alum, friend)
 

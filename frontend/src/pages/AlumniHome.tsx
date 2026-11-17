@@ -1,119 +1,101 @@
 /**
- * The alumni area: the past projects a client agreed to disclose publicly,
- * and their files. Read-only; everything else on the site is for members.
- * The server decides what is shown (backend/app/services/resources.py).
+ * The alumni portal: news, events, an opt-in directory, a profile, and a way to
+ * write to the board. Alumni get no club data. Board members (marked by a club
+ * admin) also post news and events and read the board inbox; the server
+ * decides what each person may do (backend/app/routers/alumni_portal.py).
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ApiError, api, type AlumniResource, type AlumniResourceList } from '../api';
-import { Button, EmptyState, Notice } from '../components/ui/Primitives';
+import { ApiError, api } from '../api';
+import AppTabMenu from '../components/AppTabMenu';
+import ContactBoard from '../components/alumni/ContactBoard';
+import DirectorySection from '../components/alumni/DirectorySection';
+import EventsSection from '../components/alumni/EventsSection';
+import HomeSection from '../components/alumni/HomeSection';
+import InboxSection from '../components/alumni/InboxSection';
+import PostsSection from '../components/alumni/PostsSection';
+import ProfileSection from '../components/alumni/ProfileSection';
+import { PortalContext, type PortalContextValue } from '../components/alumni/portalContext';
+import { Button, Notice, StatusBadge } from '../components/ui/Primitives';
+import { useUrlTab } from '../lib/useUrlTab';
+
+const VIEWS = ['home', 'news', 'events', 'directory', 'profile', 'contact', 'inbox'] as const;
+type View = (typeof VIEWS)[number];
+const LABELS: Record<View, string> = {
+  home: 'Home', news: 'News', events: 'Events', directory: 'Directory', profile: 'My profile', contact: 'Contact the board', inbox: 'Board inbox',
+};
 
 export default function AlumniHome() {
   const navigate = useNavigate();
-  const [me, setMe] = useState<{ email: string; name: string | null } | null>(null);
-  const [query, setQuery] = useState('');
-  const [list, setList] = useState<AlumniResourceList | null>(null);
-  const [error, setError] = useState('');
+  const [me, setMe] = useState<{ email: string; name: string | null; board: boolean } | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [unread, setUnread] = useState<number | null>(null);
+  const [portalError, setPortalError] = useState('');
 
-  useEffect(() => {
-    api.alumni.me().then(setMe).catch(() => navigate('/alumni/login', { replace: true }));
+  // A 401 means the alumni session ended; anything else is shown where it happened.
+  const fail = useCallback((error: unknown) => {
+    if (error instanceof ApiError && error.status === 401) {
+      navigate('/alumni/login', { replace: true });
+      return '';
+    }
+    return error instanceof Error ? error.message : 'Something went wrong.';
   }, [navigate]);
 
   useEffect(() => {
-    if (!me) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      api.alumni.resources({ q: query.trim() }, controller.signal)
-        .then((result) => { setList(result); setError(''); })
-        .catch((e: Error) => {
-          if (e.name === 'AbortError') return;
-          if (e instanceof ApiError && e.status === 401) navigate('/alumni/login', { replace: true });
-          else setError(e.message);
-        });
-    }, 250);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [me, query, navigate]);
+    api.alumni.me().then(setMe).catch((e: unknown) => setLoadError(fail(e)));
+  }, [fail]);
+
+  const board = me?.board ?? false;
+  useEffect(() => {
+    if (!board) return;
+    api.alumniPortal.inbox.list(false)
+      .then((inbox) => setUnread(inbox.unread))
+      .catch((e: unknown) => { const message = fail(e); if (message) setPortalError(message); });
+  }, [board, fail]);
+
+  const allowed = useMemo(() => VIEWS.filter((view) => view !== 'inbox' || board), [board]);
+  const [view, setView] = useUrlTab(allowed, 'home');
+  const context = useMemo<PortalContextValue>(() => ({ api: api.alumniPortal, canWrite: board, fail }), [board, fail]);
 
   const signOut = async () => {
     await api.alumni.logout().catch(() => {});
     navigate('/alumni/login', { replace: true });
   };
 
+  if (loadError) return <div className="app-workspace max-w-4xl mx-auto px-4 py-6"><Notice tone="danger">Could not open the alumni portal: {loadError}</Notice></div>;
   if (!me) return <p className="app-page-loading" role="status">Opening…</p>;
 
   return (
-    <div className="app-workspace max-w-4xl mx-auto px-4 py-6 space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <img src="/yucg-logo.png" alt="YUCG" className="h-10 w-auto" decoding="async" />
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-deep-navy">YUCG Alumni</h1>
-            <p className="text-sm text-slate-600 break-all">{me.name || me.email}</p>
+    <PortalContext.Provider value={context}>
+      <div className="app-workspace max-w-4xl mx-auto px-4 py-6 space-y-6">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/yucg-logo.png" alt="YUCG" className="h-10 w-auto" decoding="async" />
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-deep-navy">YUCG Alumni</h1>
+              <p className="text-sm text-slate-600 break-all">{me.name || me.email}</p>
+            </div>
+            {me.board && <StatusBadge tone="info">Board</StatusBadge>}
           </div>
-        </div>
-        <Button variant="secondary" size="sm" onClick={signOut}>Sign out</Button>
-      </header>
+          <Button variant="secondary" size="sm" onClick={signOut}>Sign out</Button>
+        </header>
 
-      <section className="surface-card space-y-4" aria-labelledby="alumni-projects">
-        <div>
-          <h2 id="alumni-projects" className="font-semibold text-deep-navy">Public past projects</h2>
-          <p className="text-sm text-slate-600">Projects whose clients agreed to public disclosure, with their deliverables.</p>
-        </div>
-        <input
-          className="ui-input"
-          type="search"
-          aria-label="Search past projects"
-          placeholder="Search by client, industry or topic"
-          value={query}
-          maxLength={200}
-          onChange={(event) => setQuery(event.target.value)}
+        <AppTabMenu
+          tabs={allowed.map((id) => ({ id, label: LABELS[id], count: id === 'inbox' && unread ? unread : undefined }))}
+          active={view}
+          onChange={(id) => setView(id as View)}
+          label="Alumni portal sections"
         />
-        {error && <Notice tone="danger">Could not load projects: {error}</Notice>}
-        {!list && !error && <p className="text-sm text-slate-500" role="status">Loading…</p>}
-        {list && list.items.length === 0 && (
-          <EmptyState
-            title={query.trim() ? 'No matching projects' : 'No public projects yet'}
-            body={query.trim() ? 'Try another word.' : 'Projects appear here once a client agrees to public disclosure.'}
-          />
-        )}
-        {list && list.items.length > 0 && (
-          <ul className="space-y-3">
-            {list.items.map((item) => <AlumniProject key={item.id} item={item} />)}
-          </ul>
-        )}
-      </section>
-    </div>
-  );
-}
+        {portalError && <Notice tone="danger">{portalError}</Notice>}
 
-function AlumniProject({ item }: { item: AlumniResource }) {
-  const [error, setError] = useState('');
-  const open = async (fileId: number) => {
-    setError('');
-    try {
-      const file = await api.alumni.download(item.id, fileId);
-      window.open(file.url, '_blank', 'noopener');
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-  return (
-    <li className="border-b border-pale-sky pb-3 last:border-0 last:pb-0 space-y-1 min-w-0">
-      <h3 className="font-medium text-deep-navy break-words">{item.title}</h3>
-      <p className="text-sm text-slate-600 break-words">
-        {[item.client, item.semester, item.industries.join(', ')].filter(Boolean).join(' · ')}
-      </p>
-      {item.description && <p className="text-sm text-slate-700 break-words">{item.description}</p>}
-      {item.files.length > 0 && (
-        <div className="flex flex-wrap gap-2 pt-1">
-          {item.files.map((file) => (
-            <Button key={file.id} size="sm" variant="secondary" className="max-w-full" onClick={() => open(file.id)}>
-              <span className="truncate">{file.filename}</span>
-            </Button>
-          ))}
-        </div>
-      )}
-      {error && <Notice tone="danger">{error}</Notice>}
-    </li>
+        {view === 'home' && <HomeSection onOpen={setView} />}
+        {view === 'news' && <PostsSection />}
+        {view === 'events' && <EventsSection />}
+        {view === 'directory' && <DirectorySection />}
+        {view === 'profile' && <ProfileSection defaultName={me.name ?? ''} />}
+        {view === 'contact' && <ContactBoard />}
+        {view === 'inbox' && board && <InboxSection onUnread={setUnread} />}
+      </div>
+    </PortalContext.Provider>
   );
 }

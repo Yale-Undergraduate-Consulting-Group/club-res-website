@@ -4,7 +4,7 @@ integrations every app shares. Paths here are called from outside the app
 from app import app_access
 from app.migrations import Migration
 from app.modules import Job, Module, Route, Setting
-from app.routers import activity, admin, alumni, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
+from app.routers import activity, admin, alumni, alumni_portal, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
 from app.services import costs, slack_commands
 
 MODULE = Module(
@@ -24,9 +24,11 @@ MODULE = Module(
         Route(telemetry.router, "/api/telemetry", "telemetry"),
         Route(operations.router, "/api/admin/operations", "operations"),
         Route(app_access.router, "/api/admin/apps", "apps"),
-        # Alumni: their own session (not a member's), checked inside the router.
-        Route(alumni.router, "/api/alumni", "alumni"),
-        Route(alumni.admin_router, "/api/admin/alumni", "alumni-admin"),
+        # Alumni: their own session (not a member's), checked inside the routers;
+        # club admins reach the portal's board work through /api/admin/alumni.
+        # Each portal router also carries the sign-in and access routes (routers/alumni.py).
+        Route(alumni_portal.router, "/api/alumni", "alumni"),
+        Route(alumni_portal.admin_router, "/api/admin/alumni", "alumni-admin"),
     ),
     jobs=(
         Job("cost_explorer_daily", costs.refresh_cost_explorer, "cron", {"hour": 8, "minute": 5}),
@@ -38,6 +40,7 @@ MODULE = Module(
         Migration(4, "Alumni sign-in: domains, allow-list, accounts, sign-ins", alumni.create_tables),
         Migration(5, "Two-factor sign-in attempts (limit and single use)", auth.create_two_factor_attempts),
         Migration(6, "Daily Cost Explorer cache", costs.create_tables),
+        Migration(7, "Alumni portal: board, news posts and covers, events, directory, board inbox", alumni_portal.create_tables),
     ),
     settings=(
         Setting("JWT_SECRET", "Signs members' sessions", required=True),

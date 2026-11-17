@@ -66,14 +66,40 @@ export type ResourceQuery = { q?: string; kind?: string; semester?: string; indu
 export type ResourceLinkCreate = {
   kind: ResourceKind; title: string; semester?: string; industry?: string; disclosure: ResourceDisclosure; url: string;
 };
-/** An alumnus's view of a resource: public past projects only, without team, link or code name (backend/app/routers/alumni.py). */
-export type AlumniResource = Pick<ResourceItem, 'id' | 'kind' | 'title' | 'client' | 'semester' | 'industry' | 'industries' | 'areas' | 'description' | 'team_size' | 'disclosure' | 'files' | 'created_at'>;
-export type AlumniResourceList = { items: AlumniResource[]; total: number; facets: { semesters: ResourceFacet[]; industries: ResourceFacet[] } };
+/** The alumni portal (backend/app/routers/alumni_portal.py). Image URLs are server paths: prefix with API_BASE to render. */
+export type PortalPost = {
+  id: number; title: string; body_html: string; status: 'draft' | 'published'; pinned: boolean; author: string;
+  created_at: number; updated_at: number; published_at: number | null; cover: { id: number; url: string } | null;
+};
+export type PortalPostInput = { title: string; body_html: string; status: 'draft' | 'published'; pinned: boolean; cover_image_id: number | null };
+export type PortalEvent = {
+  id: number; title: string; starts_at: number; timezone: string; starts_local: string; place: string | null;
+  online_url: string | null; description_html: string; created_at: number; updated_at: number;
+};
+export type PortalEventInput = { title: string; starts_local: string; timezone: string; place: string | null; online_url: string | null; description_html: string };
+export type DirectoryEntry = {
+  id: number; display_name: string; class_year: number | null; company: string | null; role: string | null; city: string | null;
+  linkedin_url: string | null; note: string | null; coffee_chats: boolean; email: string | null;
+};
+export type AlumniProfile = {
+  display_name: string; class_year: number | null; company: string | null; role: string | null; city: string | null;
+  linkedin_url: string | null; note: string | null; coffee_chats: boolean; listed: boolean; show_email: boolean; updated_at: number;
+};
+export type AlumniProfileInput = Omit<AlumniProfile, 'updated_at'>;
+export type InboxMessage = {
+  id: number; subject: string; created_at: number; read: boolean; archived: boolean;
+  sender: { name: string | null; email: string } | null; body?: string;
+};
+export type AlumniHome = {
+  me: { email: string; name: string | null; board: boolean };
+  profile: { exists: boolean; listed: boolean };
+  posts: PortalPost[]; events: PortalEvent[]; unread: number | null;
+};
 /** Admin → Alumni: who may sign in on the alumni page, who did, and revocation. */
 export type AlumniOverview = {
   domains: { domain: string; added_at: number }[];
   allowlist: { email: string; note: string | null; added_at: number }[];
-  accounts: { id: number; email: string; name: string | null; created_at: number; last_sign_in_at: number | null; revoked_at: number | null; allowed: boolean }[];
+  accounts: { id: number; email: string; name: string | null; created_at: number; last_sign_in_at: number | null; revoked_at: number | null; allowed: boolean; board: boolean }[];
   sign_ins: { at: number; outcome: 'signed_in' | 'not_eligible' | 'revoked' | 'identity_mismatch'; email_domain: string; email: string | null }[];
 };
 /** The document register's per-file limit, which resource uploads share (backend UploadRequest). */
@@ -767,18 +793,93 @@ async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
-export const api = {
-  /** The alumni area (backend/app/routers/alumni.py): its own cookie, read-only. */
-  alumni: {
-    me: () => fetchApi<{ email: string; name: string | null }>('/api/alumni/me'),
-    logout: () => fetchApi<{ ok: boolean }>('/api/alumni/logout', { method: 'POST' }),
-    resources: (query: { q?: string; semester?: string; industry?: string }, signal?: AbortSignal) =>
-      fetchApi<AlumniResourceList>(`/api/alumni/resources?${new URLSearchParams(Object.entries(query).filter(([, v]) => v) as [string, string][])}`, { signal }),
-    download: async (id: number, fileId: number) => {
-      const file = await fetchApi<{ url: string; filename: string }>(`/api/alumni/resources/${id}/files/${fileId}/download`);
-      return { ...file, url: file.url.startsWith('/') ? `${API_BASE}${file.url}` : file.url };
+export const COVER_MAX_BYTES = 5 * 1024 * 1024;
+export const COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+/** A server-relative image path becomes an address the browser can load. */
+export function portalImageUrl(url: string): string {
+  return url.startsWith('/') ? `${API_BASE}${url}` : url;
+}
+
+/** The posts, events, directory and inbox calls, shared by the alumni board and club admins. */
+export function alumniPortalApi(base: '/api/alumni' | '/api/admin/alumni') {
+  const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
+  return {
+    posts: {
+      list: (limit = 50, offset = 0) => fetchApi<{ items: PortalPost[]; total: number }>(`${base}/posts?limit=${limit}&offset=${offset}`),
+      get: (id: number) => fetchApi<PortalPost>(`${base}/posts/${id}`),
+      create: (post: PortalPostInput) => fetchApi<PortalPost>(`${base}/posts`, json('POST', post)),
+      update: (id: number, post: PortalPostInput) => fetchApi<PortalPost>(`${base}/posts/${id}`, json('PUT', post)),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`${base}/posts/${id}`, json('DELETE')),
     },
+    /**
+     * Stores a post's cover: the server reserves it, the browser sends the bytes
+     * (to the server itself without a bucket, otherwise straight to storage),
+     * and the server checks the file really is that image.
+     */
+    uploadCover: async (file: File): Promise<{ id: number; url: string }> => {
+      if (!COVER_TYPES.includes(file.type)) throw new Error('The cover must be a PNG, JPEG or WebP image.');
+      if (file.size > COVER_MAX_BYTES) throw new Error('The cover must be 5 MB or smaller.');
+      if (file.size === 0) throw new Error('This file is empty.');
+      const started = await fetchApi<{ image_id: number; upload: { url: string; method: string; headers: Record<string, string> } }>(
+        `${base}/images`, json('POST', { byte_size: file.size, content_type: file.type }));
+      const own = started.upload.url.startsWith('/');
+      let sent = false;
+      try {
+        const response = await fetch(own ? `${API_BASE}${started.upload.url}` : started.upload.url, {
+          method: started.upload.method,
+          headers: own ? { ...started.upload.headers, ...getAuthHeaders() } : started.upload.headers,
+          credentials: own ? 'include' : 'omit',
+          body: file,
+        });
+        if (!response.ok && own) throw new ApiError(problemDetail(await response.text()), response.status);
+        sent = response.ok;
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        sent = false;
+      }
+      if (!sent) throw new Error('The image could not be sent. Try again.');
+      return fetchApi<{ id: number; url: string }>(`${base}/images/${started.image_id}/complete`, json('POST'));
+    },
+    events: {
+      list: () => fetchApi<{ upcoming: PortalEvent[]; past: PortalEvent[] }>(`${base}/events`),
+      create: (event: PortalEventInput) => fetchApi<PortalEvent>(`${base}/events`, json('POST', event)),
+      update: (id: number, event: PortalEventInput) => fetchApi<PortalEvent>(`${base}/events/${id}`, json('PUT', event)),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`${base}/events/${id}`, json('DELETE')),
+    },
+    directory: (q: string, signal?: AbortSignal) =>
+      fetchApi<{ items: DirectoryEntry[] }>(`${base}/directory?${new URLSearchParams(q.trim() ? { q: q.trim() } : {})}`, { signal }),
+    inbox: {
+      list: (archived: boolean) => fetchApi<{ items: InboxMessage[]; unread: number }>(`${base}/inbox?archived=${archived}`),
+      open: (id: number) => fetchApi<InboxMessage>(`${base}/inbox/${id}`),
+      change: (id: number, change: 'unread' | 'archive' | 'restore') => fetchApi<{ ok: boolean }>(`${base}/inbox/${id}/${change}`, json('POST')),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`${base}/inbox/${id}`, json('DELETE')),
+    },
+  };
+}
+
+export type PortalApi = ReturnType<typeof alumniPortalApi>;
+
+export const api = {
+  /** The alumni portal's own pages: the alumni cookie (backend/app/routers/alumni.py, alumni_portal.py). */
+  alumni: {
+    me: () => fetchApi<{ email: string; name: string | null; board: boolean }>('/api/alumni/me'),
+    logout: () => fetchApi<{ ok: boolean }>('/api/alumni/logout', { method: 'POST' }),
+    home: () => fetchApi<AlumniHome>('/api/alumni/home'),
+    profile: {
+      get: () => fetchApi<{ profile: AlumniProfile | null; email: string }>('/api/alumni/profile'),
+      save: (profile: AlumniProfileInput) =>
+        fetchApi<{ profile: AlumniProfile; email: string }>('/api/alumni/profile', { method: 'PUT', body: JSON.stringify(profile) }),
+      hide: () => fetchApi<{ ok: boolean }>('/api/alumni/profile/hide', { method: 'POST' }),
+      delete: () => fetchApi<{ ok: boolean }>('/api/alumni/profile', { method: 'DELETE' }),
+    },
+    contactBoard: (message: { subject: string; body: string }) =>
+      fetchApi<{ ok: boolean }>('/api/alumni/messages', { method: 'POST', body: JSON.stringify(message) }),
   },
+  /** Posts, events, directory and inbox as the alumni (board) see them. */
+  alumniPortal: alumniPortalApi('/api/alumni'),
+  /** The same calls as a club admin, who acts as the board. */
+  adminPortal: alumniPortalApi('/api/admin/alumni'),
   resources: {
     list: (query: ResourceQuery, signal?: AbortSignal) => fetchApi<ResourceList>(`/api/resources?${buildResourceQuery(query)}`, { signal }),
     /** The address to open a file (or, for its managers, an older version) at: the server may answer with a path on its own origin. */
@@ -1224,6 +1325,8 @@ export const api = {
       revoke: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}/revoke`, { method: 'POST' }),
       restore: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}/restore`, { method: 'POST' }),
       remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}`, { method: 'DELETE' }),
+      setBoard: (id: number, board: boolean) =>
+        fetchApi<{ board: boolean }>(`/api/admin/alumni/accounts/${id}/board`, { method: 'PUT', body: JSON.stringify({ board }) }),
     },
     users: {
       list: () => fetchApi<Member[]>('/api/admin/users'),

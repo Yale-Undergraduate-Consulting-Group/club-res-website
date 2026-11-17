@@ -1,7 +1,25 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, type AlumniOverview } from '../../api';
 import { useToast } from '../../contexts/useToast';
+import { useUrlTab } from '../../lib/useUrlTab';
+import AppTabMenu from '../AppTabMenu';
+import DirectorySection from '../alumni/DirectorySection';
+import EventsSection from '../alumni/EventsSection';
+import InboxSection from '../alumni/InboxSection';
+import PostsSection from '../alumni/PostsSection';
+import { PortalContext, type PortalContextValue } from '../alumni/portalContext';
 import { Button, ConfirmDialog, EmptyState, Notice, StatusBadge } from '../ui/Primitives';
+
+const SECTIONS = ['access', 'news', 'events', 'inbox', 'directory'] as const;
+type Section = (typeof SECTIONS)[number];
+const SECTION_LABELS: Record<Section, string> = { access: 'Access', news: 'News', events: 'Events', inbox: 'Board inbox', directory: 'Directory' };
+
+/** Club admins act as the board: their member session, the /api/admin/alumni routes. A 401 is handled by the shell. */
+const ADMIN_PORTAL: PortalContextValue = {
+  api: api.adminPortal,
+  canWrite: true,
+  fail: (error) => (error instanceof Error ? error.message : 'Something went wrong.'),
+};
 
 const OUTCOMES: Record<AlumniOverview['sign_ins'][number]['outcome'], { label: string; tone: 'success' | 'warning' | 'danger' }> = {
   signed_in: { label: 'Signed in', tone: 'success' },
@@ -11,11 +29,32 @@ const OUTCOMES: Record<AlumniOverview['sign_ins'][number]['outcome'], { label: s
 };
 
 /**
- * Who may sign in on the alumni page (/alumni/login), who did, and revocation.
- * Alumni see only public past projects; they are never members. The server
- * re-checks these lists on every alumni request, so a removal takes effect at once.
+ * Admin → Alumni: who may sign in on the alumni portal (/alumni/login), who did, who is on the board, and revocation,
+ * plus the portal's news, events, board inbox and directory, which club admins manage as the board.
+ * The server re-checks these lists on every alumni request, so a removal takes effect at once.
  */
 export default function AlumniAccess() {
+  const [section, setSection] = useUrlTab(SECTIONS, 'access', 'section');
+  return (
+    <PortalContext.Provider value={ADMIN_PORTAL}>
+      <div className="space-y-6">
+        <AppTabMenu
+          tabs={SECTIONS.map((id) => ({ id, label: SECTION_LABELS[id] }))}
+          active={section}
+          onChange={(id) => setSection(id as Section)}
+          label="Alumni sections"
+        />
+        {section === 'access' && <AccessSection />}
+        {section === 'news' && <PostsSection />}
+        {section === 'events' && <EventsSection />}
+        {section === 'inbox' && <InboxSection />}
+        {section === 'directory' && <DirectorySection />}
+      </div>
+    </PortalContext.Provider>
+  );
+}
+
+function AccessSection() {
   const toast = useToast();
   const [data, setData] = useState<AlumniOverview | null>(null);
   const [error, setError] = useState('');
@@ -63,8 +102,10 @@ export default function AlumniAccess() {
   return (
     <div className="space-y-6">
       <Notice>
-        Alumni sign in at <strong>/alumni/login</strong> with Google and see only past projects whose clients agreed to
-        public disclosure. They never see members’ pages, contacts, outreach or the Directory.
+        Alumni sign in at <strong>/alumni/login</strong> with Google and use the alumni portal: news, events, the alumni
+        directory and a way to contact the board. They see no club data: no members’ pages, contacts, outreach, projects or
+        resources. Board members, marked below, post news and events and read the board inbox. Only club admins manage who may
+        sign in.
       </Notice>
 
       <section className="surface-card space-y-3" aria-labelledby="alumni-domains">
@@ -143,6 +184,12 @@ export default function AlumniAccess() {
                     {account.revoked_at
                       ? <StatusBadge tone="danger">Revoked</StatusBadge>
                       : account.allowed ? <StatusBadge tone="success">Active</StatusBadge> : <StatusBadge tone="warning">Not on the list</StatusBadge>}
+                    {account.board && <StatusBadge tone="info">Board member</StatusBadge>}
+                    <Button size="sm" variant="secondary" disabled={busy !== ''}
+                      onClick={() => run(`b:${account.id}`, () => api.admin.alumni.setBoard(account.id, !account.board),
+                        account.board ? `${account.email} removed from the board.` : `${account.email} is now a board member.`)}>
+                      {account.board ? 'Remove from board' : 'Make board member'}
+                    </Button>
                     {account.revoked_at
                       ? <Button size="sm" variant="secondary" disabled={busy !== ''}
                           onClick={() => run(`r:${account.id}`, () => api.admin.alumni.restore(account.id), `${account.email} restored.`)}>Restore</Button>
@@ -177,7 +224,7 @@ export default function AlumniAccess() {
       <ConfirmDialog
         open={deleting !== null}
         title="Delete alumni account?"
-        body={deleting ? `${deleting.email} and its sign-in records are deleted. If the address is still allowed it can sign in again; revoke instead to keep someone out. Daily backups keep a copy for up to 30 days.` : ''}
+        body={deleting ? `${deleting.email}, its sign-ins and its directory profile are deleted. Posts and events they wrote stay, under a generic “YUCG Alumni Board” byline; messages they sent to the board stay, without a sender. If the address is still allowed it can sign in again; revoke instead to keep someone out. Daily backups keep a copy for up to 30 days.` : ''}
         confirmLabel="Delete"
         danger
         busy={busy === 'delete'}

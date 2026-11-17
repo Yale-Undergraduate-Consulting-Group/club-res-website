@@ -1,4 +1,5 @@
-"""Alumni: a separate sign-in and a small read-only area (docs/night/security.md).
+"""Alumni: a separate sign-in into the alumni portal (docs/night/security.md,
+docs/product/ALUMNI-PORTAL.md).
 
 An alumnus signs in with Google on ``/alumni/login`` (``/api/auth/alumni/google``,
 the same registered callback as members) when their verified address is on the
@@ -10,22 +11,22 @@ its own audience, which the member session check refuses (app.jwt_utils).
 
 Every alumni request re-checks the account: not revoked, not deleted, still on
 the lists. Removing a domain or an address, or revoking the account, ends access
-at the next request. What alumni may read is decided in app.services.resources
-(``is_alumni``): past projects whose client agreed to public disclosure.
+at the next request. Alumni get no club data: the portal's own content (news,
+events, directory, board inbox) is in app.routers.alumni_portal. Club admins
+decide who may sign in and who is on the alumni board.
 """
 from __future__ import annotations
 
 import re
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from app.auth_deps import get_current_admin
 from app.database import get_db
 from app.jwt_utils import ALUMNI_COOKIE, alumni_cookie_kwargs, create_alumni_token, decode_alumni_token
-from app.services import document_storage, resources
 from app.services.transaction_audit import audit
 
 router = APIRouter()
@@ -148,28 +149,21 @@ async def get_current_alumni(request: Request) -> dict:
         db = await get_db()
         try:
             row = await (await db.execute(
-                "SELECT id, email, name FROM alumni_accounts WHERE id = ? AND revoked_at IS NULL", (int(subject),),
+                "SELECT id, email, name, board_since FROM alumni_accounts WHERE id = ? AND revoked_at IS NULL",
+                (int(subject),),
             )).fetchone()
             if row and await allowed(db, row["email"]):
-                return {"id": row["id"], "email": row["email"], "name": row["name"], "role": "alumni"}
+                return {"id": row["id"], "email": row["email"], "name": row["name"], "board": bool(row["board_since"])}
         finally:
             await db.close()
     raise HTTPException(401, "Sign in on the alumni page")
 
 
-async def _resources_open(db) -> None:
-    """Alumni follow the Resources app's restriction: a restricted app is
-    closed to them as well (app.app_access)."""
-    row = await (await db.execute("SELECT restricted FROM app_access WHERE app = 'resources'")).fetchone()
-    if row and row["restricted"]:
-        raise HTTPException(403, "Resources are not open to alumni at the moment")
-
-
-# --- The alumni area -------------------------------------------------------------
+# --- The alumni session ----------------------------------------------------------
 
 @router.get("/me")
 async def me(alumnus: dict = Depends(get_current_alumni)):
-    return {"email": alumnus["email"], "name": alumnus["name"]}
+    return {"email": alumnus["email"], "name": alumnus["name"], "board": alumnus["board"]}
 
 
 @router.post("/logout")
@@ -177,80 +171,6 @@ async def logout():
     response = JSONResponse({"ok": True})
     response.delete_cookie(ALUMNI_COOKIE, path="/api/alumni")
     return response
-
-
-@router.get("/resources")
-async def list_resources(
-    q: str = Query("", max_length=200), semester: str = Query("", max_length=40), industry: str = Query("", max_length=200),
-    limit: int = 60, offset: int = 0, alumnus: dict = Depends(get_current_alumni),
-):
-    db = await get_db()
-    try:
-        await _resources_open(db)
-        rows, total, facets = await resources.search(
-            db, alumnus, q=q, semester=semester, industry=industry, limit=limit, offset=offset)
-        return {"items": await resources.present(db, alumnus, rows), "total": total,
-                "facets": {"semesters": facets["semesters"], "industries": facets["industries"]}}
-    finally:
-        await db.close()
-
-
-@router.get("/resources/{resource_id}/files/{file_id}/download")
-async def download_file(resource_id: int, file_id: int, alumnus: dict = Depends(get_current_alumni)):
-    from app.routers.workspace import download_url
-
-    db = await get_db()
-    try:
-        await _resources_open(db)
-        found = await resources.file_for_download(db, alumnus, resource_id, file_id)
-        if not found:
-            raise HTTPException(404, "Not found")
-        url = await download_url(db, file_id)
-        if url.startswith(document_storage.LOCAL_URL_PATH):
-            # No-bucket environments: the same signed link, served behind the alumni session.
-            url = "/api/alumni/local-file" + url[len(document_storage.LOCAL_URL_PATH):]
-        await db.execute("BEGIN IMMEDIATE")
-        await audit(db, None, "alumni_resource_download", "resource", resource_id,
-                    {"alumni_account_id": alumnus["id"], "document_id": file_id})
-        await db.commit()
-        name = await (await db.execute(
-            "SELECT v.filename FROM workspace_document_versions v JOIN workspace_documents d ON d.current_version = v.id WHERE d.id = ?",
-            (file_id,),
-        )).fetchone()
-        return {"url": url, "filename": name["filename"] if name else ""}
-    finally:
-        await db.close()
-
-
-@router.get("/local-file")
-async def local_file(token: str, alumnus: dict = Depends(get_current_alumni)):
-    """A file from the local storage directory (no-bucket environments only),
-    for the short-lived link the download route issued. The link is not the
-    authority: the file must still be open to this alumnus, current version only."""
-    version_id = document_storage.read_local_token(token)
-    if version_id is None:
-        raise HTTPException(404, "Not found")
-    db = await get_db()
-    try:
-        await _resources_open(db)
-        row = await (await db.execute(
-            """SELECT v.object_key, v.filename, v.storage_bucket, f.resource_id, f.document_id
-               FROM workspace_document_versions v
-               JOIN resource_files f ON f.document_id = v.document_id
-               JOIN workspace_documents d ON d.id = v.document_id AND d.current_version = v.id
-               WHERE v.id = ? AND v.state = 'ready'""",
-            (version_id,),
-        )).fetchone()
-        if (not row or row["storage_bucket"] != document_storage.LOCAL
-                or not await resources.file_for_download(db, alumnus, row["resource_id"], row["document_id"])):
-            raise HTTPException(404, "Not found")
-        path = document_storage.local_path(row["object_key"])
-        if not path.is_file():
-            raise HTTPException(404, "Not found")
-        return FileResponse(path, filename=row["filename"], media_type="application/octet-stream",
-                            content_disposition_type="attachment")
-    finally:
-        await db.close()
 
 
 # --- Admin: who may sign in, who did, and revocation -----------------------------
@@ -274,9 +194,11 @@ async def overview(admin: dict = Depends(get_current_admin)):
             "SELECT email, note, added_at FROM alumni_allowlist ORDER BY email")).fetchall()]
         accounts = []
         for row in await (await db.execute(
-            "SELECT id, email, name, created_at, last_sign_in_at, revoked_at FROM alumni_accounts ORDER BY email",
+            "SELECT id, email, name, created_at, last_sign_in_at, revoked_at, board_since FROM alumni_accounts ORDER BY email",
         )).fetchall():
-            accounts.append({**dict(row), "allowed": await allowed(db, row["email"])})
+            account = dict(row)
+            account["board"] = bool(account.pop("board_since"))
+            accounts.append({**account, "allowed": await allowed(db, row["email"])})
         sign_ins = [dict(r) for r in await (await db.execute(
             """SELECT s.at, s.outcome, s.email_domain, a.email FROM alumni_sign_ins s
                LEFT JOIN alumni_accounts a ON a.id = s.account_id ORDER BY s.id DESC LIMIT 200""")).fetchall()]
@@ -353,11 +275,38 @@ async def restore(account_id: int, admin: dict = Depends(get_current_admin)):
     return {"ok": True}
 
 
+class BoardChange(BaseModel):
+    board: bool
+
+
+@admin_router.put("/accounts/{account_id}/board")
+async def set_board(account_id: int, payload: BoardChange, admin: dict = Depends(get_current_admin)):
+    """Marks an alumni account as an alumni board member, or not. The board
+    writes the portal's news and events and reads its inbox; it never manages
+    who may sign in and never reaches a member or admin route."""
+    if payload.board:
+        changed = await _change(admin, "UPDATE alumni_accounts SET board_since = ?, board_set_by = ? WHERE id = ? AND board_since IS NULL",
+                                (int(time.time()), admin["id"], account_id), "alumni_board_add", "alumni_account", account_id)
+    else:
+        changed = await _change(admin, "UPDATE alumni_accounts SET board_since = NULL, board_set_by = ? WHERE id = ? AND board_since IS NOT NULL",
+                                (admin["id"], account_id), "alumni_board_remove", "alumni_account", account_id)
+    if not changed:
+        db = await get_db()
+        try:
+            if not await (await db.execute("SELECT 1 FROM alumni_accounts WHERE id = ?", (account_id,))).fetchone():
+                raise HTTPException(404, "Not found")
+        finally:
+            await db.close()
+    return {"board": payload.board}
+
+
 @admin_router.delete("/accounts/{account_id}")
 async def delete_account(account_id: int, admin: dict = Depends(get_current_admin)):
-    """Deletes the account and its sign-in records. The address can sign in
-    again while it is allowed; revoke to keep someone out. Daily backups keep
-    a copy for up to 30 days."""
+    """Deletes the account, its sign-in records and its directory profile. What
+    the board published or received stays, without the account: posts and
+    events keep a generic byline, messages lose their sender. The address can
+    sign in again while it is allowed; revoke to keep someone out. Daily backups
+    keep a copy for up to 30 days."""
     db = await get_db()
     try:
         await db.execute("BEGIN IMMEDIATE")
@@ -365,6 +314,12 @@ async def delete_account(account_id: int, admin: dict = Depends(get_current_admi
         if not row:
             raise HTTPException(404, "Not found")
         await db.execute("DELETE FROM alumni_sign_ins WHERE account_id = ?", (account_id,))
+        await db.execute("DELETE FROM alumni_profiles WHERE account_id = ?", (account_id,))
+        await db.execute("DELETE FROM alumni_rate_events WHERE actor = ?", (f"a:{account_id}",))
+        await db.execute("UPDATE alumni_posts SET author_alumni_id = NULL WHERE author_alumni_id = ?", (account_id,))
+        await db.execute("UPDATE alumni_events SET author_alumni_id = NULL WHERE author_alumni_id = ?", (account_id,))
+        await db.execute("UPDATE alumni_board_messages SET sender_account_id = NULL WHERE sender_account_id = ?", (account_id,))
+        await db.execute("UPDATE alumni_post_images SET uploaded_by_alumni = NULL WHERE uploaded_by_alumni = ?", (account_id,))
         await db.execute("DELETE FROM alumni_accounts WHERE id = ?", (account_id,))
         await audit(db, admin["id"], "alumni_delete", "alumni_account", account_id, {"email": row["email"]})
         await db.commit()

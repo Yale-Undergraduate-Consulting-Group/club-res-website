@@ -14,7 +14,6 @@ server-side versions are not (``resources.IMPORT_KEY_PREFIX``).
 from __future__ import annotations
 
 import asyncio
-import os
 import secrets
 import tempfile
 import time
@@ -155,34 +154,7 @@ async def receive_local_upload(user: dict, token: str, request) -> dict:
         await _access(db, user, row["resource_id"], row["document_id"])
     finally:
         await db.close()
-    path = document_storage.local_path(row["object_key"])
-    if path.exists():
-        raise HTTPException(409, "This upload already has data")
-    declared = request.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > row["byte_size"]:
-        raise HTTPException(413, "The file is larger than reserved")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(path.name + ".part")
-    try:
-        out = open(part, "xb")
-    except FileExistsError:
-        raise HTTPException(409, "This upload is already in progress") from None
-    try:
-        size = 0
-        with out:
-            async for chunk in request.stream():
-                size += len(chunk)
-                if size > row["byte_size"]:
-                    raise HTTPException(413, "The file is larger than reserved")
-                out.write(chunk)
-        if size != row["byte_size"]:
-            raise HTTPException(422, "The file is not the reserved size")
-        try:
-            os.link(part, path)
-        except FileExistsError:
-            raise HTTPException(409, "This upload already has data") from None
-    finally:
-        part.unlink(missing_ok=True)
+    await document_storage.receive_local_put(row["object_key"], row["byte_size"], request)
     return {"ok": True}
 
 

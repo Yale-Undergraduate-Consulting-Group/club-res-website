@@ -101,9 +101,68 @@ const RESOURCES = [
   },
 ];
 
+// The alumni portal, with strings that never break by themselves.
+const LONG_WORD = 'Supercalifragilisticexpialidocious'.repeat(3);
+const LONG_TITLE = `Annual reunion weekend announcement ${LONG_WORD} and the full schedule of events`;
+const LONG_EMAIL = `${'a.very.long.alumni.address.'.repeat(3)}name@subdomain.example-organisation.org`;
+const LONG_LINK = `https://www.linkedin.com/in/${'a-very-long-profile-name-'.repeat(6)}`;
+const PNG_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const PORTAL_ME = { email: LONG_EMAIL, name: 'Alexandria Montgomery-Featherstonehaugh', board: true };
+const PORTAL_POSTS = [
+  {
+    id: 1, title: LONG_TITLE, status: 'published', pinned: true, author: 'Alexandria Montgomery-Featherstonehaugh',
+    created_at: 1760000000, updated_at: 1760000000, published_at: 1760000000, cover: { id: 1, url: '/api/alumni/images/1?token=abc' },
+    body_html: `<h2>Heading ${LONG_WORD}</h2><p>${LONG_WORD} ${LONG_WORD}</p><ul><li>${LONG_WORD}</li><li>Second</li></ul><ol><li>One</li></ol>`
+      + `<blockquote>${LONG_WORD}</blockquote><pre>${'x'.repeat(240)}</pre><p><a href="https://example.org/${'segment/'.repeat(20)}">https://example.org/${'segment/'.repeat(20)}</a></p>`,
+  },
+  {
+    id: 2, title: 'A draft the board is still writing', status: 'draft', pinned: false, author: 'YUCG Alumni Board',
+    created_at: 1760000000, updated_at: 1760000000, published_at: null, cover: null, body_html: '<p>Short.</p>',
+  },
+];
+const PORTAL_EVENTS = {
+  upcoming: [{
+    id: 1, title: LONG_TITLE, starts_at: 1950000000, timezone: 'America/Argentina/ComodRivadavia', starts_local: '2030-02-17T12:40',
+    place: `${LONG_WORD} Conference Centre, ${'Very Long Street Name '.repeat(4)}`, online_url: `https://meet.example.org/${'room-name-'.repeat(12)}`,
+    description_html: `<p>${LONG_WORD}</p>`, created_at: 1760000000, updated_at: 1760000000,
+  }],
+  past: [{
+    id: 2, title: 'Tokyo alumni lunch', starts_at: 1700000000, timezone: 'Asia/Tokyo', starts_local: '2023-11-15T07:13',
+    place: 'Shibuya', online_url: null, description_html: '', created_at: 1760000000, updated_at: 1760000000,
+  }],
+};
+const PORTAL_DIRECTORY = [
+  {
+    id: 1, display_name: `${LONG_WORD} ${LONG_WORD}`, class_year: 2016, company: `${LONG_WORD} Holdings`, role: `Senior ${LONG_WORD}`,
+    city: `${LONG_WORD}-on-Thames`, linkedin_url: LONG_LINK, note: `${LONG_WORD} ${'note '.repeat(60)}`, coffee_chats: true, email: LONG_EMAIL,
+  },
+  { id: 2, display_name: 'Ben Private', class_year: 2019, company: null, role: null, city: 'Austin', linkedin_url: null, note: null, coffee_chats: false, email: null },
+];
+const PORTAL_PROFILE = {
+  display_name: `${LONG_WORD} ${LONG_WORD}`, class_year: 2016, company: `${LONG_WORD} Holdings`, role: `Senior ${LONG_WORD}`,
+  city: `${LONG_WORD}-on-Thames`, linkedin_url: LONG_LINK, note: 'note '.repeat(90), coffee_chats: true, listed: true, show_email: true, updated_at: 1760000000,
+};
+const PORTAL_INBOX = [
+  {
+    id: 1, subject: `${LONG_TITLE} ${LONG_WORD}`, body: `${LONG_WORD} ${LONG_WORD}\n\n${'A long paragraph of the message. '.repeat(20)}`,
+    created_at: 1760000000, read: false, archived: false, sender: { name: 'Alexandria Montgomery-Featherstonehaugh', email: LONG_EMAIL },
+  },
+  { id: 2, subject: 'Question from a deleted account', created_at: 1759990000, read: true, archived: false, sender: null },
+];
+const PORTAL_OVERVIEW = {
+  domains: [{ domain: 'aya.yale.edu', added_at: 1760000000 }],
+  allowlist: [{ email: LONG_EMAIL, note: `Class of 2016 ${LONG_WORD}`, added_at: 1760000000 }],
+  accounts: [
+    { id: 9, email: LONG_EMAIL, name: 'Alexandria Montgomery-Featherstonehaugh', created_at: 1760000000, last_sign_in_at: 1760000000, revoked_at: null, allowed: true, board: true },
+    { id: 10, email: 'sam@example.org', name: null, created_at: 1760000000, last_sign_in_at: null, revoked_at: 1760000100, allowed: true, board: false },
+  ],
+  sign_ins: [{ at: 1760000000, outcome: 'signed_in', email_domain: 'example.org', email: LONG_EMAIL }],
+};
+
 async function mockApi(page: Page, authenticated: boolean) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (/^\/api\/(admin\/)?alumni\/images\//.test(path)) return route.fulfill({ contentType: 'image/png', body: PNG_PIXEL });
     let body: unknown = [];
     if (path === '/api/auth/me') body = authenticated ? { authenticated: true, user: admin } : { authenticated: false };
     else if (path === '/api/analytics/dashboard') body = DASHBOARD;
@@ -137,6 +196,15 @@ async function mockApi(page: Page, authenticated: boolean) {
     else if (path.startsWith('/api/auth/') && path.endsWith('/status')) body = { connected: false };
     else if (path.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (path === '/api/contacts/companies/summary') body = [];
+    else if (path === '/api/alumni/me') body = PORTAL_ME;
+    else if (path === '/api/alumni/home') body = { me: PORTAL_ME, profile: { exists: false, listed: false }, posts: PORTAL_POSTS.filter((p) => p.status === 'published'), events: PORTAL_EVENTS.upcoming, unread: 1 };
+    else if (path === '/api/alumni/posts' || path === '/api/admin/alumni/posts') body = { items: PORTAL_POSTS, total: PORTAL_POSTS.length };
+    else if (path === '/api/alumni/events' || path === '/api/admin/alumni/events') body = PORTAL_EVENTS;
+    else if (path === '/api/alumni/directory' || path === '/api/admin/alumni/directory') body = { items: PORTAL_DIRECTORY };
+    else if (path === '/api/alumni/profile') body = { profile: PORTAL_PROFILE, email: PORTAL_ME.email };
+    else if (path === '/api/alumni/inbox' || path === '/api/admin/alumni/inbox') body = { items: PORTAL_INBOX, unread: 1 };
+    else if (/^\/api\/(admin\/)?alumni\/inbox\/1$/.test(path)) body = { ...PORTAL_INBOX[0], read: true };
+    else if (path === '/api/admin/alumni') body = PORTAL_OVERVIEW;
     await route.fulfill({ json: body });
   });
 }
@@ -306,6 +374,33 @@ const SURFACES: Surface[] = [
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },
   { name: 'Admin Costs', url: '/admin?view=costs', ready: /Pay-per-call APIs/ },
   { name: 'Profile', url: '/profile', ready: /Profile|Settings/ },
+  { name: 'Alumni portal Home', url: '/alumni', authenticated: false, ready: /Latest news/ },
+  {
+    name: 'Alumni News', url: '/alumni?view=news', authenticated: false, ready: /Annual reunion weekend/,
+    steps: [
+      async () => {},
+      async (page) => { await page.getByRole('button', { name: 'New post' }).click(); await page.getByRole('textbox', { name: 'Post body' }).waitFor(); },
+    ],
+  },
+  {
+    name: 'Alumni Events', url: '/alumni?view=events', authenticated: false, ready: /Upcoming/,
+    steps: [
+      async () => {},
+      async (page) => { await page.getByRole('button', { name: 'New event' }).click(); await page.getByLabel('Time zone').waitFor(); },
+    ],
+  },
+  { name: 'Alumni Directory', url: '/alumni?view=directory', authenticated: false, ready: 'Ben Private' },
+  { name: 'Alumni My profile', url: '/alumni?view=profile', authenticated: false, ready: /Display name/ },
+  { name: 'Alumni Contact the board', url: '/alumni?view=contact', authenticated: false, ready: /Send message/ },
+  {
+    name: 'Alumni Board inbox', url: '/alumni?view=inbox', authenticated: false, ready: /Question from a deleted account/,
+    steps: [
+      async () => {},
+      async (page) => { await page.getByRole('button', { name: /Annual reunion/ }).click(); await page.getByRole('article', { name: 'Open message' }).waitFor(); },
+    ],
+  },
+  { name: 'Admin Alumni Access', url: '/admin?view=alumni', ready: /Alumni email domains/ },
+  { name: 'Admin Alumni News', url: '/admin?view=alumni&section=news', ready: /Annual reunion weekend/ },
   { name: 'Login', url: '/login', authenticated: false, ready: /Sign in with Google/ },
 ];
 

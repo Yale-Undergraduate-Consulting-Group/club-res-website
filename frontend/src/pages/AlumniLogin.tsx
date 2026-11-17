@@ -34,7 +34,7 @@ export default function AlumniLogin() {
           <img src="/yucg-logo.png" alt="YUCG" className="h-12 w-auto block outline-none select-none" decoding="async" />
         </div>
         <h1 className="text-2xl font-bold text-center text-deep-navy mb-2">YUCG Alumni</h1>
-        <p className="text-sm text-center text-slate-600 mb-6">The club’s public past projects, for alumni.</p>
+        <p className="text-sm text-center text-slate-600 mb-6">News, events and the alumni directory from the YUCG alumni board.</p>
 
         {error && <Notice tone="danger" className="mb-4">{ERRORS[error] ?? 'Sign-in could not be completed. Please try again.'}</Notice>}
 

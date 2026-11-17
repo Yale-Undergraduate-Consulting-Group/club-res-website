@@ -46,16 +46,18 @@ Google account, so Google sign-in covers the eligible people at $0.
 
 ### What an alumnus may do (least privilege)
 
+Updated 2026-11-17: alumni get no club data. The read-only view of public past
+projects was removed; `/alumni` is now the alumni portal
+([../product/ALUMNI-PORTAL.md](../product/ALUMNI-PORTAL.md)).
+
 | Surface | Alumni |
 |---|---|
-| `/alumni` area: own name/email, sign out | yes |
-| Resources: past projects whose disclosure is `public` (the client agreed), their non-admin-only files | yes, read and download only |
-| Resources: guides, templates, `name_only`/`private` projects, statements of work, revenue, client contacts, team names, SharePoint/Drive links, Ask about this file (AI) | no |
-| Every member API (outreach, contacts, Directory, campaigns, analytics, surveys, sentiment, projects, workspace, attachments, profile, team, settings, admin, Slack) | no: the alumni session is not a member session anywhere |
+| `/alumni` portal: own name/email, sign out; published news posts, events, the opt-in directory, own directory profile, a message to the alumni board | yes |
+| Alumni board members (marked by a club admin): write posts and events, read and manage the board inbox | board members only |
+| Who may sign in (domains, allow-list), the board role, accounts | no: club admins only |
+| Resources (any kind), projects, members, clients | no |
+| Every member API (outreach, contacts, Directory, campaigns, analytics, surveys, sentiment, projects, workspace, attachments, resources, profile, team, settings, admin, Slack) | no: the alumni session is not a member session anywhere |
 | Admin | no |
-
-If an admin restricts the Resources app to listed members (Admin → Apps), alumni
-see no resources either.
 
 ### Enforcement (server side, at the shared boundary)
 
@@ -83,8 +85,12 @@ see no resources either.
 |---|---|---|---|---|
 | `alumni_domains` | domain, added_by (member id), added_at | club admins | admins (Admin → Alumni) | until an admin removes it |
 | `alumni_allowlist` | email, optional note (≤200 chars, e.g. "Class of 2022, ex-president"), added_by, added_at | club admins | admins | until an admin removes it |
-| `alumni_accounts` | email, Google account id, Google display name, created_at, last_sign_in_at, revoked_at, revoked_by | club admins | admins; the alumnus reads only their own email and name | until an admin deletes it. Revoke keeps the row (so the person stays out even if their domain is allowed); delete removes the row and its sign-in records |
+| `alumni_accounts` | email, Google account id, Google display name, created_at, last_sign_in_at, revoked_at, revoked_by, board_since, board_set_by (migration `core:7`) | club admins | admins; the alumnus reads only their own email, name and board status | until an admin deletes it. Revoke keeps the row (so the person stays out even if their domain is allowed); delete removes the row, its sign-in records and its directory profile |
 | `alumni_sign_ins` | time, account id (when known), **domain only** of the address, outcome (`signed_in`, `not_eligible`, `revoked`, `identity_mismatch`) | club admins | admins | rows older than 365 days are deleted at each new sign-in; deleted with the account |
+
+The portal's own tables (posts, cover images, events, directory profiles, board
+messages, rate-limit records) are specified in
+[../product/ALUMNI-PORTAL.md](../product/ALUMNI-PORTAL.md).
 
 Not stored: Google access or refresh tokens, profile pictures, passwords, IP
 addresses, the full address of a refused sign-in (only its domain, so strangers who
@@ -96,21 +102,22 @@ try are not recorded by name).
   deletion limit to tell an alumnus who asks to be forgotten.
 - **Audit evidence.** Sign-ins and refusals: `alumni_sign_ins` (Admin → Alumni shows
   the latest 200). Admin changes (domain/address added or removed, account revoked,
-  restored, deleted) and every alumni file download (`alumni_resource_download`,
-  with the alumni account id) go to the existing `audit_log`, shown in Admin →
-  Activity.
-- **Client data.** Alumni read only resources a client agreed to disclose; the
-  resource rules stay in `services/resources.py`, the one place they live.
-- **Cost.** No new service: one SQLite migration and pages in the existing
-  container. $0/month.
+  restored, deleted, board role added or removed) and the portal's post, event,
+  cover, directory-profile and board-inbox changes and reads go to the existing
+  `audit_log`, shown in Admin → Activity.
+- **Client data.** Alumni read no club data; no alumni route touches Resources,
+  projects, members or clients.
+- **Cost.** No new service: SQLite migrations `core:4` and `core:7`, pages in the
+  existing container, and post covers (5 MB at most each) in the existing documents
+  bucket. About $0/month [INFERENCE: a few covers a month].
 
 ### Decisions for the president (alumni)
 
 1. Add `aya.yale.edu` to the domain list (every YaleMail holder: alumni, post-docs,
    affiliates), or allow-list named alumni only? Default shipped: neither, the
    feature is dormant.
-2. Alumni see only `public` past projects. Widen to guides and templates? (They are
-   internal club material; not done by default.)
+2. ~~Alumni see only `public` past projects; widen?~~ Superseded 2026-11-17: alumni
+   get no club data; the portal is for alumni news, events, directory and the board.
 3. Alumni sessions last 24 hours (members: 7 days). Fine as is?
 
 ### What was built (commit on `night/security`)
@@ -120,9 +127,9 @@ try are not recorded by name).
 | Tables, sign-in rule, per-request check, alumni API, admin API | `backend/app/routers/alumni.py`, migration `core:4` in `app/modules/core.py` |
 | Google start `/api/auth/alumni/google`; the shared callback branches on the challenge's purpose before the `@yale.edu` rule | `backend/app/routers/auth.py` |
 | Alumni token, cookie, audience | `backend/app/jwt_utils.py` |
-| What alumni may read (`is_alumni`; keys absent, not empty) | `backend/app/services/resources.py` |
-| Pages `/alumni/login`, `/alumni`; Admin → Alumni | `frontend/src/pages/AlumniLogin.tsx`, `AlumniHome.tsx`, `components/admin/AlumniAccess.tsx` |
-| Tests: sign-in rules, read rules with an admin positive control, revocation, denial matrix | `backend/tests/test_alumni.py` |
+| Alumni portal: board, posts, covers, events, directory, board inbox (migration `core:7`) | `backend/app/routers/alumni_portal.py`, `backend/app/services/alumni_covers.py`, `backend/app/services/safe_html.py` |
+| Pages `/alumni/login`, `/alumni` (portal); Admin → Alumni (access, board, news, events, inbox, directory) | `frontend/src/pages/AlumniLogin.tsx`, `AlumniHome.tsx`, `components/alumni/`, `components/admin/AlumniAccess.tsx` |
+| Tests: sign-in rules, no club data, revocation, denial matrix; portal authorization matrix (anonymous, member, admin, alumnus, board), sanitiser, covers, events, directory, inbox, rate limits | `backend/tests/test_alumni.py`, `backend/tests/test_alumni_portal.py` |
 
 Before an admin adds anything, nothing changes for anyone: members' sign-in, pages
 and APIs are untouched (the alumni 401 never signs a member out of the UI).
@@ -231,7 +238,7 @@ callback; the flow is tested with a faked Google), and the S3 restore drill.
 
 ## 4. Decisions for the president
 
-1. Alumni: which domain(s) or names to allow (section 1); widen beyond public past projects?
+1. Alumni: which domain(s) or names to allow (section 1), and which alumni to mark as board members.
 2. API-key scope (F1) is enforced now. Any integration that used a key for more than
    reading contacts will get 403 after deploy; create a key per need once scopes are chosen.
 3. Approve or decline P1–P10; all are $0 except P9 (about $0.05) and P10 (saves $0.40).

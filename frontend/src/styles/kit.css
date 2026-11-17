@@ -461,3 +461,29 @@ details[open] > *:not(summary),
   font-family: var(--yucg-font-chart);
   color: var(--chart-text);
 }
+
+/* Alumni portal rich text (lib/portalHtml): what the editor writes and posts show.
+   Tailwind's reset removes list bullets and heading sizes, so they come back here. */
+.portal-html {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+.portal-html > * + * { margin-top: 0.6em; }
+.portal-html h2 { font-size: 1.2rem; font-weight: 700; }
+.portal-html h3 { font-size: 1.05rem; font-weight: 700; }
+.portal-html ul { list-style: disc; padding-left: 1.4rem; }
+.portal-html ol { list-style: decimal; padding-left: 1.4rem; }
+.portal-html blockquote { border-left: 3px solid var(--steel-600); padding-left: 0.75rem; font-style: italic; }
+.portal-html pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+.portal-html code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.portal-html a { color: var(--blue-600); text-decoration: underline; overflow-wrap: anywhere; }
+.portal-editor {
+  min-height: 10rem;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+.portal-editor:focus { outline: 2px solid var(--accent); outline-offset: 0; }
