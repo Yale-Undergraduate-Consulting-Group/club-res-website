@@ -72,8 +72,8 @@ function DirectoryCard({ entry }: { entry: DirectoryEntry }) {
       {entry.city && <p className="text-sm text-slate-600 break-words">{entry.city}</p>}
       {entry.note && <p className="text-sm text-slate-700 break-words">{entry.note}</p>}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm min-w-0">
-        {linkedin && <a className="text-blue-600 underline break-all" href={linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a>}
-        {entry.email && <a className="text-blue-600 underline break-all" href={`mailto:${entry.email}`}>{entry.email}</a>}
+        {linkedin && <a className="text-[var(--link)] underline break-all" href={linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a>}
+        {entry.email && <a className="text-[var(--link)] underline break-all" href={`mailto:${entry.email}`}>{entry.email}</a>}
       </div>
     </li>
   );

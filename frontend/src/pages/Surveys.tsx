@@ -299,7 +299,7 @@ export default function Surveys() {
           </div>
           <div className="survey-panel-foot">
             <div className="min-w-0 flex-1 text-sm" role="status">
-              {createError && <span className="text-[var(--danger)]">Error: {createError}</span>}
+              {createError && <span className="text-[var(--error)]">Error: {createError}</span>}
               {created && (
                 <span>
                   Created with {created.added} of {created.total} questions.{' '}

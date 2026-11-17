@@ -39,10 +39,10 @@ export default function SearchProviderStatus({ refreshKey }: { refreshKey: unkno
   return (
     <div className="mb-4 border border-pale-sky/80 px-4 py-3 text-sm" data-testid="search-provider-status">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-deep-navy dark:text-[var(--text-primary)]">Monid (TinyFish)</span>
+        <span className="font-medium text-deep-navy">Monid (TinyFish)</span>
         <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
       </div>
-      <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+      <p className="mt-1 text-xs text-slate-600">
         {state.hint}
         {health.paused_for_s > 0 && ` Calls are on hold for about ${Math.ceil(health.paused_for_s / 60)} min so a burst of searches does not hammer it.`}
       </p>

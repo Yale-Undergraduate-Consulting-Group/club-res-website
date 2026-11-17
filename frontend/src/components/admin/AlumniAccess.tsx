@@ -122,7 +122,7 @@ function AccessSection() {
               {data.domains.map((row) => (
                 <li key={row.domain} className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-mono text-sm break-all">{row.domain}</span>
-                  <Button size="sm" variant="secondary" disabled={busy !== ''} aria-label={`Remove ${row.domain}`}
+                  <Button size="sm" variant="danger" disabled={busy !== ''} aria-label={`Remove ${row.domain}`}
                     onClick={() => run(`d:${row.domain}`, () => api.admin.alumni.removeDomain(row.domain), `${row.domain} removed.`)}>
                     Remove
                   </Button>
@@ -150,7 +150,7 @@ function AccessSection() {
                     <span className="text-sm break-all">{row.email}</span>
                     {row.note && <span className="block text-xs text-slate-500 break-words">{row.note}</span>}
                   </span>
-                  <Button size="sm" variant="secondary" disabled={busy !== ''} aria-label={`Remove ${row.email}`}
+                  <Button size="sm" variant="danger" disabled={busy !== ''} aria-label={`Remove ${row.email}`}
                     onClick={() => run(`e:${row.email}`, () => api.admin.alumni.removeEmail(row.email), `${row.email} removed.`)}>
                     Remove
                   </Button>
@@ -194,7 +194,7 @@ function AccessSection() {
                     {account.revoked_at
                       ? <Button size="sm" variant="secondary" disabled={busy !== ''}
                           onClick={() => run(`r:${account.id}`, () => api.admin.alumni.restore(account.id), `${account.email} restored.`)}>Restore</Button>
-                      : <Button size="sm" variant="secondary" disabled={busy !== ''}
+                      : <Button size="sm" variant="danger" disabled={busy !== ''}
                           onClick={() => run(`v:${account.id}`, () => api.admin.alumni.revoke(account.id), `${account.email} revoked.`)}>Revoke</Button>}
                     <Button size="sm" variant="danger" disabled={busy !== ''} onClick={() => setDeleting(account)}>Delete</Button>
                   </span>

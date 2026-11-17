@@ -116,7 +116,7 @@ export default function Invitations() {
               ? <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => void copyLink(links[item.id])}>Copy link</button>
               : <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => setReplaceItem(item)}>Replace with shareable link</button>}
             {item.delivery_state === 'ready' && <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => void act(item, true)}>Send invitation</button>}
-            <button className="ui-button ui-button--secondary h-full w-full" disabled={busy} onClick={() => void act(item, false)}>Revoke</button>
+            <button className="ui-button ui-button--danger h-full w-full" disabled={busy} onClick={() => void act(item, false)}>Revoke</button>
           </div>
         </div>}
       </td></tr>)}</tbody></table></div>

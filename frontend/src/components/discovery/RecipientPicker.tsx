@@ -146,7 +146,7 @@ export default function RecipientPicker({
       {/* The count is the first thing on the sheet, because it is the answer
           to the only question it asks. Sticky against the surface, which is
           the one thing that scrolls. */}
-      <div className="sticky top-0 z-10 -mx-4 border-b border-pale-sky bg-white/95 px-4 py-2 backdrop-blur"
+      <div className="sticky top-0 z-10 -mx-4 border-b border-pale-sky bg-[var(--surface)]/95 px-4 py-2 backdrop-blur"
            data-testid="sheet-header">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-sm font-semibold text-deep-navy" data-testid="selected-count">
@@ -186,7 +186,7 @@ export default function RecipientPicker({
           <select
             value={level}
             onChange={(e) => setLevel(e.target.value as 'all' | Level)}
-            className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+            className="mt-1 block border border-pale-sky bg-[var(--surface)] px-3 py-2 text-sm text-deep-navy"
           >
             <option value="all">Anyone found</option>
             <option value="working">Working level (the people who answer)</option>
@@ -200,7 +200,7 @@ export default function RecipientPicker({
           <select
             value={fn}
             onChange={(e) => setFn(e.target.value as 'all' | Fn)}
-            className="mt-1 block border border-pale-sky bg-white px-3 py-2 text-sm text-deep-navy"
+            className="mt-1 block border border-pale-sky bg-[var(--surface)] px-3 py-2 text-sm text-deep-navy"
             data-testid="function-filter"
           >
             <option value="all">Any function</option>

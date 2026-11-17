@@ -5,6 +5,7 @@ import { memberFirstName } from '../../lib/memberName';
 import AppNavLink from './AppNavLink';
 import { Button } from '../ui/Primitives';
 import GuideBubble from '../GuideBubble';
+import ThemeToggle from '../ThemeToggle';
 
 type AppShellHeaderProps = {
   app: AppModule;
@@ -34,6 +35,7 @@ export default function AppShellHeader({ app, user, navItems, onLogout }: AppShe
         </nav>
 
         <div className="app-shell-header-actions">
+          <ThemeToggle />
           <GuideBubble />
           {user.picture && (
             <img
