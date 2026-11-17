@@ -680,6 +680,7 @@ export default function CampaignPipeline() {
             contact_ids: recipients.map((r) => r.id).join(','),
           })}` : ''}
           onHeld={setHeld}
+          onUntick={(ids) => changeSelection(selected.filter((id) => !ids.includes(id)))}
         />
 
         {error && <p className="ui-notice ui-notice--danger mx-5 my-4">{error}</p>}
