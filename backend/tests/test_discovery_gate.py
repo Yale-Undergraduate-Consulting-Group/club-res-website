@@ -1,4 +1,4 @@
-"""One HTML crawl at a time on a small box. From backend/: python tests/test_discovery_gate.py"""
+"""Crawl slots: DISCOVERY_JOBS is obeyed and slots never overlap past it. From backend/: python tests/test_discovery_gate.py"""
 from __future__ import annotations
 
 import asyncio
@@ -42,11 +42,11 @@ def test_discovery_jobs_do_not_overlap() -> None:
     asyncio.run(_run())
 
 
-def test_small_box_is_one_slot() -> None:
+def test_discovery_jobs_setting_is_obeyed() -> None:
     assert gate.discovery_job_slots() == 1
 
 
 if __name__ == "__main__":
-    test_small_box_is_one_slot()
+    test_discovery_jobs_setting_is_obeyed()
     test_discovery_jobs_do_not_overlap()
     print("ok")

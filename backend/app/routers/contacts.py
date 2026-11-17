@@ -124,8 +124,11 @@ async def _execute_scrape(
                     "domain",
                     par_lo,
                     "Waiting for website crawl slot",
-                    "HTML crawl is serialized on this box; web search keeps running",
+                    "Other searches are reading their websites; web search keeps running",
                 )
+                return
+            if url == "started":
+                await emit("domain", par_lo, "Crawling company website", None)
                 return
             frac = (i - 1) / max(n, 1)
             await emit("domain", par_lo + (par_hi - par_lo) * 0.35 * frac, "Crawling company website", f"Page {i}/{n}")

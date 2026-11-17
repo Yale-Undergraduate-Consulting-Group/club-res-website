@@ -165,7 +165,8 @@ test('Search looks for a company with nobody on file, and the people it finds ar
   await expect(neonLane).toHaveAttribute('data-state', 'searching');
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
-  expect(runsCreated[0].max_prospects).toBe(120);
+  // No goal typed: the server sizes it to the company.
+  expect(runsCreated[0].max_prospects).toBeUndefined();
 
   // Everyone it finds goes onto the list as soon as it finishes: the default
   // tick chooses the team leads, and the CEO is there but not ticked.
