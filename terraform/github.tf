@@ -19,7 +19,7 @@ locals {
   other_name        = "club-res-website-${local.other_environment}"
   # IAM rejects a wildcard service in a policy ARN, so the boundary names every
   # service this stack uses. Global services take an empty region field.
-  boundary_regional_services = ["secretsmanager", "ssm", "ecr", "logs", "kms", "ec2", "wafv2", "scheduler", "dlm", "route53resolver"]
+  boundary_regional_services = ["secretsmanager", "ssm", "ecr", "logs", "kms", "ec2", "wafv2", "dlm", "route53resolver"]
   boundary_global_services   = ["cloudfront", "budgets"]
 }
 
@@ -82,6 +82,23 @@ resource "aws_iam_policy" "boundary" {
           "iam:DeletePolicy", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion",
         ]
         Resource = "*"
+      },
+      {
+        # Instances start and stop only in this environment: in dev, the deploy
+        # role's release start/stop of the dev box; in prod, Terraform's
+        # instance-type change of the prod box. A missing tag also denies.
+        Sid       = "StartStopOnlyThisEnvironmentsBoxBySite"
+        Effect    = "Deny"
+        Action    = ["ec2:StartInstances", "ec2:StopInstances"]
+        Resource  = "*"
+        Condition = { StringNotEquals = { "aws:ResourceTag/Site" = local.name } }
+      },
+      {
+        Sid       = "StartStopOnlyThisEnvironmentsBoxByName"
+        Effect    = "Deny"
+        Action    = ["ec2:StartInstances", "ec2:StopInstances"]
+        Resource  = "*"
+        Condition = { StringNotEquals = { "aws:ResourceTag/Name" = local.name } }
       },
     ]
   })
@@ -192,6 +209,48 @@ resource "aws_iam_role_policy" "deploy" {
   })
 }
 
+# Dev only: dev is meant to be stopped between releases, so the Dev deploy job
+# may start the box, deploy and stop it again. The deploy job does not do this
+# yet; until it does, dev must be running for a deploy. The prod deploy role
+# gets none of this.
+resource "aws_iam_role_policy" "deploy_dev_box" {
+  count = var.environment == "dev" ? 1 : 0
+  name  = "start-stop-dev-box"
+  role  = aws_iam_role.deploy.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "StartStopOnlyTheDevBox"
+        Effect   = "Allow"
+        Action   = ["ec2:StartInstances", "ec2:StopInstances"]
+        Resource = aws_instance.box.arn
+        Condition = { StringEquals = {
+          "aws:ResourceTag/Site" = local.name
+          "aws:ResourceTag/Name" = local.name
+        } }
+      },
+      {
+        # Starting a box whose volumes use the environment key makes EBS create
+        # grants under the caller's identity; without this the start fails.
+        Sid       = "AttachEncryptedVolumesOnStart"
+        Effect    = "Allow"
+        Action    = "kms:CreateGrant"
+        Resource  = aws_kms_key.env.arn
+        Condition = { Bool = { "kms:GrantIsForAWSResource" = "true" } }
+      },
+      {
+        # Read-only; neither API supports resource-level scope. The deploy waits
+        # for EC2 running and the agent to check in after boot.
+        Sid      = "ReadBootStatus"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeInstanceStatus", "ssm:DescribeInstanceInformation"]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
 # Runs reviewed plan/apply from prod. It reads every resource of this state
 # and updates their settings; it cannot create or delete them. The first
 # apply (bootstrap) and any change that creates, replaces or deletes a
@@ -282,8 +341,6 @@ resource "aws_iam_role_policy" "terraform" {
           "secretsmanager:GetResourcePolicy",
           "ssm:DescribeParameters",
           "ssm:ListTagsForResource",
-          "scheduler:GetSchedule",
-          "scheduler:ListTagsForResource",
           "cloudfront:GetVpcOrigin",
           "cloudfront:GetResponseHeadersPolicy",
           "cloudfront:GetResponseHeadersPolicyConfig",
@@ -426,17 +483,14 @@ resource "aws_iam_role_policy" "terraform" {
           "iam:GetRolePolicy",
           "iam:PutRolePolicy",
         ]
-        Resource = concat(
-          [aws_iam_role.deploy.arn, aws_iam_role.terraform.arn, aws_iam_role.box.arn, aws_iam_role.dlm.arn, aws_iam_role.flow_logs.arn],
-          [for r in aws_iam_role.scheduler : r.arn],
-        )
+        Resource = [aws_iam_role.deploy.arn, aws_iam_role.terraform.arn, aws_iam_role.box.arn, aws_iam_role.dlm.arn, aws_iam_role.flow_logs.arn]
       },
       {
         Sid       = "PassServiceRoles"
         Effect    = "Allow"
         Action    = "iam:PassRole"
-        Resource  = concat([aws_iam_role.dlm.arn, aws_iam_role.flow_logs.arn], [for r in aws_iam_role.scheduler : r.arn])
-        Condition = { StringEquals = { "iam:PassedToService" = ["dlm.amazonaws.com", "vpc-flow-logs.amazonaws.com", "scheduler.amazonaws.com"] } }
+        Resource  = [aws_iam_role.dlm.arn, aws_iam_role.flow_logs.arn]
+        Condition = { StringEquals = { "iam:PassedToService" = ["dlm.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
       },
       {
         Sid      = "ManageBudget"
@@ -444,12 +498,7 @@ resource "aws_iam_role_policy" "terraform" {
         Action   = ["budgets:ViewBudget", "budgets:ModifyBudget", "budgets:ListTagsForResource", "budgets:TagResource", "budgets:UntagResource"]
         Resource = "arn:aws:budgets::${local.account_id}:budget/${local.budget_name}"
       },
-      ], var.office_hours_enabled ? [{
-        Sid      = "ManageOfficeHoursSchedules"
-        Effect   = "Allow"
-        Action   = ["scheduler:UpdateSchedule", "scheduler:TagResource", "scheduler:UntagResource"]
-        Resource = "arn:aws:scheduler:${var.aws_region}:${local.account_id}:schedule/default/${local.name}-*"
-      }] : [], local.edge ? [
+      ], local.edge ? [
       {
         Sid    = "ManageDistribution"
         Effect = "Allow"

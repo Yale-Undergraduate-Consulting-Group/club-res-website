@@ -1,4 +1,4 @@
-# Alerts (prod only: the dev box stops every night, so its alarms would be
+# Alerts (prod only: the dev box is stopped between releases, so its alarms would be
 # noise). Email goes to budget_email; Slack goes through AWS Chatbot once the
 # workspace has been authorized in the console and slack_team_id and
 # slack_channel_id are set. Cost: one custom metric (app errors, about
