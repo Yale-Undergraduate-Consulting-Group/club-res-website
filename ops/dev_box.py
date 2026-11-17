@@ -39,8 +39,13 @@ def converge(instance_id, target, attempts, call=aws, sleep=time.sleep):
 
 
 def wait_for_ssm(instance_id, launched, attempts, call=aws, sleep=time.sleep):
-    """SSM keeps reporting Online for a while after a stop, so require a ping from this boot."""
+    """Require EC2 running and a current-boot SSM ping; stale Online status can linger."""
     for _ in range(attempts):
+        statuses = call('ec2', 'describe-instance-status',
+                        '--instance-ids', instance_id)['InstanceStatuses']
+        if not statuses or statuses[0]['InstanceState']['Name'] != 'running':
+            sleep(POLL_SECONDS)
+            continue
         found = call('ssm', 'describe-instance-information',
                      '--filters', f'Key=InstanceIds,Values={instance_id}')['InstanceInformationList']
         if found and found[0].get('PingStatus') == 'Online' \

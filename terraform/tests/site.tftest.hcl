@@ -241,8 +241,8 @@ run "dev_deploy_may_start_and_stop_only_the_dev_box" {
     error_message = "Dev is stopped between releases, so the dev deploy role needs its start/stop policy."
   }
   assert {
-    condition     = toset(flatten([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Action])) == toset(["ec2:StartInstances", "ec2:StopInstances", "kms:CreateGrant", "ssm:DescribeInstanceInformation"]) && alltrue([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Effect == "Allow"])
-    error_message = "The dev deploy role gains only start/stop, the EBS key grant a start needs, and read-only SSM agent status."
+    condition     = toset(flatten([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Action])) == toset(["ec2:StartInstances", "ec2:StopInstances", "ec2:DescribeInstanceStatus", "kms:CreateGrant", "ssm:DescribeInstanceInformation"]) && alltrue([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Effect == "Allow"]) && contains(one([for s in jsondecode(aws_iam_role_policy.deploy.policy).Statement : s.Action if s.Sid == "ReadCommandResultsAndPreflight"]), "ec2:DescribeInstances")
+    error_message = "The dev deploy role gains only start/stop, the EBS key grant a start needs, and read-only EC2/SSM status."
   }
   assert {
     condition     = one([for s in jsondecode(aws_iam_role_policy.deploy_dev_box[0].policy).Statement : s.Resource == aws_instance.box.arn && s.Condition.StringEquals["aws:ResourceTag/Site"] == "club-res-website-dev" && s.Condition.StringEquals["aws:ResourceTag/Name"] == "club-res-website-dev" if contains(flatten([s.Action]), "ec2:StartInstances")]) && aws_instance.box.arn == "arn:aws:ec2:us-east-2:123456789012:instance/i-0123456789abcdef0"

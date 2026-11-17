@@ -239,11 +239,11 @@ resource "aws_iam_role_policy" "deploy_dev_box" {
         Condition = { Bool = { "kms:GrantIsForAWSResource" = "true" } }
       },
       {
-        # Read-only; the API has no resource-level scope. The deploy waits for
-        # the agent to check in after boot before it sends the release.
-        Sid      = "ReadSsmAgentStatus"
+        # Read-only; neither API supports resource-level scope. The deploy waits
+        # for EC2 running and the agent to check in after boot.
+        Sid      = "ReadBootStatus"
         Effect   = "Allow"
-        Action   = "ssm:DescribeInstanceInformation"
+        Action   = ["ec2:DescribeInstanceStatus", "ssm:DescribeInstanceInformation"]
         Resource = "*"
       },
     ]

@@ -15,13 +15,17 @@ BOOT = '2026-11-17T12:00:00+00:00'
 
 
 class FakeAws:
-    def __init__(self, states, pings=()):
-        self.states, self.pings, self.commands = list(states), list(pings), []
+    def __init__(self, states, pings=(), status_states=('running',)):
+        self.states, self.pings, self.status_states = list(states), list(pings), list(status_states)
+        self.commands = []
 
     def __call__(self, *args):
         if args[:2] == ('ec2', 'describe-instances'):
             state = self.states.pop(0) if len(self.states) > 1 else self.states[0]
             return {'Reservations': [{'Instances': [{'State': {'Name': state}, 'LaunchTime': BOOT}]}]}
+        if args[:2] == ('ec2', 'describe-instance-status'):
+            state = self.status_states.pop(0) if len(self.status_states) > 1 else self.status_states[0]
+            return {'InstanceStatuses': [] if state is None else [{'InstanceState': {'Name': state}}]}
         if args[:2] == ('ssm', 'describe-instance-information'):
             ping = self.pings.pop(0) if len(self.pings) > 1 else self.pings[0]
             return {'InstanceInformationList': [ping] if ping else []}
@@ -43,6 +47,12 @@ class DevBoxTests(unittest.TestCase):
         self.run_start(fake)
         self.assertEqual(fake.commands, [('ec2', 'start-instances')])
         self.assertEqual(fake.pings, [online('2026-11-17T12:00:40.5+00:00')])
+
+    def test_start_waits_for_ec2_status_before_checking_ssm(self):
+        fake = FakeAws(['running'], [online('2026-11-17T12:01:00+00:00')],
+                       status_states=[None, 'pending', 'running'])
+        self.run_start(fake)
+        self.assertEqual(fake.pings, [online('2026-11-17T12:01:00+00:00')])
 
     def test_start_waits_out_a_stop_in_progress_before_starting(self):
         fake = FakeAws(['stopping', 'stopping', 'stopped', 'running'], [online('2026-11-17T12:01:00+00:00')])
