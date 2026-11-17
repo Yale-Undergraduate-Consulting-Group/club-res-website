@@ -177,6 +177,12 @@ const SURFACES: Surface[] = [
   },
   { name: 'Campaign', url: '/campaigns/1', ready: 'Fall consumer outreach' },
   { name: 'Admin Members', url: '/admin', ready: 'Ana Long-Surname' },
+  {
+    name: 'Admin setup reminders dialog', url: '/admin', ready: 'Ana Long-Surname',
+    steps: [
+      async (page) => { await page.getByRole('button', { name: 'Send setup reminders' }).click(); await page.getByRole('dialog').waitFor(); await page.getByTestId('reminder-3').waitFor(); },
+    ],
+  },
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },
   { name: 'Admin Costs', url: '/admin?view=costs', ready: /Pay-per-call APIs/ },
   { name: 'Profile', url: '/profile', ready: /Profile|Settings/ },

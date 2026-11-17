@@ -7,9 +7,9 @@ import { StatusBadge } from './ui/Primitives';
 type Step = { key: keyof Readiness; label: string; why: string; to?: string; required?: boolean };
 
 const STEPS: Step[] = [
-  { key: 'gmail', label: 'Connect your Gmail', why: 'Outreach goes out from your own account, so nothing can be sent until it is connected.', to: '/profile?view=integrations', required: true },
-  { key: 'sign_off', label: 'Set your email sign-off', why: 'Your name, role and links under every email. Until then your Google name signs it.', to: '/profile?view=settings' },
-  { key: 'slack', label: 'Connect Slack', why: 'Ask the club assistant about your outreach and get updates in Slack.', to: '/profile?view=integrations' },
+  { key: 'gmail', label: 'Connect your Gmail', why: 'Outreach goes out from your own account, so nothing can be sent until it is connected.', to: '/profile?tab=integrations', required: true },
+  { key: 'sign_off', label: 'Set your email sign-off', why: 'Your name, role and links under every email. Until then your Google name signs it.', to: '/profile?tab=settings' },
+  { key: 'slack', label: 'Connect Slack', why: 'Ask the club assistant about your outreach and get updates in Slack.', to: '/profile?tab=integrations' },
   { key: 'project', label: 'Join a project team', why: 'An admin adds you to your project, which shares its contacts and documents with you.' },
 ];
 

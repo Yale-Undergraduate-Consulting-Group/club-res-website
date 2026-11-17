@@ -5,7 +5,7 @@ from app import app_access
 from app.migrations import Migration
 from app.modules import Job, Module, Route, Setting
 from app.routers import activity, admin, alumni, alumni_portal, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
-from app.services import costs, slack_commands
+from app.services import costs, setup_reminders, slack_commands
 
 MODULE = Module(
     id="core",
@@ -41,6 +41,7 @@ MODULE = Module(
         Migration(5, "Two-factor sign-in attempts (limit and single use)", auth.create_two_factor_attempts),
         Migration(6, "Daily Cost Explorer cache", costs.create_tables),
         Migration(7, "Alumni portal: board, news posts and covers, events, directory, board inbox", alumni_portal.create_tables),
+        Migration(8, "Admin setup reminders sent over Slack", setup_reminders.create_tables),
     ),
     settings=(
         Setting("JWT_SECRET", "Signs members' sessions", required=True),

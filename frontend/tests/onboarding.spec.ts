@@ -25,7 +25,7 @@ test('Home lists only the missing setup steps and says Gmail blocks sending', as
   await page.goto('/campaigns');
   const card = page.getByTestId('getting-started');
   await expect(card).toContainText('Not ready to send');
-  await expect(card.getByRole('link', { name: 'Connect your Gmail' })).toHaveAttribute('href', '/profile?view=integrations');
+  await expect(card.getByRole('link', { name: 'Connect your Gmail' })).toHaveAttribute('href', '/profile?tab=integrations');
   await expect(card).toContainText('Required to send');
   await expect(card.getByRole('link', { name: 'Connect Slack' })).toBeVisible();
   await expect(card).not.toContainText('Set your email sign-off');

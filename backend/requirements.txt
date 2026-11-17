@@ -11,7 +11,6 @@ dnspython==2.9.2
 validators==0.22.0
 python-dotenv>=1.0
 openpyxl>=3.1
-pandas>=2.2
 matplotlib>=3.8
 PyJWT>=2.14.0
 pyotp>=2.9

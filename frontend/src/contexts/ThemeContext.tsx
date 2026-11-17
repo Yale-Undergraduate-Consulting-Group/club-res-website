@@ -32,18 +32,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const dark = theme === 'dark' || (theme === 'system' && systemDark);
 
-  // Before paint, so a page never flashes the other theme. A switch after the
-  // first paint fades every colour for a moment (styles/kit.css .theme-switching);
-  // the first paint and reduced-motion users get none.
-  const painted = useRef(false);
+  // Before paint, so a page never flashes the other theme. Only a real change
+  // of the resolved look fades every colour for a moment (styles/kit.css
+  // .theme-switching): the first paint does not, nor React's development
+  // re-run of this effect with the same value, nor reduced-motion users.
+  const shown = useRef(dark);
   useLayoutEffect(() => {
     const root = document.documentElement;
     let timer: number | undefined;
-    if (painted.current) {
+    if (shown.current !== dark) {
       root.classList.add('theme-switching');
       timer = window.setTimeout(() => root.classList.remove('theme-switching'), 400);
     }
-    painted.current = true;
+    shown.current = dark;
     root.classList.toggle('dark', dark);
     // Re-derive --btn-primary-* for light vs dark (accent-based)
     applyStoredPreferences();
