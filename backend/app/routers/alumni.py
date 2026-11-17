@@ -140,6 +140,35 @@ async def sign_in_response(frontend_url: str, email: str, google_id: str, name: 
     return response
 
 
+@router.post("/dev-login")
+async def dev_login(request: Request):
+    """Sign in as DEV_ALUMNI_EMAIL on a local dev server, so the portal can be
+    reviewed (Google only returns to the production callback). Fenced like the
+    member dev sign-in (routers/auth.py): never in production, only with the
+    variable set, only on a loopback host. The address still has to pass the
+    admin's lists, through the same ``sign_in`` as Google."""
+    import os
+
+    email = (os.getenv("DEV_ALUMNI_EMAIL") or "").strip().lower()
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if ((os.getenv("APP_ENV") or "").strip().lower() == "production" or not email
+            or host not in {"localhost", "127.0.0.1", "[::1]", "::1"}):
+        raise HTTPException(404, "Not found")
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        account_id, outcome = await sign_in(db, email, "dev-local", email.split("@")[0])
+        await db.commit()
+    finally:
+        await db.close()
+    if account_id is None:
+        raise HTTPException(403, f"Alumni sign-in refused: {outcome}")
+    response = JSONResponse({"ok": True, "email": email, "dev": True})
+    cookie = alumni_cookie_kwargs()
+    response.set_cookie(cookie.pop("key"), create_alumni_token(account_id), **cookie)
+    return response
+
+
 async def get_current_alumni(request: Request) -> dict:
     """The signed-in alumnus, checked against the lists on every request.
     Reads only the alumni cookie: no Bearer header, no API key."""

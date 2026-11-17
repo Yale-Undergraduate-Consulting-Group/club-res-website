@@ -116,7 +116,7 @@ def sanitiser() -> None:
 def portal_routes() -> list[tuple[str, str]]:
     return [(path, method.upper()) for path, ops in main.app.openapi()["paths"].items() for method in ops
             if (path.startswith(("/api/alumni/", "/api/admin/alumni/")) or path == "/api/admin/alumni")
-            and path != "/api/alumni/logout"]
+            and path not in {"/api/alumni/logout", "/api/alumni/dev-login"}]
 
 
 #: Portal routes an ordinary alumnus may use (everything else on the alumni door is the board's).

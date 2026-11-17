@@ -42,6 +42,23 @@ export default function AlumniLogin() {
           Sign in with Google
         </Button>
 
+        {/* Local review only, fenced like the members' dev sign-in: the endpoint
+            404s unless DEV_ALUMNI_EMAIL is set, the app is not production and the
+            request's host is loopback; the address must still be on the lists. */}
+        {(import.meta.env.DEV || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) && (
+          <Button
+            variant="secondary"
+            className="mt-3 w-full"
+            onClick={async () => {
+              const response = await fetch('/api/alumni/dev-login', { method: 'POST', credentials: 'include' });
+              if (response.ok) window.location.assign('/alumni');
+              else navigate('/alumni/login?error=not_eligible');
+            }}
+          >
+            Dev sign-in (local only)
+          </Button>
+        )}
+
         <p className="mt-6 text-center text-xs text-slate-500">
           Your alumni address or one a club admin added. Current members: <Link to="/login" className="underline">member sign-in</Link>.
         </p>

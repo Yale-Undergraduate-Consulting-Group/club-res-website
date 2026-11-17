@@ -213,9 +213,30 @@ def denial_matrix(alumni_token: str, standard: TestClient) -> None:
         if path == "/api/alumni/logout":
             continue
         url = path.replace("{", "").replace("}", "")
+        # The local dev sign-in is a pre-sign-in route: with DEV_ALUMNI_EMAIL unset it does not exist.
+        expected = 404 if path == "/api/alumni/dev-login" else 401
         for client in (anonymous, standard, member_as_alumni):
-            assert client.request(method, url).status_code == 401, (method, path)
+            assert client.request(method, url).status_code == expected, (method, path)
     print(f"denial matrix: {len(routes) - len(alumni_routes)} routes x 3 alumni presentations = {checked} checks, no gaps")
+
+
+def dev_login_fences(admin: TestClient) -> None:
+    """The local alumni dev sign-in exists only with DEV_ALUMNI_EMAIL set, outside
+    production, on a loopback host, and only for an address the lists allow."""
+    local = TestClient(main.app, base_url="http://localhost", raise_server_exceptions=False)
+    os.environ.pop("DEV_ALUMNI_EMAIL", None)
+    assert local.post("/api/alumni/dev-login").status_code == 404
+    os.environ["DEV_ALUMNI_EMAIL"] = "dev-alum@example.org"
+    remote = TestClient(main.app, base_url="http://club.example.org", raise_server_exceptions=False)
+    assert remote.post("/api/alumni/dev-login").status_code == 404
+    os.environ["APP_ENV"] = "production"
+    assert local.post("/api/alumni/dev-login").status_code == 404
+    os.environ.pop("APP_ENV")
+    assert local.post("/api/alumni/dev-login").status_code == 403, "not on the lists yet"
+    assert admin.post("/api/admin/alumni/emails", json={"email": "dev-alum@example.org"}).status_code == 201
+    assert local.post("/api/alumni/dev-login").status_code == 200
+    assert local.get("/api/alumni/me").json()["email"] == "dev-alum@example.org"
+    os.environ.pop("DEV_ALUMNI_EMAIL")
 
 
 def tests() -> None:
@@ -229,6 +250,7 @@ def tests() -> None:
     friend.cookies.set("yucg_alumni", create_alumni_token(sql("SELECT id FROM alumni_accounts WHERE email = 'friend@gmail.com'")[0][0]))
     no_club_data(admin, alum)
     denial_matrix(create_alumni_token(alum_id), standard)
+    dev_login_fences(admin)
     revocation(admin, alum, friend)
 
 
