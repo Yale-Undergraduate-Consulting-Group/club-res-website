@@ -4,7 +4,7 @@ import { ThemeContext, type Theme } from './useTheme';
  * the resolved light or dark look is the `dark` class on <html>. System
  * follows prefers-color-scheme live, without a reload.
  */
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { applyStoredPreferences } from '../lib/userPreferences';
 
 const STORAGE_KEY = 'yucg_theme';
@@ -32,11 +32,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const dark = theme === 'dark' || (theme === 'system' && systemDark);
 
-  // Before paint, so a page never flashes the other theme.
+  // Before paint, so a page never flashes the other theme. A switch after the
+  // first paint fades every colour for a moment (styles/kit.css .theme-switching);
+  // the first paint and reduced-motion users get none.
+  const painted = useRef(false);
   useLayoutEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
+    const root = document.documentElement;
+    let timer: number | undefined;
+    if (painted.current) {
+      root.classList.add('theme-switching');
+      timer = window.setTimeout(() => root.classList.remove('theme-switching'), 400);
+    }
+    painted.current = true;
+    root.classList.toggle('dark', dark);
     // Re-derive --btn-primary-* for light vs dark (accent-based)
     applyStoredPreferences();
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      root.classList.remove('theme-switching');
+    };
   }, [dark]);
 
   useEffect(() => {

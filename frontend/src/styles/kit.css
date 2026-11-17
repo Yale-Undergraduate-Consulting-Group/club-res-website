@@ -470,3 +470,19 @@ details[open] > *:not(summary),
   color: var(--ink);
 }
 .portal-editor:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+
+/* Switching between light and dark fades every colour instead of snapping
+   (contexts/ThemeContext.tsx sets this class for 400 ms after a change). */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: background-color 350ms ease, color 350ms ease, border-color 350ms ease,
+    fill 350ms ease, stroke 350ms ease, box-shadow 350ms ease, outline-color 350ms ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-switching,
+  .theme-switching *,
+  .theme-switching *::before,
+  .theme-switching *::after { transition: none !important; }
+}
