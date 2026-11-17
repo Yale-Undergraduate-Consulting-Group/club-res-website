@@ -30,8 +30,11 @@ export type Lane = {
   status: CompanyStatus;
 };
 
-/** Lane colours, in the order a commit graph would assign them. */
-const COLOURS = ['#1E3A6E', '#3D5C82', '#5B7FA6', '#7A9CC6', '#C2884B', '#4E7A5E', '#8C5A86'];
+/** Lane colours, in the order a commit graph would assign them: the chart palette, so they follow the theme. */
+const COLOURS = [1, 2, 3, 4, 5, 6, 7].map((n) => `var(--chart-${n})`);
+/** The campaign trunk and the empty step circles, drawn in the page's ink and surface. */
+const TRUNK = { stroke: 'var(--ink)' };
+const HOLLOW = 'var(--surface)';
 
 const ROW = 38;
 /** Rows drawn before the rest fold behind a count. */
@@ -61,7 +64,7 @@ export default function CompanyLanes({ lanes, emailed, focused, onFocus, onExpor
       {/* Sticky against the surface, the same way the sheet's own header
           pins: scroll past this panel and its title stays put until the
           panel itself has scrolled by, then the sheet's header takes over. */}
-      <div className="sticky top-0 z-10 -mx-4 border-b border-pale-sky bg-white/95 px-4 py-2 backdrop-blur"
+      <div className="sticky top-0 z-10 -mx-4 border-b border-pale-sky bg-[var(--surface)]/95 px-4 py-2 backdrop-blur"
            data-testid="lanes-header">
         <div className="flex items-baseline justify-between">
           <h2 className="text-[15px] font-semibold text-deep-navy">Company progress</h2>
@@ -108,23 +111,22 @@ export default function CompanyLanes({ lanes, emailed, focused, onFocus, onExpor
                   flourish with room to spare. A phone does not have that room. */}
               <svg width={GRAPH_W} height={ROW} viewBox={`0 0 ${GRAPH_W} ${ROW}`} aria-hidden="true" className="hidden sm:block shrink-0">
                 {/* The campaign itself: every lane leaves it and returns to it. */}
-                <line x1={TRUNK_X} y1={0} x2={TRUNK_X} y2={ROW} stroke="#1A2F5A" strokeWidth={2} />
+                <line x1={TRUNK_X} y1={0} x2={TRUNK_X} y2={ROW} style={TRUNK} strokeWidth={2} />
                 <path
                   d={`M ${TRUNK_X} ${ROW / 2 - 10} C ${TRUNK_X} ${ROW / 2}, ${TRUNK_X + 8} ${ROW / 2}, ${TRUNK_X + 18} ${ROW / 2} L ${lastX} ${ROW / 2}`}
-                  fill="none" stroke={colour} strokeWidth={2}
+                  fill="none" style={{ stroke: colour }} strokeWidth={2}
                   strokeDasharray={lane.found > 0 ? undefined : '4 4'}
                 />
                 {lane.ready > 0 && (
                   <path
                     d={`M ${lastX} ${ROW / 2} C ${lastX - 24} ${ROW / 2 + 10}, ${TRUNK_X} ${ROW / 2 + 12}, ${TRUNK_X} ${ROW}`}
-                    fill="none" stroke={colour} strokeWidth={1.5} opacity={0.45}
+                    fill="none" style={{ stroke: colour }} strokeWidth={1.5} opacity={0.45}
                   />
                 )}
                 {COL_X.map((x, step) => (
                   <circle
                     key={step} cx={x} cy={ROW / 2} r={step === 0 ? 4 : 5}
-                    fill={reached[step] ? colour : '#FFFFFF'}
-                    stroke={colour} strokeWidth={2}
+                    style={{ fill: reached[step] ? colour : HOLLOW, stroke: colour }} strokeWidth={2}
                     opacity={reached[step] || step <= 1 ? 1 : 0.5}
                   />
                 ))}
@@ -159,7 +161,7 @@ export default function CompanyLanes({ lanes, emailed, focused, onFocus, onExpor
                     >
                       ⋯
                     </summary>
-                    <div className="absolute right-0 z-20 mt-1 w-40 border border-pale-sky bg-white p-1">
+                    <div className="absolute right-0 z-20 mt-1 w-40 border border-pale-sky bg-[var(--surface)] p-1">
                       <button
                         type="button"
                         onClick={() => onExport(runId)}
@@ -190,10 +192,9 @@ export default function CompanyLanes({ lanes, emailed, focused, onFocus, onExpor
             that does not need one. A dashed trunk says lanes are hidden. */}
         <li className="flex items-center gap-2" style={{ height: ROW }}>
           <svg width={GRAPH_W} height={ROW} aria-hidden="true" className="shrink-0">
-            <line x1={TRUNK_X} y1={0} x2={TRUNK_X} y2={ROW / 2} stroke="#1A2F5A" strokeWidth={2}
+            <line x1={TRUNK_X} y1={0} x2={TRUNK_X} y2={ROW / 2} style={TRUNK} strokeWidth={2}
                   strokeDasharray={hidden > 0 ? '2 3' : undefined} />
-            <circle cx={TRUNK_X} cy={ROW / 2} r={6} fill="#FFFFFF"
-                    stroke="#1A2F5A" strokeWidth={2} />
+            <circle cx={TRUNK_X} cy={ROW / 2} r={6} style={{ ...TRUNK, fill: HOLLOW }} strokeWidth={2} />
           </svg>
           <span className="text-[13px] font-semibold text-deep-navy">One campaign</span>
           {(hidden > 0 || showAll) && (

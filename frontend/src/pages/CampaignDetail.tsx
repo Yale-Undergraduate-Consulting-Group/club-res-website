@@ -205,7 +205,7 @@ export default function CampaignDetail() {
               const sequenceId = event.target.value ? Number(event.target.value) : null;
               void runAction(() => api.campaigns.update(campaignId, { sequence_id: sequenceId }));
             }}
-            className="mt-1 min-h-11 w-full border border-[var(--border)] bg-white px-3"
+            className="mt-1 min-h-11 w-full border border-[var(--border)] bg-[var(--surface)] px-3"
           >
             <option value="">No follow-up sequence</option>
             {sequences.map((sequence) => <option key={sequence.id} value={sequence.id}>{sequence.name}</option>)}

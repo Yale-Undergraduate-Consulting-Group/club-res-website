@@ -222,7 +222,7 @@ export default function Tour() {
         aria-modal="true"
         aria-labelledby="tour-title"
         tabIndex={-1}
-        className="absolute bg-white p-4 outline-none"
+        className="absolute bg-[var(--surface)] p-4 outline-none"
         style={cardStyle}
       >
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

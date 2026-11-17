@@ -5,8 +5,9 @@
 /* ——— Product UI primitives ———
    YUCG Deck System: navy-900 bars with white text, mist fills with navy text,
    blue-600 as the one emphasis, square, flat, Lato. The deck bans outlines, so
-   buttons are filled; only form controls and focus rings keep an edge
-   (accessibility: web exception). */
+   buttons are filled; only form controls, focus rings and the destructive
+   button at rest keep an edge (accessibility: web exception). Every colour
+   here is a token, so both themes come from tokens.css. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -24,8 +25,8 @@
   padding: 0.5rem 1.5rem;
   border: 1px solid var(--border-control);
   border-radius: 0;
-  background: var(--white, #ffffff);
-  color: var(--navy-900);
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
@@ -33,10 +34,8 @@
   text-align: center;
   overflow-wrap: anywhere;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
-
-.dark .ui-button { background: var(--surface); color: var(--text-primary); border-color: var(--border); }
 
 .ui-button:disabled {
   opacity: 0.45;
@@ -72,8 +71,8 @@
   padding: 0.25rem 0.875rem;
   border: 1px solid var(--border-control);
   border-radius: 0;
-  background: var(--white, #ffffff);
-  color: var(--navy-900);
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 400;
@@ -83,14 +82,10 @@
   cursor: pointer;
 }
 
-.dark .ui-chip { background: var(--surface); color: var(--text-primary); border-color: var(--border); }
-
 .ui-chip:hover:not(:disabled) {
-  background: var(--mist-100);
-  border-color: var(--steel-400);
+  background: var(--surface-subtle);
+  border-color: var(--border-control);
 }
-
-.dark .ui-chip:hover:not(:disabled) { background: var(--surface-subtle); }
 
 .ui-chip[aria-pressed="true"],
 .ui-chip[aria-checked="true"],
@@ -98,9 +93,9 @@
 .ui-chip[aria-pressed="true"]:hover:not(:disabled),
 .ui-chip[aria-checked="true"]:hover:not(:disabled),
 .ui-chip[aria-current="step"]:hover:not(:disabled) {
-  background: var(--navy-900);
-  border-color: var(--navy-900);
-  color: #ffffff;
+  background: var(--selected);
+  border-color: var(--selected);
+  color: var(--on-selected);
   font-weight: 700;
 }
 
@@ -127,42 +122,43 @@
   border-color: var(--blue-600);
 }
 
+/* In dark the bar is a light blue, so it lightens instead: blue-600 under dark text is unreadable. */
+.dark .ui-button--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 /* Secondary: white with a steel edge and navy text (the default above);
-   a mist tint on hover, the edge darkening to navy. */
+   a mist tint on hover, the edge darkening to the ink. */
 .ui-button--secondary:hover:not(:disabled),
 .ui-button:not([class*="ui-button--"]):hover:not(:disabled) {
-  background: var(--mist-100);
-  border-color: var(--navy-900);
+  background: var(--surface-subtle);
+  border-color: var(--ink);
 }
 
-.dark .ui-button--secondary:hover:not(:disabled) { background: var(--surface-subtle); }
-
-/* Danger: the one muted error colour (web exception), destructive actions only. */
-.ui-button--danger,
-.dark .ui-button--danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #ffffff;
+/* Danger: destructive actions only (deactivate, delete, remove, revoke). At
+   rest it is the plain white button with an edge, so a row of actions stays
+   calm; pointing at it or tabbing to it fills it with the one muted error
+   colour (web exception), so the member sees what it does before pressing. */
+.ui-button--danger:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--on-error);
 }
 
-.dark .ui-button--danger { color: var(--navy-950); }
-
-.ui-button--danger:hover:not(:disabled) {
-  background: #832f28;
+.ui-button--danger:active:not(:disabled) {
+  background: var(--error-strong);
+  border-color: var(--error-strong);
 }
 
-/* Ghost: text only in blue-600; underlined on hover, never a fill. */
-.ui-button--ghost,
-.dark .ui-button--ghost {
+/* Ghost: text only in the link blue; underlined on hover, never a fill. */
+.ui-button--ghost {
   background: transparent;
   border-color: transparent;
-  color: var(--blue-600);
+  color: var(--link);
 }
 
-.dark .ui-button--ghost { color: var(--accent); }
-
-.ui-button--ghost:hover:not(:disabled),
-.dark .ui-button--ghost:hover:not(:disabled) {
+.ui-button--ghost:hover:not(:disabled) {
   background: transparent;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -213,17 +209,11 @@ select:not([multiple]):not([size]) {
   appearance: none;
   cursor: pointer;
   background-image:
-    linear-gradient(45deg, transparent 50%, var(--navy-900) 50%),
-    linear-gradient(135deg, var(--navy-900) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
   background-position: calc(100% - 0.75rem) 55%, calc(100% - 0.45rem) 55%;
   background-size: 5px 5px;
   background-repeat: no-repeat;
-}
-
-.dark :where(select:not([multiple]):not([size])) {
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
-    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
 }
 
 :where(input, select, textarea):disabled {
@@ -255,8 +245,8 @@ select:not([multiple]):not([size]) {
    a page's own classes still win. */
 :where(th) {
   padding: 0.75rem 1rem;
-  background: var(--steel-600);
-  color: #ffffff;
+  background: var(--table-head);
+  color: var(--on-table-head);
   font-size: 0.8125rem;
   font-weight: 700;
   text-align: left;
@@ -264,8 +254,7 @@ select:not([multiple]):not([size]) {
 
 :where(td) { padding: 0.75rem 1rem; }
 
-:where(tbody tr:nth-child(even)) { background: var(--mist-100); }
-.dark :where(tbody tr:nth-child(even)) { background: var(--surface-subtle); }
+:where(tbody tr:nth-child(even)) { background: var(--surface-subtle); }
 
 /* Notices: a mist-200 bar with navy text (Central Question style). Warnings
    take gray-350; only a blocking error takes the muted error colour. */
@@ -284,7 +273,7 @@ select:not([multiple]):not([size]) {
 .ui-notice--danger { background: var(--gray-100); border-left: 4px solid var(--navy-1000); color: var(--navy-1000); font-weight: 700; }
 /* Colour no longer marks an error, so the notice says so itself. */
 .ui-notice--danger::before { content: "Error: "; font-weight: 900; }
-.dark .ui-notice--danger { color: var(--text-primary); }
+.dark .ui-notice--danger { background: var(--surface-subtle); border-left-color: var(--ink); color: var(--ink); }
 
 /* Status labels: plain text with a coloured dot, never a box, so only buttons
    look clickable. The dot carries the tone; the word is always printed. */
@@ -306,26 +295,21 @@ select:not([multiple]):not([size]) {
   background: var(--steel-400);
 }
 
-.ui-status--info::before { background: var(--blue-600); }
-.ui-status--success::before { background: var(--success, #2e7d32); }
-.ui-status--warning::before { background: var(--warning, #b7791f); }
-.ui-status--danger { color: var(--error, #b42318); }
-.ui-status--danger::before { background: var(--error, #b42318); }
-
-.dark .ui-status { color: var(--text-secondary); }
-.dark .ui-status--info::before { background: var(--accent); }
+.ui-status--info::before { background: var(--link); }
+.ui-status--success::before { background: var(--success); }
+.ui-status--warning::before { background: var(--warning); }
+.ui-status--danger { color: var(--error); }
+.ui-status--danger::before { background: var(--error); }
 
 /* Empty state: a plain white panel with a hairline, not a filled block. */
 .ui-empty {
   padding: clamp(2rem, 6vw, 4rem) 1.25rem;
   border: 1px solid var(--border);
   border-radius: 0;
-  background: var(--white, #ffffff);
+  background: var(--surface);
   color: var(--ink);
   text-align: center;
 }
-
-.dark .ui-empty { background: var(--surface); }
 
 .ui-empty h3 {
   margin: 0;
@@ -354,7 +338,7 @@ select:not([multiple]):not([size]) {
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(5, 36, 87, 0.6);
+  background: var(--yucg-tint);
 }
 
 .ui-dialog {
@@ -477,7 +461,7 @@ details[open] > *:not(summary),
 .portal-html blockquote { border-left: 3px solid var(--steel-600); padding-left: 0.75rem; font-style: italic; }
 .portal-html pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
 .portal-html code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
-.portal-html a { color: var(--blue-600); text-decoration: underline; overflow-wrap: anywhere; }
+.portal-html a { color: var(--link); text-decoration: underline; overflow-wrap: anywhere; }
 .portal-editor {
   min-height: 10rem;
   overflow-wrap: anywhere;
@@ -486,3 +470,19 @@ details[open] > *:not(summary),
   color: var(--ink);
 }
 .portal-editor:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+
+/* Switching between light and dark fades every colour instead of snapping
+   (contexts/ThemeContext.tsx sets this class for 400 ms after a change). */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: background-color 350ms ease, color 350ms ease, border-color 350ms ease,
+    fill 350ms ease, stroke 350ms ease, box-shadow 350ms ease, outline-color 350ms ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-switching,
+  .theme-switching *,
+  .theme-switching *::before,
+  .theme-switching *::after { transition: none !important; }
+}
