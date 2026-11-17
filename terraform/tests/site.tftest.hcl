@@ -288,6 +288,22 @@ run "prod_alerts_by_email_and_recovers_the_box" {
   }
 }
 
+run "terraform_role_can_refresh_alert_resources" {
+  command = apply
+  # Its own mock state: the apply builds prod-only protected resources
+  # (site bucket) that later runs must not inherit and plan to destroy.
+  state_key = "terraform_role_refresh"
+
+  variables {
+    environment = "prod"
+  }
+
+  assert {
+    condition     = length(setsubtract(["sns:GetTopicAttributes", "sns:GetSubscriptionAttributes", "logs:DescribeMetricFilters", "cloudwatch:DescribeAlarms", "chatbot:DescribeSlackChannelConfigurations"], flatten([for s in jsondecode(aws_iam_role_policy.terraform.policy).Statement : s.Action if s.Sid == "ReadStack"]))) == 0
+    error_message = "The Terraform role must be able to read every alert resource, or every prod plan fails while refreshing state."
+  }
+}
+
 run "slack_alerts_cannot_run_commands" {
   command = plan
 
