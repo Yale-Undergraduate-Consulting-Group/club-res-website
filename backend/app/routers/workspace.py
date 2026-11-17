@@ -1,9 +1,11 @@
 """Project-scoped document register. S3 object names never grant access."""
 import asyncio
 import os
+import re
 import secrets
 import time
 from typing import Literal
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -343,7 +345,15 @@ async def download_url(db, document_id: int, version_id: int | None = None, expi
         return document_storage.local_download_url(row['id'],expires)
     return await s3_call('generate_presigned_url',ClientMethod='get_object',Params={
         'Bucket':stored_bucket(row),'Key':row['object_key'],'VersionId':row['s3_version_id'],
-        'ResponseContentDisposition':'attachment','ResponseContentType':'application/octet-stream'},ExpiresIn=expires)
+        'ResponseContentDisposition':attachment_disposition(row['filename']),'ResponseContentType':'application/octet-stream'},ExpiresIn=expires)
+
+def attachment_disposition(filename: str | None) -> str:
+    """'attachment' naming the file as it was uploaded (RFC 6266): an ASCII
+    fallback plus the exact UTF-8 name, so the browser saves "SOW.pdf", not the
+    object key. Quotes, backslashes and control characters cannot reach the header."""
+    name = re.sub(r'[\x00-\x1f\x7f"\\/]', '_', (filename or '').strip())[:200] or 'download'
+    fallback = re.sub(r'[^\x20-\x7e]', '_', name)
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 @router.get('/documents/{document_id}/download')
 async def download(document_id: int, version_id: int | None = None, user: dict = Depends(get_current_user)):
