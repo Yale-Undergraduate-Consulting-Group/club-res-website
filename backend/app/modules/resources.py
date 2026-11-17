@@ -18,5 +18,6 @@ MODULE = Module(
         Setting("SHAREPOINT_BASE_URL", "Open in SharePoint on Resources: the club's SharePoint address (https://<tenant>.sharepoint.com); without it imported SharePoint links stay hidden"),
         Setting("RESOURCE_ASK_PER_MEMBER_PER_HOUR", "Ask about this file: questions one member may ask an hour (default 20); the club AI budget still applies"),
         Setting("RESOURCE_ASK_PER_CLUB_PER_HOUR", "Ask about this file: questions the whole club may ask an hour (default 200)"),
+        Setting("DECK_CHECK_ENABLED", "Deck System checker integrations (off unless explicitly set to true; no upload or Slack route is wired yet)"),
     ),
 )
