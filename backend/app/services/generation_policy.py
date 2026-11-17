@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.database import get_db
 
 DEFAULT_MONTHLY_BUDGET_USD = 50.0
+BUDGET_SPENT = "The club's AI budget for this month is used up."
 # Spend this calendar month (UTC): the provider-reported cost of finished calls,
 # and the worst-case estimate of calls still running or of uncertain outcome.
 _MONTH_SPEND_SQL = """SELECT COALESCE(SUM(COALESCE(
@@ -59,7 +60,7 @@ def reserve_bedrock_invocation(
                 db.execute('BEGIN IMMEDIATE')
                 spent = float(db.execute(_MONTH_SPEND_SQL).fetchone()[0] or 0.0)
                 if spent + estimate > budget:
-                    raise HTTPException(429, "The club's AI budget for this month is used up.")
+                    raise HTTPException(429, BUDGET_SPENT)
                 cursor = db.execute("""INSERT INTO usage_events(user_id,event_type,resource_type,details_json)
                     VALUES(?,'bedrock_reserved',?,?)""", (user_id, purpose, json.dumps({
                         'model_id': model,
