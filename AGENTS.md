@@ -158,6 +158,7 @@ Use repository-pinned tool installation where applicable; report missing tools r
 - Never substitute a mocked deployment for real deployment evidence.
 - Update [docs/CI_CD.md](docs/CI_CD.md) when delivery, AWS, data, or recovery behavior changes.
 - Keep project-wide rules here; keep `CLAUDE.md` as an import, not a second copy.
+- Review rules a reviewer checks when a diff matches their trigger live in [REVIEW.md](REVIEW.md); it is read from the default branch once merged.
 
 Report: what changed, exact verification, unresolved prerequisites, and whether any remote state changed.
 Use short, concrete sentences. Link evidence. State uncertainty where the claim appears.
