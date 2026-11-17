@@ -1,19 +1,21 @@
-import { sanitizeRichText, insertSafeTransfer } from '../lib/richText';
-import type { Sentiment, Attachment, Release, OneDriveItem, Sequence } from '../api';
+import { sanitizeRichText, insertSafeTransfer, textToHtml } from '../lib/richText';
+import type { Sentiment, Attachment, Release, OneDriveItem, Sequence, Template } from '../api';
 import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { api, type Contact, type GeneratedEmail } from '../api';
 import AppSubnav from '../components/AppSubnav';
 import PageHeader from '../components/PageHeader';
-import AiModelSelect from '../components/AiModelSelect';
 import EmailToolbar from '../components/EmailToolbar';
 import AddressCheck from '../components/AddressCheck';
-import AdvisoryBatch from '../components/AdvisoryBatch';
-import { useAiModel } from '../contexts/useAiModel';
+import HandoffPeople from '../components/HandoffPeople';
+import CompanyLinesField from '../components/CompanyLinesField';
 import { useUrlTab } from '../lib/useUrlTab';
 import { Button, Chip } from '../components/ui/Primitives';
-import { aiDraftingUnavailable } from '../lib/aiDrafting';
-import AiUnavailableNotice from '../components/campaigns/AiUnavailableNotice';
+import SignOffPreview from '../components/SignOffPreview';
+import { EMPTY_SIGN_OFF, signOffFrom } from '../lib/signOff';
+import { clubTemplate, usesPersonalisation } from '../lib/sendChecks';
+import { companyKey } from '../lib/recipients';
+import { useCompanyLines } from '../lib/useCompanyLines';
 
 
 /** One screen of companies. The catalogue can hold tens of thousands, so the
@@ -183,40 +185,22 @@ function CompanyFolder({ company, contacts, selected, onSelect, bulkSelectedIds,
 export default function EmailStudio() {
   const navigate = useNavigate();
   const { user } = useOutletContext<{ user: { email: string; name?: string; role?: string } }>();
-  const { modelId } = useAiModel();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [email, setEmail] = useState<{ subject: string; body: string } | null>(null);
-  const [signOff, setSignOff] = useState({
-    name: '', pronouns: '', role: '', organization: 'Yale Undergraduate Consulting Group',
-    linkedin: '', phone: '', logoUrl: '',
-  });
-  const [loading, setLoading] = useState(false);
-  const [generationError, setGenerationError] = useState('');
-  const [aiDown, setAiDown] = useState(false);
+  const [signOff, setSignOff] = useState(EMPTY_SIGN_OFF);
   const [testSending, setTestSending] = useState(false);
-  const [tone, setTone] = useState('professional');
-  const [length, setLength] = useState('short');
-  const [angle, setAngle] = useState('pain_point');
-  const [valueProp, setValueProp] = useState('');
-  const [customInstructions, setCustomInstructions] = useState('');
-  const [citeSuggestLoading, setCiteSuggestLoading] = useState(false);
-  const [citeSuggestMessage, setCiteSuggestMessage] = useState('');
   const [generatedEmails, setGeneratedEmails] = useState<GeneratedEmail[]>([]);
   const [sortBy, setSortBy] = useState('created_desc');
   const [activeTab, setActiveTab] = useUrlTab<'editor' | 'cache'>(['editor', 'cache'], 'editor', 'panel');
-  const [quickCompose, setQuickCompose] = useState({ name: '', company: '', title: '', email: '' });
   // The toolbar sets size per selection; this is only the editor's default,
   // matched by the preview so both read at the same scale.
   const [selectedDraftId, setSelectedDraftId] = useState<number | null>(null);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftMessage, setDraftMessage] = useState('');
-  const [mobileStep, setMobileStep] = useState<'contacts' | 'generate' | 'edit'>(() => activeTab === 'cache' ? 'contacts' : 'edit');
+  const [mobileStep, setMobileStep] = useState<'contacts' | 'edit'>(() => activeTab === 'cache' ? 'contacts' : 'edit');
   const [focusWriting, setFocusWriting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [draftDescription, setDraftDescription] = useState('');
-  const [draftTargetAudience, setDraftTargetAudience] = useState('');
-  const [draftCompany, setDraftCompany] = useState('');
   const [sentimentAnalysis, setSentimentAnalysis] = useState<Sentiment | null>(null);
   const [sentimentLoading, setSentimentLoading] = useState(false);
   const [sentimentIndustry, setSentimentIndustry] = useState('');
@@ -225,7 +209,6 @@ export default function EmailStudio() {
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [groupByCompany, setGroupByCompany] = useState(false);
   const [contactsPanelExpanded, setContactsPanelExpanded] = useState(true);
-  const [aiGeneratorExpanded, setAiGeneratorExpanded] = useState(true);
   const [contactSearch, setContactSearch] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
   const [releaseFilter, setReleaseFilter] = useState(() => new URLSearchParams(window.location.search).get('release_id') || '');
   const [releases, setReleases] = useState<Release[]>([]);
@@ -254,15 +237,7 @@ export default function EmailStudio() {
 
   useEffect(() => {
     api.settings.get().then((s) => {
-      setSignOff({
-        name: s.sign_off_name || user?.name || '',
-        pronouns: s.sign_off_pronouns || '',
-        role: s.sign_off_role || '',
-        organization: s.sign_off_organization || 'Yale Undergraduate Consulting Group',
-        linkedin: s.sign_off_linkedin || '',
-        phone: s.sign_off_phone || '',
-        logoUrl: s.sign_off_logo_url || '',
-      });
+      setSignOff(signOffFrom(s, user?.name || ''));
     }).catch(() => {});
   }, [user?.name]);
 
@@ -359,110 +334,66 @@ export default function EmailStudio() {
     api.emails.generated({ sort: sortBy }).then(setGeneratedEmails).catch(() => setGeneratedEmails([]));
   }, [sortBy]);
 
-  // Sync contentEditable body when email.body is set externally (e.g. Generate, Load Draft)
+  // Sync contentEditable body when email.body is set externally (the club template, Load Draft)
   useEffect(() => {
     if (bodyRef.current != null && email?.body !== undefined && bodyRef.current.innerHTML !== email.body) {
       bodyRef.current.innerHTML = sanitizeRichText(email.body);
     }
   }, [email?.body]);
 
-
-  const generateEmail = async () => {
-    setLoading(true);
-    setGenerationError('');
-    setAiDown(false);
-    try {
-      if (selected?.id) {
-        const instructions = [
-          draftDescription && `Email purpose: ${draftDescription}`,
-          draftTargetAudience && `Target audience: ${draftTargetAudience}`,
-          customInstructions,
-        ].filter(Boolean).join('. ');
-        const res = await api.emails.generate({
-          contact_id: selected.id,
-          tone,
-          length,
-          angle,
-          value_proposition: valueProp || undefined,
-          custom_instructions: instructions || customInstructions || undefined,
-          model: modelId,
-        });
-        setEmail({ subject: res.subject, body: res.body });
-        setMobileStep('edit');
-        const savedDrafts = await api.emails.generated({ sort: sortBy });
-        setGeneratedEmails(savedDrafts);
-        setSelectedDraftId(savedDrafts.find((draft) => draft.contact_id === selected.id && draft.subject === res.subject)?.id ?? null);
-      } else {
-        const instructions = [
-          draftDescription && `Email purpose: ${draftDescription}`,
-          draftTargetAudience && `Target audience: ${draftTargetAudience}`,
-          customInstructions,
-        ].filter(Boolean).join('. ');
-        const res = await api.emails.generateTemplate({
-          name: quickCompose.name || undefined,
-          company: draftCompany || quickCompose.company || undefined,
-          title: quickCompose.title || undefined,
-          email: quickCompose.email || undefined,
-          tone,
-          length,
-          angle,
-          value_proposition: valueProp || undefined,
-          custom_instructions: instructions || customInstructions || undefined,
-          model: modelId,
-        });
-        setEmail({ subject: res.subject, body: res.body });
-        setMobileStep('edit');
-        setSelected({
-          id: res.contact_id ?? 0,
-          name: quickCompose.name || 'Recipient',
-          email: quickCompose.email || '',
-          company: draftCompany || quickCompose.company,
-        });
-        const savedDrafts = await api.emails.generated({ sort: sortBy });
-        setGeneratedEmails(savedDrafts);
-        setSelectedDraftId(savedDrafts.find((draft) => draft.contact_id === res.contact_id && draft.subject === res.subject)?.id ?? null);
-      }
-    } catch (e) {
-      console.error(e);
-      if (aiDraftingUnavailable(e)) setAiDown(true);
-      else setGenerationError(e instanceof Error ? e.message : 'Draft generation is unavailable. Your current draft was not changed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSuggestCitations = async () => {
-    const company = selected?.company;
-    if (!company) return;
-    setCiteSuggestLoading(true);
-    setCiteSuggestMessage('');
-    try {
-      const res = await api.projects.suggestCitations(company);
-      const clientNames = res.projects.map((p) => p.client_name).filter((name): name is string => Boolean(name));
-      const teamLines = res.team_experience
-        .filter((t) => t.user_name)
-        .map((t) => `${t.user_name}${t.role_in_project ? ` (${t.role_in_project}` : ''}${t.client_name ? `${t.role_in_project ? ', ' : ' ('}${t.client_name} project` : ''}${t.role_in_project || t.client_name ? ')' : ''}`);
-      const parts = [
-        clientNames.length > 0 && `Past clients we can discuss: ${clientNames.join(', ')}.`,
-        teamLines.length > 0 && `Team members with relevant experience: ${teamLines.join(', ')}.`,
-      ].filter(Boolean);
-      if (parts.length === 0) {
-        setCiteSuggestMessage('No nameable past projects on file yet.');
-        return;
-      }
-      const suggestion = parts.join(' ');
-      setValueProp((prev) => (prev.trim() ? `${prev}\n\n${suggestion}` : suggestion));
-    } catch (e) {
-      setCiteSuggestMessage(e instanceof Error ? e.message : 'Could not load citation suggestions.');
-    } finally {
-      setCiteSuggestLoading(false);
-    }
-  };
+  // --- A new draft starts from the club template ---------------------------
+  // Every member sends the club's Intro, so a contact opened with no saved
+  // draft gets it, merged for them by the server (the same /build preview a
+  // send uses), with their company's line once it is confirmed. While the
+  // editor still holds exactly that text, confirming a line merges it again;
+  // once the member edits by hand, their text stands.
+  const [template, setTemplate] = useState<Template | null>(null);
+  useEffect(() => {
+    api.outreach.templates.list().then((list) => setTemplate(clubTemplate(list) ?? null)).catch(() => setTemplate(null));
+  }, []);
+  const [prefill, setPrefill] = useState<{ subject: string; body: string } | null>(null);
+  const [templateNote, setTemplateNote] = useState('');
+  const fresh = email === null || (prefill !== null && email.subject === prefill.subject && email.body === prefill.body);
+  const lineCompany = useMemo(() => {
+    const name = (selected?.company || '').trim();
+    return name ? [{ key: companyKey(name), name }] : [];
+  }, [selected?.company]);
+  const companyLines = useCompanyLines(
+    lineCompany,
+    Boolean(selected?.id && template && fresh && usesPersonalisation(`${template.subject}\n${template.body}`)),
+  );
+  const line = lineCompany[0] ? companyLines.lines[lineCompany[0].key] : undefined;
+  const mergeKey = selected?.id && template && fresh
+    ? JSON.stringify([selected.id, template.id, line?.confirmed ? line.text.trim() : ''])
+    : '';
+  useEffect(() => {
+    if (!mergeKey) return;
+    const [contactId, templateId, lineText] = JSON.parse(mergeKey) as [number, number, string];
+    const company = lineCompany[0]?.name;
+    let live = true;
+    api.campaigns.build({
+      contact_ids: [contactId], template_id: templateId, preview_only: true,
+      personalisation: company ? { [company]: lineText } : undefined,
+    })
+      .then((result) => {
+        if (!live) return;
+        if (!result.sample) {
+          setTemplateNote(result.held[0]?.reason || 'The club template cannot be written for this contact.');
+          return;
+        }
+        const next = { subject: result.sample.subject, body: textToHtml(result.sample.body) };
+        setTemplateNote('');
+        setPrefill(next);
+        setEmail(next);
+      })
+      .catch((e) => { if (live) setTemplateNote(e instanceof Error ? e.message : 'Could not fill in the club template'); });
+    return () => { live = false; };
+  }, [mergeKey, lineCompany]);
 
   const saveCurrentAsDraft = async () => {
     if (!email?.subject && !email?.body) return;
     if (!selected?.id) {
-      setDraftMessage('Choose a contact, or add a recipient email and generate once, before saving.');
+      setDraftMessage('Choose a contact before saving.');
       return;
     }
     setDraftSaving(true);
@@ -487,13 +418,6 @@ export default function EmailStudio() {
     setMobileStep('edit');
     setSelectedDraftId(draft.id);
     setEmail({ subject: draft.subject, body: draft.body });
-    setDraftCompany(draft.company || '');
-    setQuickCompose({
-      name: draft.name || '',
-      company: draft.company || '',
-      title: '',
-      email: draft.email || '',
-    });
     setSelected({ id: draft.contact_id, name: draft.name, email: draft.email || '', company: draft.company });
     setActiveTab('editor');
   };
@@ -682,14 +606,9 @@ export default function EmailStudio() {
     setSelected(null);
     setEmail({ subject: '', body: '' });
     setMobileStep('contacts');
-    setQuickCompose({ name: '', company: '', title: '', email: '' });
-    setDraftDescription('');
-    setDraftTargetAudience('');
-    setDraftCompany('');
     setSelectedDraftId(null);
     setSelectedAttachmentIds(new Set());
     setActiveTab('editor');
-    document.getElementById('email-generator-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const toggleAttachment = (id: number) => {
@@ -812,8 +731,7 @@ export default function EmailStudio() {
       <nav className="studio-mobile-steps" aria-label="Draft workflow">
         {([
           ['contacts', '1. Contact'],
-          ['generate', '2. AI assistance'],
-          ['edit', '3. Write'],
+          ['edit', '2. Write'],
         ] as const).map(([id, label]) => (
           <Chip
             key={id}
@@ -825,15 +743,10 @@ export default function EmailStudio() {
         ))}
       </nav>
       {handoff && (
-        <AdvisoryBatch
+        <HandoffPeople
           companies={handoff.companies}
           contactIds={handoff.contactIds}
-          tone={tone}
-          model={modelId}
-          valueProp={valueProp}
-          goal={draftDescription}
           onOpen={(contact) => void openHandoffContact(contact)}
-          onDrafted={() => api.emails.generated({ sort: sortBy }).then(setGeneratedEmails).catch(() => {})}
           onDismiss={() => {
             setHandoff(null);
             navigate('/studio', { replace: true });
@@ -1086,199 +999,11 @@ export default function EmailStudio() {
           )}
         </div>
         <div className="email-studio-main">
-          <div
-            id="email-generator-section"
-            data-collapsed={!aiGeneratorExpanded}
-            className={`studio-step studio-panel email-studio-generator w-full ${mobileStep === 'generate' ? 'is-active' : ''} surface-card flex flex-col min-w-0`}
-          >
-            {aiGeneratorExpanded ? (
-            <>
-            <div className="email-generator-header px-4 py-3 border-b border-pale-sky dark:border-slate-600 flex items-center gap-2 flex-wrap">
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                onClick={() => setAiGeneratorExpanded(false)}
-                title="Collapse panel"
-                aria-label="Collapse AI generator panel"
-              >
-                ◀
-              </Button>
-              <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)]">AI assistance</h2>
-            </div>
-            <div className="email-studio-generator-body">
-            {aiDown && <AiUnavailableNotice contactIds={selected?.id ? [selected.id] : []} label={selected?.company || 'Studio draft'} />}
-            {generationError && <p className="ui-notice ui-notice--danger" role="alert">{generationError}</p>}
-            <div className="email-studio-field email-studio-field--grow">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Email goal</label>
-                <textarea
-                  value={draftDescription}
-                  onChange={(e) => setDraftDescription(e.target.value)}
-                  placeholder="For example: ask for a 20-minute call about a spring market research project"
-                  rows={3}
-                  className="email-studio-grow-field w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-            </div>
-            <div className="email-studio-brief-grid">
-            <div className="email-studio-field">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Audience context</label>
-                <textarea
-                  value={draftTargetAudience}
-                  onChange={(e) => setDraftTargetAudience(e.target.value)}
-                  placeholder="For example: strategy leaders at growing healthcare companies"
-                  rows={2}
-                  className="email-studio-grow-field w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-            </div>
-            <div className="email-studio-field">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Company</label>
-                <input
-                  type="text"
-                  value={draftCompany}
-                  onChange={(e) => setDraftCompany(e.target.value)}
-                  placeholder="e.g. Acme Corp"
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-            </div>
-            <div className="email-studio-field">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className="block text-sm text-slate-600 dark:text-slate-400">Relevant YUCG capability or proof</label>
-                  <button
-                    type="button"
-                    onClick={handleSuggestCitations}
-                    disabled={citeSuggestLoading || !selected?.company}
-                    title={selected?.company ? 'Suggest real past projects and team experience to cite' : 'Choose a contact with a company on file first'}
-                    className="ui-button ui-button--secondary ui-button--sm shrink-0"
-                  >
-                    {citeSuggestLoading ? 'Looking…' : 'Suggest what to cite'}
-                  </button>
-                </div>
-                {citeSuggestMessage && <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{citeSuggestMessage}</p>}
-                <textarea
-                  value={valueProp}
-                  onChange={(e) => setValueProp(e.target.value)}
-                  placeholder="Use only verified facts, such as a relevant service or approved case study"
-                  rows={2}
-                  className="email-studio-grow-field w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-            </div>
-            <div className="email-studio-field">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Facts and constraints</label>
-                <textarea
-                  value={customInstructions}
-                  onChange={(e) => setCustomInstructions(e.target.value)}
-                  placeholder="For example: refer to the supplied expansion announcement; avoid client names"
-                  rows={2}
-                  className="email-studio-grow-field w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-            </div>
-            </div>
-            <div className="border-t border-pale-sky dark:border-slate-600 pt-3">
-              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Recipient details</h3>
-              <div className="email-studio-auto-grid">
-                <input
-                  type="text"
-                  placeholder="Name"
-                  value={quickCompose.name}
-                  onChange={(e) => setQuickCompose((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 text-sm placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-                <input
-                  type="email"
-                  placeholder="Email (for test send)"
-                  value={quickCompose.email}
-                  onChange={(e) => setQuickCompose((p) => ({ ...p, email: e.target.value }))}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 text-sm placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-                <input
-                  type="text"
-                  placeholder="Company"
-                  value={quickCompose.company}
-                  onChange={(e) => setQuickCompose((p) => ({ ...p, company: e.target.value }))}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 text-sm placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-                <input
-                  type="text"
-                  placeholder="Title"
-                  value={quickCompose.title}
-                  onChange={(e) => setQuickCompose((p) => ({ ...p, title: e.target.value }))}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200 text-sm placeholder:text-slate-500 dark:placeholder-slate-500 caret-deep-navy dark:caret-slate-200"
-                />
-              </div>
-            </div>
-            <div className="email-studio-auto-grid mb-4">
-              <div className="min-w-0">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Tone</label>
-                <select aria-label="Tone"
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200"
-                >
-                  {['professional', 'conversational', 'bold', 'empathetic', 'authority'].map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="min-w-0">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Length</label>
-                <select aria-label="Email length"
-                  value={length}
-                  onChange={(e) => setLength(e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200"
-                >
-                  {['ultra-short', 'short', 'standard'].map((l) => (
-                    <option key={l} value={l}>{l}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="min-w-0">
-                <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Angle</label>
-                <select aria-label="Message angle"
-                  value={angle}
-                  onChange={(e) => setAngle(e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-deep-navy dark:text-slate-200"
-                >
-                  {['pain_point', 'social_proof', 'case_study', 'compliment'].map((a) => (
-                    <option key={a} value={a}>{a.replace('_', ' ')}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            </div>
-            <div className="studio-generate-row">
-              <AiModelSelect id="studio-ai-model" compact />
-              <button
-                onClick={generateEmail}
-                disabled={loading}
-                className="ui-button ui-button--primary studio-generate-row__go active:scale-[0.98] transition-all"
-              >
-                {loading ? 'Generating…' : 'Generate email'}
-              </button>
-            </div>
-            </>
-            ) : (
-            <div className="flex flex-col items-center py-3 gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                onClick={() => setAiGeneratorExpanded(true)}
-                title="Expand panel"
-                aria-label="Expand AI generator panel"
-              >
-                ▶
-              </Button>
-              <span className="text-xs text-slate-500 dark:text-slate-400 hidden xl:block" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
-                AI Generator
-              </span>
-            </div>
-            )}
-          </div>
           <div id="email-editor-section" className={`studio-step ${mobileStep === 'edit' ? 'is-active' : ''} flex-1 min-w-0 surface-card min-h-0 flex flex-col`}>
-            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] p-4 border-b border-pale-sky dark:border-slate-600 truncate" title={`Email for ${selected?.name || quickCompose.name || 'Recipient'} (${selected?.email || quickCompose.email || 'enter email for test send'})`}>
-              Email for {selected?.name || quickCompose.name || 'Recipient'} ({selected?.email || quickCompose.email || 'enter email for test send'})
+            <h2 className="font-semibold text-deep-navy dark:text-[var(--text-primary)] p-4 border-b border-pale-sky dark:border-slate-600 truncate" title={`Email for ${selected?.name || 'Recipient'} (${selected?.email || 'choose a contact'})`}>
+              Email for {selected?.name || 'Recipient'} ({selected?.email || 'choose a contact'})
             </h2>
-            <AddressCheck email={selected?.email || quickCompose.email || ''} />
+            <AddressCheck email={selected?.email || ''} />
             <div className="email-studio-campaign border-b border-[var(--border)]">
               <button
                 type="button"
@@ -1500,6 +1225,10 @@ export default function EmailStudio() {
             <div className="email-studio-compose divide-x divide-pale-sky dark:divide-slate-600">
               <div className="p-4 min-w-0 email-studio-editor-column">
                 <h3 className="text-sm font-medium text-deep-navy dark:text-slate-400 mb-2">Your draft</h3>
+                <div className="mb-3 space-y-2 empty:hidden">
+                  <CompanyLinesField state={companyLines} disabled={false} />
+                  {templateNote && <p className="ui-notice ui-notice--warning text-sm" role="status">{templateNote}</p>}
+                </div>
                 <EmailToolbar
                   editorRef={bodyRef}
                   onChange={(html) => setEmail((prev) => ({ ...(prev || { subject: '', body: '' }), body: sanitizeRichText(html) }))}
@@ -1539,7 +1268,7 @@ export default function EmailStudio() {
                     />
                     {(!email?.body || email.body === '' || (email.body.replace(/<[^>]*>/g, '').trim() === '')) && (
                       <span className="absolute left-3 top-2 text-slate-600 dark:text-slate-300 pointer-events-none text-sm">
-                        Write your email here or use AI assistance to create a starting draft.
+                        Choose a contact to start from the club template, or write here.
                       </span>
                     )}
                   </div>
@@ -1610,15 +1339,9 @@ export default function EmailStudio() {
                       )}
                     </div>
                   {(signOff.name || signOff.role) && (
-                    <div className="w-full border-t border-slate-200 dark:border-slate-600 pt-3 flex items-start gap-3 text-xs text-slate-600 dark:text-slate-300">
-                      {signOff.logoUrl && <img src={signOff.logoUrl} alt="YUCG" className="w-14 h-auto object-contain" />}
-                      <div>
-                        <div className="font-bold text-deep-navy dark:text-slate-100">{signOff.name} {signOff.pronouns && <em className="font-normal">({signOff.pronouns})</em>}</div>
-                        {signOff.role && <div>{signOff.role}</div>}
-                        <div>{signOff.organization}</div>
-                        {(signOff.linkedin || signOff.phone) && <div>{signOff.linkedin ? 'LinkedIn' : ''}{signOff.linkedin && signOff.phone ? ' | ' : ''}{signOff.phone}</div>}
-                      </div>
-                    </div>
+                    // The notice is long for this column; the email preview shows it.
+                    <SignOffPreview signOff={{ ...signOff, notice: '' }} logoClassName="w-14"
+                                    className="w-full border-t border-slate-200 dark:border-slate-600 pt-3 text-xs text-slate-600 dark:text-slate-300" />
                   )}
                   {/* One row, one height. The delivery target used to sit in a
                       sentence beside the buttons, which wrapped the row onto a
@@ -1706,7 +1429,7 @@ export default function EmailStudio() {
                           <span className="font-semibold text-deep-navy dark:text-slate-800">{user.name || user.email}</span>
                           <span className="text-slate-500 text-sm">&lt;{user.email}&gt;</span>
                         </div>
-                        <div className="text-slate-500 text-sm mt-0.5">To: {selected?.email || quickCompose.email || 'Choose a recipient'}</div>
+                        <div className="text-slate-500 text-sm mt-0.5">To: {selected?.email || 'Choose a recipient'}</div>
                       </div>
                       <div className="text-slate-400 text-xs shrink-0">
                         {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -1735,15 +1458,7 @@ export default function EmailStudio() {
                       </div>
                     )}
                     {(signOff.name || signOff.role) && (
-                      <div className="mt-5 border-t border-slate-200 pt-3 flex items-start gap-3 text-xs text-slate-700">
-                        {signOff.logoUrl && <img src={signOff.logoUrl} alt="YUCG" className="w-[72px] h-auto object-contain" />}
-                        <div>
-                          <div className="font-bold text-deep-navy">{signOff.name} {signOff.pronouns && <em className="font-normal">({signOff.pronouns})</em>}</div>
-                          {signOff.role && <div>{signOff.role}</div>}
-                          <div>{signOff.organization}</div>
-                          {(signOff.linkedin || signOff.phone) && <div className="mt-0.5 text-deep-navy">{signOff.linkedin ? 'LinkedIn' : ''}{signOff.linkedin && signOff.phone ? ' | ' : ''}{signOff.phone}</div>}
-                        </div>
-                      </div>
+                      <SignOffPreview signOff={signOff} className="mt-5 border-t border-slate-200 pt-3 text-xs text-slate-700" />
                     )}
                   </div>
                 </div>

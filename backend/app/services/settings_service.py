@@ -44,8 +44,9 @@ MEMBER_SETTING_KEYS = frozenset({"daily_send_limit", "daily_send_warn_at", *SIGN
 
 
 async def load_sign_off(user_id: int):
-    """Load the complete sender block with one database connection."""
-    from app.services.email_body import SignOff
+    """Load the complete sender block with one database connection. A member
+    with no logo of their own signs with the club's, served by the site."""
+    from app.services.email_body import SignOff, club_logo_url
 
     prefix = f"member:{user_id}:"
     db = await get_db()
@@ -71,7 +72,7 @@ async def load_sign_off(user_id: int):
         organization=values.get("sign_off_organization") or "Yale Undergraduate Consulting Group",
         linkedin_url=values.get("sign_off_linkedin", ""),
         phone=values.get("sign_off_phone", ""),
-        logo_url=values.get("sign_off_logo_url", ""),
+        logo_url=values.get("sign_off_logo_url") or club_logo_url(),
     )
 
 

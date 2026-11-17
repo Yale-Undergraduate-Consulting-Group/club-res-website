@@ -55,6 +55,23 @@ const METRICS = {
   members: [{ user_id: 2, name: 'Ana', searches: 30, drafts: 4, sent: 3, replies: 1, bounces: 0, ready_to_send: true }],
   not_measured: ['Positive replies: replies are not classified yet.'],
 };
+const COSTS = {
+  generated_at: '2026-11-17T03:54:00+00:00',
+  aws: {
+    connected: true, month: '2026-11', fetched_at: '2026-11-17T03:54:00+00:00', total_usd: 16.473, request_usd: 0.01,
+    message: 'Cached daily.', by_service: [
+      { name: 'Amazon Elastic Compute Cloud - Compute', usd: 9.7074 },
+      { name: 'Amazon Virtual Private Cloud', usd: 2.3517 },
+      { name: 'EC2 - Other', usd: 2.3779 },
+    ],
+    by_environment: [{ name: 'club-res-website-prod', usd: 7.1114 }, { name: 'club-res-website-dev', usd: 6.4662 }, { name: 'untagged', usd: 2.8955 }],
+  },
+  providers: [
+    { id: 'llm', name: 'Claude (Anthropic API / Bedrock)', calls: 117, estimated_usd: 4.28, budget_or_limit: '$15.00/month', unit: 'calls', unit_cost_usd: null, note: 'Actual token usage.', trend: [{ month: '2026-09', calls: 0, usd: 0 }, { month: '2026-10', calls: 80, usd: 2.9 }, { month: '2026-11', calls: 117, usd: 4.28 }] },
+    { id: 'tinyfish', name: 'Monid / TinyFish', calls: 932, estimated_usd: 4.66, budget_or_limit: '400/club/hour', unit: 'calls', unit_cost_usd: .005, note: 'A long note about a provider whose stable list price can change independently.', trend: [{ month: '2026-09', calls: 0, usd: 0 }, { month: '2026-10', calls: 300, usd: 1.5 }, { month: '2026-11', calls: 932, usd: 4.66 }] },
+  ],
+  recommendations: [{ rank: 1, title: 'Run dev only when it is needed instead of keeping a fixed office-hours window', saving: '$6–9/month', risk: 'Developers cannot use the environment while it is stopped.' }],
+};
 
 /** Synthetic library entries with the longest strings a card has to hold: title, filename, description, team, contact. */
 const RESOURCES = [
@@ -84,13 +101,73 @@ const RESOURCES = [
   },
 ];
 
+// The alumni portal, with strings that never break by themselves.
+const LONG_WORD = 'Supercalifragilisticexpialidocious'.repeat(3);
+const LONG_TITLE = `Annual reunion weekend announcement ${LONG_WORD} and the full schedule of events`;
+const LONG_EMAIL = `${'a.very.long.alumni.address.'.repeat(3)}name@subdomain.example-organisation.org`;
+const LONG_LINK = `https://www.linkedin.com/in/${'a-very-long-profile-name-'.repeat(6)}`;
+const PNG_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const PORTAL_ME = { email: LONG_EMAIL, name: 'Alexandria Montgomery-Featherstonehaugh', board: true };
+const PORTAL_POSTS = [
+  {
+    id: 1, title: LONG_TITLE, status: 'published', pinned: true, author: 'Alexandria Montgomery-Featherstonehaugh',
+    created_at: 1760000000, updated_at: 1760000000, published_at: 1760000000, cover: { id: 1, url: '/api/alumni/images/1?token=abc' },
+    body_html: `<h2>Heading ${LONG_WORD}</h2><p>${LONG_WORD} ${LONG_WORD}</p><ul><li>${LONG_WORD}</li><li>Second</li></ul><ol><li>One</li></ol>`
+      + `<blockquote>${LONG_WORD}</blockquote><pre>${'x'.repeat(240)}</pre><p><a href="https://example.org/${'segment/'.repeat(20)}">https://example.org/${'segment/'.repeat(20)}</a></p>`,
+  },
+  {
+    id: 2, title: 'A draft the board is still writing', status: 'draft', pinned: false, author: 'YUCG Alumni Board',
+    created_at: 1760000000, updated_at: 1760000000, published_at: null, cover: null, body_html: '<p>Short.</p>',
+  },
+];
+const PORTAL_EVENTS = {
+  upcoming: [{
+    id: 1, title: LONG_TITLE, starts_at: 1950000000, timezone: 'America/Argentina/ComodRivadavia', starts_local: '2030-02-17T12:40',
+    place: `${LONG_WORD} Conference Centre, ${'Very Long Street Name '.repeat(4)}`, online_url: `https://meet.example.org/${'room-name-'.repeat(12)}`,
+    description_html: `<p>${LONG_WORD}</p>`, created_at: 1760000000, updated_at: 1760000000,
+  }],
+  past: [{
+    id: 2, title: 'Tokyo alumni lunch', starts_at: 1700000000, timezone: 'Asia/Tokyo', starts_local: '2023-11-15T07:13',
+    place: 'Shibuya', online_url: null, description_html: '', created_at: 1760000000, updated_at: 1760000000,
+  }],
+};
+const PORTAL_DIRECTORY = [
+  {
+    id: 1, display_name: `${LONG_WORD} ${LONG_WORD}`, class_year: 2016, company: `${LONG_WORD} Holdings`, role: `Senior ${LONG_WORD}`,
+    city: `${LONG_WORD}-on-Thames`, linkedin_url: LONG_LINK, note: `${LONG_WORD} ${'note '.repeat(60)}`, coffee_chats: true, email: LONG_EMAIL,
+  },
+  { id: 2, display_name: 'Ben Private', class_year: 2019, company: null, role: null, city: 'Austin', linkedin_url: null, note: null, coffee_chats: false, email: null },
+];
+const PORTAL_PROFILE = {
+  display_name: `${LONG_WORD} ${LONG_WORD}`, class_year: 2016, company: `${LONG_WORD} Holdings`, role: `Senior ${LONG_WORD}`,
+  city: `${LONG_WORD}-on-Thames`, linkedin_url: LONG_LINK, note: 'note '.repeat(90), coffee_chats: true, listed: true, show_email: true, updated_at: 1760000000,
+};
+const PORTAL_INBOX = [
+  {
+    id: 1, subject: `${LONG_TITLE} ${LONG_WORD}`, body: `${LONG_WORD} ${LONG_WORD}\n\n${'A long paragraph of the message. '.repeat(20)}`,
+    created_at: 1760000000, read: false, archived: false, sender: { name: 'Alexandria Montgomery-Featherstonehaugh', email: LONG_EMAIL },
+  },
+  { id: 2, subject: 'Question from a deleted account', created_at: 1759990000, read: true, archived: false, sender: null },
+];
+const PORTAL_OVERVIEW = {
+  domains: [{ domain: 'aya.yale.edu', added_at: 1760000000 }],
+  allowlist: [{ email: LONG_EMAIL, note: `Class of 2016 ${LONG_WORD}`, added_at: 1760000000 }],
+  accounts: [
+    { id: 9, email: LONG_EMAIL, name: 'Alexandria Montgomery-Featherstonehaugh', created_at: 1760000000, last_sign_in_at: 1760000000, revoked_at: null, allowed: true, board: true },
+    { id: 10, email: 'sam@example.org', name: null, created_at: 1760000000, last_sign_in_at: null, revoked_at: 1760000100, allowed: true, board: false },
+  ],
+  sign_ins: [{ at: 1760000000, outcome: 'signed_in', email_domain: 'example.org', email: LONG_EMAIL }],
+};
+
 async function mockApi(page: Page, authenticated: boolean) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (/^\/api\/(admin\/)?alumni\/images\//.test(path)) return route.fulfill({ contentType: 'image/png', body: PNG_PIXEL });
     let body: unknown = [];
     if (path === '/api/auth/me') body = authenticated ? { authenticated: true, user: admin } : { authenticated: false };
     else if (path === '/api/analytics/dashboard') body = DASHBOARD;
     else if (path === '/api/analytics/club-metrics') body = METRICS;
+    else if (path === '/api/admin/costs') body = COSTS;
     else if (path === '/api/analytics/due-follow-ups') body = { count: 0 };
     else if (path === '/api/contacts') body = { items: CONTACTS, total: CONTACTS.length, limit: 100, offset: 0 };
     else if (path === '/api/contacts/pipeline-metrics' || path === '/api/outreach/metrics/pipeline') body = { by_status: [{ status: 'cold', count: 1 }, { status: 'contacted', count: 1 }, { status: 'replied', count: 1 }] };
@@ -113,11 +190,21 @@ async function mockApi(page: Page, authenticated: boolean) {
     else if (path === '/api/admin/projects') body = [{ id: 1, name: 'Project Lego', semester: 'Spring 2026', description: '', client_name: '', discussable: false }];
     else if (path === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (path === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (path === '/api/ai/models') body = { groups: [] };
+    else if (path === '/api/outreach/templates') body = [{ id: 11, name: 'Intro', subject: 'Introduction from the Yale Undergraduate Consulting Group', body: "Hi {first},\n\nI'd love to work with {company} on a project in the new year. {personalisation}\n\nBest,\n{sender_first_name}", use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false }];
+    else if (path === '/api/campaigns/build') body = { recipients: 1, ready: 1, held: [], skipped: 0, companies: ['Acme Industrial Holdings'], sample: { email: 'jordan.rivers@acme-industrial-holdings.com', subject: 'Introduction from the Yale Undergraduate Consulting Group', body: "Hi Jordan,\n\nI'd love to work with Acme Industrial Holdings on a project in the new year.\n\nBest,\nAlice" } };
     else if (path === '/api/settings' || path === '/api/auth/profile' || path.startsWith('/api/gmail')) body = {};
     else if (path.startsWith('/api/auth/') && path.endsWith('/status')) body = { connected: false };
     else if (path.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (path === '/api/contacts/companies/summary') body = [];
+    else if (path === '/api/alumni/me') body = PORTAL_ME;
+    else if (path === '/api/alumni/home') body = { me: PORTAL_ME, profile: { exists: false, listed: false }, posts: PORTAL_POSTS.filter((p) => p.status === 'published'), events: PORTAL_EVENTS.upcoming, unread: 1 };
+    else if (path === '/api/alumni/posts' || path === '/api/admin/alumni/posts') body = { items: PORTAL_POSTS, total: PORTAL_POSTS.length };
+    else if (path === '/api/alumni/events' || path === '/api/admin/alumni/events') body = PORTAL_EVENTS;
+    else if (path === '/api/alumni/directory' || path === '/api/admin/alumni/directory') body = { items: PORTAL_DIRECTORY };
+    else if (path === '/api/alumni/profile') body = { profile: PORTAL_PROFILE, email: PORTAL_ME.email };
+    else if (path === '/api/alumni/inbox' || path === '/api/admin/alumni/inbox') body = { items: PORTAL_INBOX, unread: 1 };
+    else if (/^\/api\/(admin\/)?alumni\/inbox\/1$/.test(path)) body = { ...PORTAL_INBOX[0], read: true };
+    else if (path === '/api/admin/alumni') body = PORTAL_OVERVIEW;
     await route.fulfill({ json: body });
   });
 }
@@ -266,8 +353,8 @@ const SURFACES: Surface[] = [
     steps: [
       draftsStep('1. Contact'),
       async (page) => { await page.getByText('Jordan Rivers', { exact: true }).first().click(); },
-      draftsStep('2. AI assistance'),
-      draftsStep('3. Write'),
+      draftsStep('2. Write'),
+      async (page) => { await page.getByTestId('company-lines').waitFor(); },
       async (page) => { await page.locator('.email-studio-body').evaluate((el) => el.scrollIntoView({ block: 'center' })); },
     ],
   },
@@ -285,7 +372,35 @@ const SURFACES: Surface[] = [
   { name: 'Campaign', url: '/campaigns/1', ready: 'Fall consumer outreach' },
   { name: 'Admin Members', url: '/admin', ready: 'Ana Long-Surname' },
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },
+  { name: 'Admin Costs', url: '/admin?view=costs', ready: /Pay-per-call APIs/ },
   { name: 'Profile', url: '/profile', ready: /Profile|Settings/ },
+  { name: 'Alumni portal Home', url: '/alumni', authenticated: false, ready: /Latest news/ },
+  {
+    name: 'Alumni News', url: '/alumni?view=news', authenticated: false, ready: /Annual reunion weekend/,
+    steps: [
+      async () => {},
+      async (page) => { await page.getByRole('button', { name: 'New post' }).click(); await page.getByRole('textbox', { name: 'Post body' }).waitFor(); },
+    ],
+  },
+  {
+    name: 'Alumni Events', url: '/alumni?view=events', authenticated: false, ready: /Upcoming/,
+    steps: [
+      async () => {},
+      async (page) => { await page.getByRole('button', { name: 'New event' }).click(); await page.getByLabel('Time zone').waitFor(); },
+    ],
+  },
+  { name: 'Alumni Directory', url: '/alumni?view=directory', authenticated: false, ready: 'Ben Private' },
+  { name: 'Alumni My profile', url: '/alumni?view=profile', authenticated: false, ready: /Display name/ },
+  { name: 'Alumni Contact the board', url: '/alumni?view=contact', authenticated: false, ready: /Send message/ },
+  {
+    name: 'Alumni Board inbox', url: '/alumni?view=inbox', authenticated: false, ready: /Question from a deleted account/,
+    steps: [
+      async () => {},
+      async (page) => { await page.getByRole('button', { name: /Annual reunion/ }).click(); await page.getByRole('article', { name: 'Open message' }).waitFor(); },
+    ],
+  },
+  { name: 'Admin Alumni Access', url: '/admin?view=alumni', ready: /Alumni email domains/ },
+  { name: 'Admin Alumni News', url: '/admin?view=alumni&section=news', ready: /Annual reunion weekend/ },
   { name: 'Login', url: '/login', authenticated: false, ready: /Sign in with Google/ },
 ];
 

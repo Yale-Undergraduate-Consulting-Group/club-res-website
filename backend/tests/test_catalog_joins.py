@@ -19,7 +19,6 @@ from app.database import get_db, init_db  # noqa: E402
 from app.models import CampaignContactAdd  # noqa: E402
 from app.routers.campaigns import add_contacts_to_campaign  # noqa: E402
 from app.routers.contacts import companies_summary, list_contacts  # noqa: E402
-from app.routers.emails import _upsert_contact_by_email  # noqa: E402
 
 
 async def _seed() -> None:
@@ -86,15 +85,6 @@ async def _run() -> None:
         cur = await db.execute("SELECT campaign_id FROM generated_emails WHERE contact_id = 2")
         ge = await cur.fetchone()
         assert ge["campaign_id"] == 1
-        cid = await _upsert_contact_by_email(
-            db, email="ada@acme.com", name="Ada Lovelace", title="CEO", company="Acme"
-        )
-        assert cid == 1
-        cid2 = await _upsert_contact_by_email(
-            db, email="new@acme.com", name="New", title="PM", company="Acme"
-        )
-        assert cid2 != 1
-        await db.commit()
     finally:
         await db.close()
 

@@ -117,7 +117,7 @@ GitHub references: [organization ruleset API](https://docs.github.com/en/rest/or
 | Requirement | Intake: contributor → integration | Dev: integration → dev | Production: dev → prod |
 |---|---|---|---|
 | Frontend | Locked install, **unit tests (`npm run test:unit`)**, lint, dependency audit, ordinary build | Same checks plus `frontend/dist/index.html` static export | Same checks plus required `test:ui`, run as three parallel `ui` jobs (Playwright `--shard`); every shard must pass |
-| Backend | Full pytest suite (`backend/scripts/test_suite.py`): branch coverage, 80% floor on critical modules | Same | Same |
+| Backend | Full backend suite of standalone test scripts (`backend/scripts/test_suite.py`; no pytest): branch coverage, 80% floor on critical modules | Same | Same |
 | Container image | None | Build for `linux/amd64`, Trivy HIGH/CRITICAL scan, non-root import smoke with no network, for runtime changes; every deployment rebuilds and rescans | Same |
 | Terraform | **Not installed or validated** | Format, validate, mocked plan tests | Same checks repeated |
 | Source scanning | Workflow lint, secrets, Python audit/code scan when present | Adds configuration misconfiguration scan | Same checks repeated |
@@ -169,7 +169,7 @@ flowchart TD
   G -->|Yes| OK["Required check succeeds"]
 ```
 
-Verification compares the complete candidate with its destination branch, not only its latest push. Shipping compares the push range, or the first parent on manual delivery.
+Verification compares the complete candidate with its destination branch, not only its latest push. A pull-request run compares with the base the PR was opened on (`pull_request.base.sha`), not the destination's live tip: Promotion can merge a stage PR before a queued run starts, and the live tip would then already hold the candidate and select no checks. Shipping compares the push range, or the first parent on manual delivery.
 
 Source: [`ci_policy.py`](../scripts/ci_policy.py), [composite actions](../.github/actions/).
 
@@ -331,6 +331,7 @@ People are the remaining gap: anyone with administrator access to the account ca
 | Customer-managed KMS key | One key per environment for client-data stores: EBS data volume, catalog, backups, secrets | [`security.tf`](../terraform/security.tf) |
 | Lifecycle | Noncurrent history expiration, multipart cleanup, delete-marker cleanup | [`storage.tf`](../terraform/storage.tf) |
 | AWS Budgets | Email notices for tagged actual and forecast spend | [`budget.tf`](../terraform/budget.tf) |
+| Cost dashboard | The box role has only `ce:GetCostAndUsage` (Cost Explorer cannot resource-scope it); a leader-only job reads one grouped monthly result per UTC day and caches it in that environment's SQLite database. Opening Admin → Costs never calls AWS. The API request costs $0.01/day/environment | [`compute.tf`](../terraform/compute.tf), `backend/app/services/costs.py` |
 
 Each environment has a dedicated VPC, one EC2 instance, a data volume with `prevent_destroy`, and no NAT gateway. Section 14 lists what that leaves exposed.
 
@@ -571,18 +572,19 @@ Budget notices are not spending limits. Billing data and notices can lag. The ta
 
 | Choice | Benefit | Cost or limitation |
 |---|---|---|
-| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared, always-on API | The instance and its public IPv4 bill continuously; stop the instance (host-control Lambda) when unused |
+| One small instance per environment, no NAT gateway | Lowest fixed cost for a shared API and a private dev box | The instance and its public IPv4 bill while running; the optional EventBridge Scheduler stops dev outside office hours |
 | One shared account | One bootstrap and audit trail; no management account needed | Administrators of the account reach both environments |
 | WAF on the prod edge (off in prod today) | Blocks common attacks and floods before they reach the API | About $8 a month with three rules, plus $0.60 per million requests; without it the single small box sees all scanner traffic |
 | Office hours on dev | The box runs about 80 of 168 hours; compute and its public IPv4 bill only while running (about $9.90 a month saved) | Tools are offline nights and weekends; deploys outside the window need a manual start. Prod stays 24/7 because an open-tracking pixel request that reaches a stopped box is lost permanently, whereas a delayed send or reply sync is only late |
 | Customer-managed KMS key per environment | Key isolation for EBS, catalog, backups, and secrets | About $1 per key per month; the public site bucket stays on SSE-S3 |
+| Cached Cost Explorer read | Admins can see spend by service and `Site` tag without giving the browser AWS access | One account-wide, read-only request per UTC day per environment at $0.01/request; `ce:GetCostAndUsage` cannot be resource-scoped |
 | `PriceClass_100` | Limit edge locations | Some users can see higher latency |
 | Cheap Intake | No Docker, Terraform, or Playwright | Cloud incompatibility can surface later, intentionally |
 | Strict downstream checks | Test the deployment contract before release | Repeated builds and scans consume runner minutes |
 | Cached dependencies/layers | Reduce repeated downloads and builds | Caches do not prove correctness or artifact integrity |
 | No scheduled Actions | No periodic runner cost from these workflows | No continuous drift/uptime verification |
 
-Every job has a bounded timeout. Documentation changes skip costly lanes. CloudFront invalidation waiting still consumes runner time. No measured monthly AWS or CI cost estimate is claimed.
+Every job has a bounded timeout. Documentation changes skip costly lanes. CloudFront invalidation waiting still consumes runner time. The measured November baseline and reviewed reduction options are in [`night/costs.md`](night/costs.md).
 
 ## 13. Bootstrap requires plan support, a maintainer, and a real application
 
@@ -631,9 +633,9 @@ After installing a ruleset, check that its bypass list shows **Repository admin*
 | Capability | Status and prerequisite |
 |---|---|
 | Application frontend and backend | In this repository; deployed by the gates above once the environments exist |
-| Login, sessions, member roles | Implemented by the application (Google sign-in limited to `@yale.edu` plus an invitation); needs the Google OAuth client for each environment's URL |
+| Login, sessions, member roles | Implemented by the application (Google sign-in limited to `@yale.edu` plus an invitation); needs the Google OAuth client for each environment's URL. Members and alumni sign in on one page, YUCG Connect (`/login`: one Google client, start and callback); the server applies the member rules first, then the admin-managed alumni domain and address lists, and a member who is also listed gets both sessions. Alumni have their own cookie and the alumni portal, which holds no club data (`docs/PLATFORM.md`); club admins mark alumni board members, who write the portal's news and events and read its board inbox but never manage who may sign in. Two-factor sign-in allows five wrong codes per Google sign-in; API keys act only within their scope (`contacts:read`: read contacts) and never as an administrator |
 | NDA/client isolation and uploads | Row-level and workspace isolation exist in the application; storage encrypted per environment; no external authorization test suite yet |
-| Database and client-data retention | SQLite on an encrypted volume with snapshots and `.backup` copies. Restore drill of the daily `.backup` set exercised on prod 2026-11-09 (`ops/restore-drill.sh`: checksum and integrity ok, app booted, 10.9 s); EBS-snapshot restore and a deletion-evidence procedure are not done |
+| Database and client-data retention | SQLite on an encrypted volume with snapshots and `.backup` copies. Restore drill of the daily `.backup` set exercised on prod 2026-11-09 (`ops/restore-drill.sh`: checksum and integrity ok, app booted, 10.9 s); since 2026-11-17 the drill exits non-zero when the restored app does not answer `/api/health`, which it previously reported as a pass. `tests/test_backup_restore.py` proves the local half offline (a snapshot taken under a live WAL writer restores every committed row). EBS-snapshot restore and a deletion-evidence procedure are not done. Alumni tables (`alumni_*`, migrations `core:4` and `core:7`) are in the same file and backups; alumni post cover images are objects under `alumni/covers/` in the documents bucket (versioned; a deleted cover's other versions expire with the bucket's 30-day noncurrent lifecycle). Owners, readers, retention, deletion and audit are in `docs/product/ALUMNI-PORTAL.md` (portal) and `docs/night/security.md` (sign-in) |
 | Bedrock/model integration | Models are chosen by use: Haiku for ranking, Sonnet for writing and Slack, Opus on request (`backend/app/services/llm.py`), charged to one monthly club budget. Each tier falls back to its 4.x model while AWS has not enabled the 5.5 model. The six-model box role is applied in dev and prod (2026-11-06). At about 09:55 UTC on 2026-11-06 Haiku 4.5, Sonnet 4.6 and Opus 4.6 answered from the prod box; by 16:30 UTC every Bedrock model, from every provider and every role in the account, returned `ValidationException: Error 002: Access to Bedrock models is not allowed for this account`, and model features are unavailable. Restoration is requested in case `179398462200009`; 5.5 access in case `179393410200701`. Until 2026-11-19 (UTC) the app instead calls Anthropic's own API with a temporary key (`ANTHROPIC_API_KEY` and `ANTHROPIC_API_KEY_EXPIRES` in the prod app secret): Haiku 5.5 for ranking and extraction, Sonnet 5.5 for writing, Slack and the deep tier. The key carries its own $20 limit and `AI_MONTHLY_BUDGET_USD` is 15 so the app stops first; after the expiry date the app returns to Bedrock, and a new key plus a new date in the secret takes over on the next deploy |
 | Legacy data migration | Done 2026-11-06: the legacy app in account `442429446212` was stopped (its container no longer restarts; the box and volumes are kept for rollback), its database copied with a verified SHA-256 and integrity check into prod, and `prospects/current.xlsx` copied to the prod catalog bucket. Row counts matched. The prod secret carries the legacy `JWT_SECRET`, so stored Gmail and Slack tokens remain readable |
 | Custom domain | Planned extension only; requires DNS and ACM configuration |

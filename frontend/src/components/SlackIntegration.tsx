@@ -50,22 +50,14 @@ export default function SlackIntegration({ allowReconnect = false }: { allowReco
     <section className="surface-card mb-6" aria-labelledby="slack-heading">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="slack-heading" className="app-section-title">Club Slack workspace</h2>
-        {connected && allowReconnect ? (
-          <button
-            type="button"
-            className="group ui-status ui-status--success cursor-pointer"
-            title="Reconnect Slack"
-            aria-label="Connected. Reconnect Slack"
-            onClick={() => setConfirming(true)}
-          >
-            <span className="group-hover:hidden group-focus-visible:hidden">Connected</span>
-            <span className="hidden group-hover:inline group-focus-visible:inline">Reconnect</span>
-          </button>
-        ) : (
+        <div className="flex flex-wrap items-center gap-3">
           <StatusBadge tone={connected ? 'success' : 'neutral'}>
             {status == null ? 'Checking connection' : connected ? 'Connected' : 'Not connected'}
           </StatusBadge>
-        )}
+          {connected && allowReconnect && (
+            <Button variant="secondary" size="sm" onClick={() => setConfirming(true)}>Reconnect</Button>
+          )}
+        </div>
       </div>
       <p className="text-sm text-slate-600 my-3">
         Connect the club workspace for shared notifications and the <code>/yucg</code> command in

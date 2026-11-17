@@ -559,7 +559,7 @@ export default function Outreach() {
                     ))}
                   </select>
                   {/* Hands the exact people ticked to Drafts, where each
-                      gets an advisory draft of their own - the same panel
+                      opens written from the club template - the same panel
                       Find people and Drafts' own sidebar open. */}
                   <button
                     type="button"
@@ -1084,8 +1084,8 @@ export default function Outreach() {
             <div>
               <h3 className="font-semibold text-deep-navy">Templates</h3>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                Reusable copy for first touches and follow-ups. Prefer a few strong templates per
-                industry or use case; refine based on reply rate, not volume.
+                Every member sends the club's Intro; the Send panel adds one confirmed line for each
+                company. Templates here are for anything else.
               </p>
             </div>
             {templates.length > 0 && (
@@ -1125,7 +1125,7 @@ export default function Outreach() {
             <div className="pt-2 border-t border-pale-sky space-y-3">
               <p className="text-sm font-medium text-deep-navy">New template</p>
               <p className="text-xs text-slate-500">
-                Yours stay private. Templates an administrator saves, and the starters, are shared with the whole club.
+                Yours stay private. Templates an administrator saves, and the club's Intro, are shared with the whole club.
               </p>
               <input
                 value={templateForm.name}

@@ -102,7 +102,6 @@ async function mockPicker(page: Page, opts: { busy?: boolean; earlierRun?: boole
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (/\/sequences$|\/custom-formats$/.test(p)) body = [];
     await route.fulfill({ status, json: body });
@@ -165,7 +164,8 @@ test('Search looks for a company with nobody on file, and the people it finds ar
   await expect(neonLane).toHaveAttribute('data-state', 'searching');
   await expect.poll(() => runsCreated.length).toBe(1);
   expect(runsCreated[0].company_name).toBe('NEON');
-  expect(runsCreated[0].max_prospects).toBe(120);
+  // No goal typed: the server sizes it to the company.
+  expect(runsCreated[0].max_prospects).toBeUndefined();
 
   // Everyone it finds goes onto the list as soon as it finishes: the default
   // tick chooses the team leads, and the CEO is there but not ticked.

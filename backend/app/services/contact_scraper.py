@@ -9,7 +9,8 @@ import os
 import httpx
 import dns.resolver
 from bs4 import BeautifulSoup
-from typing import Awaitable, Callable, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Awaitable, Callable, Optional
 from urllib.parse import urljoin, urlparse
 
 # Optional (1-based page index, total pages, url) progress hook for UI streaming
@@ -1094,6 +1095,24 @@ def confidence_for_contact_dict(
     )
 
 
+#: The site each crawl in flight is reading, with how many crawls want it: two
+#: searches of one company never read its site at the same time.
+_site_crawls: dict[str, tuple[asyncio.Lock, list[int]]] = {}
+
+
+@asynccontextmanager
+async def _one_crawl_per_site(site: str) -> AsyncIterator[None]:
+    lock, users = _site_crawls.setdefault(site, (asyncio.Lock(), [0]))
+    users[0] += 1
+    try:
+        async with lock:
+            yield
+    finally:
+        users[0] -= 1
+        if not users[0]:
+            _site_crawls.pop(site, None)
+
+
 async def scrape_contacts_from_domain(
     domain: str,
     company_name: Optional[str] = None,
@@ -1101,19 +1120,29 @@ async def scrape_contacts_from_domain(
     on_page: PageProgressHook = None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> list[dict]:
-    """HTML crawl. Slot held here only — Tavily/Apify/Bedrock stay ungated."""
+    """HTML crawl, one per site at a time, inside a crawl slot (discovery_gate).
+    ``on_page`` hears (0, 1, "queued") when every slot is taken, as the wait
+    begins; (0, max_pages, "started") once the crawl holds a slot; then each
+    page read."""
     from app.services.discovery_gate import discovery_job
 
-    async with discovery_job() as queued:
-        if queued and on_page:
-            await on_page(0, 1, "queued")
-        return await _scrape_contacts_from_domain_html(
-            domain, company_name, max_pages, on_page, cancel_event
-        )
+    async def waiting() -> None:
+        await on_page(0, 1, "queued")
+
+    async with _one_crawl_per_site(normalize_domain(domain or "")):
+        async with discovery_job(on_wait=waiting if on_page else None):
+            if on_page:
+                await on_page(0, max_pages, "started")
+            return await _scrape_contacts_from_domain_html(
+                domain, company_name, max_pages, on_page, cancel_event
+            )
 
 
 CRAWL_FETCH_WORKERS = max(1, int(os.getenv("CRAWL_FETCH_WORKERS", "5") or 5))
 CRAWL_PAGE_TIMEOUT_SEC = float(os.getenv("CRAWL_PAGE_TIMEOUT_SEC", "5") or 5)
+#: The most of one page a crawl reads. Team pages are a few hundred KB; the cap
+#: is what bounds a crawl's memory (see discovery_gate.CRAWL_RAM_BYTES).
+CRAWL_MAX_PAGE_BYTES = 2 * 1024 * 1024
 
 
 async def _fetch_crawl_pages(
@@ -1129,17 +1158,29 @@ async def _fetch_crawl_pages(
     go in waves of CRAWL_FETCH_WORKERS alongside the homepage itself, and a
     page that is the homepage again (same final URL, or same bytes) is not a
     team page. When the whole first wave is the homepage, the site is a
-    catch-all and the rest are not asked."""
+    catch-all and the rest are not asked. A page is read up to
+    CRAWL_MAX_PAGE_BYTES."""
     fetch_timeout = httpx.Timeout(CRAWL_PAGE_TIMEOUT_SEC)
 
     async def get(url: str) -> Optional[httpx.Response]:
         if cancel_event is not None and cancel_event.is_set():
             return None
         try:
-            resp = await client.get(url, timeout=fetch_timeout)
+            async with client.stream("GET", url, timeout=fetch_timeout) as resp:
+                if resp.status_code != 200:
+                    return None
+                body = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    body += chunk
+                    if len(body) >= CRAWL_MAX_PAGE_BYTES:
+                        del body[CRAWL_MAX_PAGE_BYTES:]
+                        break
+                return httpx.Response(
+                    200, content=bytes(body), request=resp.request,
+                    headers={"content-type": resp.headers.get("content-type", "")},
+                )
         except Exception:
             return None
-        return resp if resp.status_code == 200 else None
 
     def fingerprint(resp: httpx.Response) -> tuple[str, str]:
         return str(resp.url).rstrip("/"), hashlib.sha256(resp.content).hexdigest()
@@ -1193,7 +1234,11 @@ async def _scrape_contacts_from_domain_html(
     personal_emails_for_format: list[str] = []  # Non-role emails to detect format
 
     try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        # The domain is member-supplied: every hop, redirects included, must be a public host.
+        from app.services.research_providers import refuse_private_destination
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True,
+                                     event_hooks={"request": [refuse_private_destination]}) as client:
             # More pages = better coverage; team/people pages have higher-quality contacts
             urls_to_check = [
                 f"{base_url.rstrip('/')}/team",

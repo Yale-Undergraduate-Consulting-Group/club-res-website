@@ -1,7 +1,7 @@
 """Who may see and use a saved email template.
 
 One rule, enforced here for every caller: a template is the club's when an
-administrator owns it (or nobody does, as with the starter templates), and
+administrator owns it (or nobody does, as with the club's seeded Intro), and
 private to its author otherwise. Members see their own and the club's; an
 administrator can remove a club template, nobody else's private one.
 """
@@ -44,40 +44,24 @@ async def require_template(db, template_id: int, user: dict) -> dict[str, Any]:
     return _shape(row, user)
 
 
-# Written for a Yale undergraduate consulting group writing to people it has
-# not met: plain, one question each, and nothing claimed that is not true of
-# every recipient. The sender's signature is added when mail is sent, and a
-# recipient missing a field a template uses is held, not mailed with a gap.
-STARTER_TEMPLATES = (
-    ("Intro", "intro",
-     "Introduction from the Yale Undergraduate Consulting Group",
-     "Hi {first},\n\n"
-     "I'm a member of the Yale Undergraduate Consulting Group (YUCG), a student-run consulting group at Yale. "
-     "Our teams take on short analytical projects for outside organisations, and I'm writing to introduce us to {company}.\n\n"
-     "I'd value hearing what {company} is working through at the moment, and whether a student team could be useful. "
-     "Would you be open to a 15-minute call in the next few weeks?"),
-    ("Alumni connection (only if you know they studied at Yale)", "alumni connection",
-     "Yale student reaching out",
-     "Hi {first},\n\n"
-     "I'm a student at Yale and a member of the Yale Undergraduate Consulting Group (YUCG). "
-     "I'm writing to you directly because you are a Yale graduate.\n\n"
-     "YUCG teams work on short analytical projects for outside organisations. As {title} at {company}, "
-     "you will have a clear view of where that kind of help is useful and where it is not. "
-     "Would you be willing to spend 15 minutes telling me?"),
-    ("Project pitch", "project pitch",
-     "A student project for {company}?",
-     "Hi {first},\n\n"
-     "I'm a member of the Yale Undergraduate Consulting Group (YUCG). Our teams of undergraduates take on analytical "
-     "projects for outside organisations, for example market sizing, customer research or a review of a process.\n\n"
-     "If {company} has a question like that waiting on a backlog, a YUCG team could take a first pass at it. "
-     "Is there one you would be willing to talk through for 15 minutes?"),
-    ("Follow-up (after an earlier email)", "follow-up",
-     "Following up: Yale Undergraduate Consulting Group",
-     "Hi {first},\n\n"
-     "I wrote a little while ago about the Yale Undergraduate Consulting Group (YUCG) and wanted to follow up in case "
-     "my note was buried.\n\n"
-     "A short call with someone at {company} would be a real help to us. "
-     "Would a 15-minute call in the next two weeks suit you?"),
+# The club's one template, which every member sends: Amber's introduction.
+# {first} is the recipient's first name, {sender_first_name} the sender's (from
+# their sign-off), and {personalisation} the line the member confirms for each
+# company before sending. The signature is added when mail is sent.
+CLUB_TEMPLATE_NAME = "Intro"
+CLUB_TEMPLATE_SUBJECT = "Introduction from the Yale Undergraduate Consulting Group"
+CLUB_TEMPLATE_BODY = (
+    "Hi {first},\n\n"
+    "I hope you're doing well!\n\n"
+    "I'm {sender_first_name} and I'm reaching out from the Yale Undergraduate Consulting Group. "
+    "We're a team of undergraduate students who work with companies to better understand their customers, "
+    "explore new markets, and identify opportunities for growth.\n\n"
+    "I'd love to work with {company} on a project in the new year. {personalisation}\n\n"
+    "If this sounds interesting, I'd love to hop on a 15 minute call to talk about specific project ideas "
+    "further and answer any questions. Please do let me know when you'd be available!\n\n"
+    "Thank you!\n\n"
+    "Best,\n"
+    "{sender_first_name}"
 )
 
 
@@ -86,17 +70,29 @@ async def add_approach_tracking(db) -> None:
     campaign row was written from, for Admin → Metrics "What earns replies".
     Per row, not per campaign, because one campaign can carry a different
     message to each company. Rows from before this keep NULL: their approach
-    was never recorded. Also seeds the club's starter templates, once, when
-    the club has none of its own."""
+    was never recorded. (It used to seed four starter templates; migration 7
+    now puts the club's one template in place.)"""
     have = {r[1] for r in await (await db.execute("PRAGMA table_info(campaign_contacts)")).fetchall()}
     for column, kind in (("template_id", "INTEGER"), ("angle", "TEXT")):
         if column not in have:
             await db.execute(f"ALTER TABLE campaign_contacts ADD COLUMN {column} {kind}")
-    club = await (await db.execute(
-        """SELECT 1 FROM email_templates t LEFT JOIN users u ON u.id = t.user_id
-           WHERE t.user_id IS NULL OR u.role = 'admin' LIMIT 1""")).fetchone()
-    if not club:
-        await db.executemany(
-            "INSERT INTO email_templates (name, use_case, subject, body, user_id) VALUES (?, ?, ?, ?, NULL)",
-            STARTER_TEMPLATES,
-        )
+
+
+async def one_club_template(db) -> None:
+    """Migration outreach:7. Every member sends the same template, so the
+    seeded starters (the only rows with no author: members' and
+    administrators' own templates always carry their user_id) become one. The
+    seeded Intro keeps its id, so its sends stay together in Admin → Metrics,
+    and its subject; its body becomes the club's. The other starters are
+    removed; their sends keep their approach. Templates anyone saved are not
+    touched."""
+    seeded = await (await db.execute("SELECT id, name FROM email_templates WHERE user_id IS NULL ORDER BY id")).fetchall()
+    keep = next((row[0] for row in seeded if (row[1] or "").strip().lower() == CLUB_TEMPLATE_NAME.lower()), None)
+    if keep is None:
+        cursor = await db.execute(
+            "INSERT INTO email_templates (name, use_case, subject, body, user_id) VALUES (?, 'intro', ?, ?, NULL)",
+            (CLUB_TEMPLATE_NAME, CLUB_TEMPLATE_SUBJECT, CLUB_TEMPLATE_BODY))
+        keep = cursor.lastrowid
+    else:
+        await db.execute("UPDATE email_templates SET body = ?, use_case = 'intro' WHERE id = ?", (CLUB_TEMPLATE_BODY, keep))
+    await db.execute("DELETE FROM email_templates WHERE user_id IS NULL AND id != ?", (keep,))

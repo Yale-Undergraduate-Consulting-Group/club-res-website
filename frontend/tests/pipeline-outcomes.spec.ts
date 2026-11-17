@@ -27,7 +27,6 @@ async function mockPipeline(page: Page) {
     else if (path === '/api/outreach/sequences') body = [];
     else if (path === '/api/outreach/campaigns') body = [];
     else if (path === '/api/outreach/worklists') body = [];
-    else if (path === '/api/ai/models') body = { groups: [] };
     await route.fulfill({ json: body });
   });
 }

@@ -18,9 +18,9 @@ from app.auth_deps import get_current_user
 from app.database import get_db, row_to_dict
 from app.services.company_register import DEFAULT_LEVELS, FUNCTION_IDS
 from app.services.yucgoutreach_discovery import (
-    YUCG_DEFAULT_PROSPECTS,
     YUCG_MAX_PROSPECTS,
     build_yucgoutreach_excel_bytes,
+    company_size_target,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,9 @@ class YucgOutreachRunCreate(BaseModel):
     # input: enqueue_discovery_run cuts it to the contract and sizes, and the
     # run only uses it to narrow who it keeps and which domain it tries.
     entity: dict[str, Any] | None = None
-    max_prospects: int = Field(YUCG_DEFAULT_PROSPECTS, ge=1, le=800)  # target count of qualified people, not just a cap
+    # The target count of qualified people, not just a cap. None: sized to the
+    # company (company_size_target), a few hundred for the largest.
+    max_prospects: int | None = Field(None, ge=1, le=800)
     worker_concurrency: int = Field(4, ge=1, le=16)
     # Who to look for, any combination: team leads, senior leaders, board, and
     # people with no title shown. The goal counts people at these levels; the
@@ -116,6 +118,10 @@ async def _get_run_for_user(run_id: int, user_id: int, *, shared: bool = False) 
 
 @router.post("/runs")
 async def create_run(body: YucgOutreachRunCreate, user: dict = Depends(get_current_user)):
+    legal_name = (body.entity or {}).get("legal_name")
+    target = body.max_prospects or await company_size_target(
+        body.company_name, body.company_domain, legal_name=legal_name if isinstance(legal_name, str) else None,
+    )
     db = await get_db()
     try:
         from app.services.dispatch_service import begin_write
@@ -128,7 +134,7 @@ async def create_run(body: YucgOutreachRunCreate, user: dict = Depends(get_curre
             company_domain=body.company_domain,
             title_hints=body.title_hints,
             entity=body.entity,
-            max_prospects=body.max_prospects,
+            max_prospects=target,
             worker_concurrency=body.worker_concurrency,
             levels=body.levels,
             function=body.function,
@@ -140,7 +146,7 @@ async def create_run(body: YucgOutreachRunCreate, user: dict = Depends(get_curre
     # watching the whole of. Kick the same drain now: it takes the lease the
     # same way, so a tick that lands mid-claim finds nothing to take.
     asyncio.create_task(_kick_discovery_drain())
-    return {"id": run_id, "status": "queued", "max_prospects": min(body.max_prospects, YUCG_MAX_PROSPECTS)}
+    return {"id": run_id, "status": "queued", "max_prospects": min(target, YUCG_MAX_PROSPECTS)}
 
 
 async def _kick_discovery_drain() -> None:

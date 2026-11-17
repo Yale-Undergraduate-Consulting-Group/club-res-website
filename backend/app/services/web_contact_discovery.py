@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable, Iterable, Optional
 
 import httpx
 
+from app.services.costs import record_paid_call
 from app.services.company_email_cache import build_email_for_person_sync, company_brand_words, text_names_brand
 from app.services.contact_scraper import (
     extract_employee_emails_from_text,
@@ -74,13 +75,22 @@ SEARCH_PAGE_RESULTS = int(os.getenv("WEB_DISCOVERY_PAGE_RESULTS", "8"))
 _SEARCH_RUN: ContextVar[dict[str, Any] | None] = ContextVar("web_search_run", default=None)
 
 
-def begin_search_run() -> tuple[dict[str, Any], Token]:
-    run: dict[str, Any] = {"queries": 0, "failed": 0, "first_error": None, "limit": False, "kind": None, "inflight": {}}
-    return run, _SEARCH_RUN.set(run)
+def begin_search_run() -> tuple[dict[str, Any], tuple[Token, Token]]:
+    """A run's search bookkeeping, and its account with the club-wide pacer
+    (web_fetch.search_pace_account), which serves runs evenly."""
+    from app.services.web_fetch import search_pace_account
+
+    run: dict[str, Any] = {"queries": 0, "failed": 0, "first_error": None, "limit": False, "kind": None,
+                           "inflight": {}, "pace": [0]}
+    return run, (_SEARCH_RUN.set(run), search_pace_account.set(run["pace"]))
 
 
-def end_search_run(token: Token) -> None:
-    _SEARCH_RUN.reset(token)
+def end_search_run(token: tuple[Token, Token]) -> None:
+    from app.services.web_fetch import search_pace_account
+
+    run_token, pace_token = token
+    search_pace_account.reset(pace_token)
+    _SEARCH_RUN.reset(run_token)
 
 
 def search_errors_summary(run: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -158,6 +168,7 @@ async def _search_once(query: str, max_results: int, page: int = 0) -> list[dict
     if not key or page:
         return []
     try:
+        await record_paid_call("tavily", search_depth=TAVILY_SEARCH_DEPTH)
         async with httpx.AsyncClient(timeout=28.0) as client:
             r = await client.post(
                 "https://api.tavily.com/search",
@@ -1438,35 +1449,65 @@ def first_wave_queries(
     return list(dict.fromkeys(_with_negatives(q, negatives) for q in queries))
 
 
+#: What a deep search (a goal of a few hundred people) also asks for each
+#: level: every function's team-lead titles, and the executive layer below
+#: the C-suite words the variants already use.
+_DEEP_TITLES: dict[str, tuple[str, ...]] = {
+    "working": tuple(dict.fromkeys(t for titles in FUNCTION_TITLES.values() for t in titles)),
+    "executive": ("senior vice president", "executive vice president", "chief operating officer",
+                  "chief financial officer", "chief marketing officer", "chief technology officer"),
+    "board": (),
+}
+
+
 def round_query_pool(
     company: str, dom: str, title_hints: str | None, entity: dict[str, Any] | None,
     levels: Iterable[str] | str | None = DEFAULT_LEVELS, function: str | None = None,
+    depth: int = 1,
 ) -> list[tuple[str, int]]:
     """Every (query, results page) a run's later rounds may ask, best first:
     the Yale search, the next page of the first wave's profile and
     public-source searches, title variants for the levels (and the function)
     asked for, the HQ city with a few of them, then the group units. None of
-    them is a first-wave query, so no round repeats one. At most ~30
-    searches, and rounds only start when the first wave left the goal unmet,
-    so the Yale search costs a slot in a budget the run already has rather
-    than a request on top of it."""
+    them is a first-wave query, so no round repeats one. About 30 searches,
+    and rounds only start when the first wave left the goal unmet, so the Yale
+    search costs a slot in a budget the run already has rather than a request
+    on top of it.
+
+    ``depth`` above 1 is for a goal of a few hundred people. After all of the
+    above come the other titles of _DEEP_TITLES (not for a run that asked for
+    one function, which wants that function's people only), then for each step
+    up to ``depth`` one more results page of every profile, public-source and
+    title-variant search: about 25 searches a step."""
     chosen = _search_levels(levels)
     brand = search_brand(company, entity)
     negatives = _negatives(entity, brand)
     first = first_wave_queries(company, dom, title_hints, entity, chosen, function)
     pool = [(_with_negatives(f'"{brand}" ("Yale University" OR "Yale School of Management" OR "Yale College") '
                              "site:linkedin.com/in", negatives), 0)]
-    pool += [(q, 1) for q in first if "site:linkedin.com/in" in q or any(mark in q for mark in _SOURCE_SITE_MARKS)]
+    profiles = [q for q in first if "site:linkedin.com/in" in q or any(mark in q for mark in _SOURCE_SITE_MARKS)]
+    pool += [(q, 1) for q in profiles]
     variants = _round_variants(chosen)
     if function in FUNCTION_TITLES and any(level != "board" for level in chosen):
         # The function's own titles take the place of as many generic ones.
         variants = (*FUNCTION_TITLES[function], *variants[: max(0, len(variants) - len(FUNCTION_TITLES[function]))])
-    pool += [(_with_negatives(f'"{brand}" "{t}" site:linkedin.com/in', negatives), 0) for t in variants]
+
+    def titled(t: str) -> str:
+        return _with_negatives(f'"{brand}" "{t}" site:linkedin.com/in', negatives)
+
+    pool += [(titled(t), 0) for t in variants]
     city = ((entity or {}).get("hq_city") or "").strip()
     if city:
         pool += [(_with_negatives(f'"{brand}" "{city}" "{t}" site:linkedin.com/in', negatives), 0)
                  for t in variants[:4]]
     pool += [(f'"{u["name"]}" "{brand}" site:linkedin.com/in', 0) for u in entity_units(entity)[:5]]
+    if depth > 1:
+        if function not in FUNCTION_TITLES:
+            known = {t.lower() for t in variants}
+            pool += [(titled(t), 0) for level in chosen for t in _DEEP_TITLES[level] if t.lower() not in known]
+        for page in range(2, depth + 1):
+            pool += [(q, page) for q in profiles]
+            pool += [(titled(t), page - 1) for t in variants]
     asked = {(q, 0) for q in first}
     return [item for item in dict.fromkeys(pool) if item not in asked]
 

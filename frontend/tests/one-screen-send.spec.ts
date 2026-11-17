@@ -14,6 +14,10 @@ const TEMPLATES = [
   { id: 12, name: 'My pitch', subject: 'For {company}', body: 'Hi {first}', use_case: 'pitch', industry: null, scope: 'mine', mine: true, editable: true },
   { id: 11, name: 'Intro', subject: 'Hello {first}', body: 'Hi {first}, we are YUCG.', use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false },
 ];
+/** The club's one template, with the line each company gets. */
+const CLUB_INTRO = [
+  { id: 11, name: 'Intro', subject: 'Introduction from the Yale Undergraduate Consulting Group', body: "Hi {first},\n\nI'd love to work with {company} on a project in the new year. {personalisation}\n\nBest,\n{sender_first_name}", use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false },
+];
 
 type Prospect = { first: string; last: string; title: string; refused?: string };
 
@@ -40,14 +44,12 @@ function prospectsFor(company: string): Prospect[] {
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: number; heldName?: string } = {}) {
+async function mock(page: Page, opts: { heldName?: string; clubIntro?: boolean; warnTeams?: boolean } = {}) {
   const runsCreated: string[] = [];
   const builds: Record<string, unknown>[] = [];
-  const created: unknown[] = [];
-  const attached: Record<string, unknown>[] = [];
   const releases: string[] = [];
-  const generated: number[] = [];
-  const log = { maxInFlight: 0, inFlight: 0, runConflicts: 0 };
+  const suggested: { company: string; previous: string }[] = [];
+  const log = { runConflicts: 0 };
   const runs: { id: number; company: string; polled: boolean }[] = [];
   const contacts: Record<string, unknown>[] = [];
   let nextContact = 1000;
@@ -66,7 +68,7 @@ async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: numb
     let body: unknown = {};
     let status = 200;
     if (p === '/api/auth/me') body = { authenticated: true, user };
-    else if (p === '/api/outreach/templates') body = TEMPLATES;
+    else if (p === '/api/outreach/templates') body = opts.clubIntro ? CLUB_INTRO : TEMPLATES;
     else if (p === '/api/yucgoutreach/resolve-company') {
       const q = url.searchParams.get('q') || '';
       body = { name: q, domain: null, domain_verified: false, linkedin_url: null, source: 'typed', alternatives: [] };
@@ -127,45 +129,36 @@ async function mock(page: Page, opts: { aiDown?: boolean; generateDelayMs?: numb
       const ready = ids.length - held.length;
       const first = contacts.find((c) => ids.includes(c.id as number) && !held.some((h) => h.contact_id === c.id)) as { name: string; email: string } | undefined;
       if (payload.preview_only) {
+        const company = String(contacts.find((c) => ids.includes(c.id as number))?.company ?? '');
+        // The server ranks a team most senior first; here, the last found is the most senior.
+        const ranked = [...ids].sort((a, b) => b - a);
         body = {
           recipients: ids.length, ready, held, skipped: 0,
           sample: first ? { email: first.email, subject: `Hello ${first.name.split(' ')[0]}`, body: `Hi ${first.name.split(' ')[0]}, we are YUCG.` } : null,
+          warnings: opts.warnTeams && ids.length >= 3 ? [
+            ...(ids.length >= 5 ? [{ kind: 'company', company, count: ids.length, threshold: 5, contact_ids: ranked }] : []),
+            { kind: 'team', company, team: 'Sales / BD', count: ids.length, threshold: 3, keep: 2, contact_ids: ranked },
+          ] : [],
         };
       } else {
         builds.push(payload);
         body = { campaign_id: 42, created: ready, held, name: payload.name };
       }
-    } else if (p === '/api/campaigns' && method === 'POST') {
-      created.push(request.postDataJSON());
-      body = { id: 55, name: 'AI' };
-    } else if (p === '/api/campaigns/55/contacts') {
-      attached.push(request.postDataJSON());
-      body = { ok: true, added: request.postDataJSON().contact_ids.length, drafts_attached: 0, held: [] };
-    } else if (/^\/api\/campaigns\/(42|55)\/release$/.test(p)) {
+    } else if (p === '/api/campaigns/42/release') {
       releases.push(p);
       body = { ok: true, status: 'releasing', counts: { pending: 2 }, allowance: { daily_limit: 100, queued: 2, days_to_drain: 1, warn_at: null } };
-    } else if (p === '/api/emails/generate') {
+    } else if (p === '/api/campaigns/personalisation') {
       const payload = request.postDataJSON();
-      log.inFlight += 1;
-      log.maxInFlight = Math.max(log.maxInFlight, log.inFlight);
-      await new Promise((resolve) => setTimeout(resolve, opts.generateDelayMs ?? 300));
-      log.inFlight -= 1;
-      if (opts.aiDown) {
-        await route.fulfill({ status: 503, json: { detail: 'The language model is unavailable right now.' } });
-        return;
-      }
-      generated.push(payload.contact_id);
-      body = { subject: `About ${payload.contact_id}`, body: 'Three projects a team could build.', contact_id: payload.contact_id };
-    } else if (p === '/api/projects/suggest-citations') body = { projects: [], team_experience: [] };
-    else if (p === '/api/contacts/companies/summary') body = [];
+      suggested.push(payload);
+      body = { company: payload.company, line: `${payload.previous ? 'Another' : 'A'} line for ${payload.company}.`, sources: ["the club's register notes"] };
+    } else if (p === '/api/contacts/companies/summary') body = [];
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     await route.fulfill({ status, json: body });
   });
-  return { runsCreated, builds, created, attached, releases, generated, log };
+  return { runsCreated, builds, releases, suggested };
 }
 
 const clicks = (page: Page) => page.evaluate(() => (window as unknown as { __clicks: number }).__clicks);
@@ -288,50 +281,80 @@ test('the filters only narrow the list: the number and what is sent do not chang
   await expect(pipeline.getByTestId('send-button')).toHaveText('Send to 2');
 });
 
-test('the AI writes an email for each person, four at a time, and Send follows', async ({ page }) => {
-  const server = await mock(page, { generateDelayMs: 400, heldName: 'nobody' });
-  await page.goto('/scraper?view=company&companies=BigTeam');
+test('each company gets its own line, and Send waits until every line is confirmed', async ({ page }) => {
+  const server = await mock(page, { clubIntro: true });
+  await page.goto('/scraper?view=company&companies=Acme,Cedar');
   await page.getByTestId('search-all').click();
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
-  await expect(pipeline.getByTestId('selected-count')).toHaveText('6 can be emailed', { timeout: 20_000 });
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('4 can be emailed', { timeout: 30_000 });
 
-  await rail.getByRole('button', { name: 'Write with AI instead' }).click();
-  // Nothing sends until each person has an email.
+  // One template for everyone: no AI-written emails and no template to pick.
+  await expect(page.getByText(/write with ai/i)).toHaveCount(0);
+  await expect(rail.getByLabel('Template')).toHaveCount(0);
+
+  const lines = rail.getByTestId('company-lines');
+  await expect(lines.getByTestId('company-line')).toHaveCount(2);
   await expect(rail.getByTestId('send-button')).toBeDisabled();
-  await rail.getByTestId('draft-all').click();
-  await expect(rail.getByTestId('draft-progress')).toHaveText('6 written', { timeout: 20_000 });
-  expect(server.log.maxInFlight).toBe(4);
-  expect(server.generated).toHaveLength(6);
-  await expect(rail.getByTestId('message-preview')).toContainText('Three projects');
+  await expect(rail.getByTestId('lines-pending')).toHaveText("Confirm each company's line to send: 0 of 2 confirmed.");
 
-  await expect(rail.getByTestId('send-button')).toHaveText('Send to 6');
+  // Writing a line yourself asks the model nothing.
+  await lines.getByRole('textbox', { name: 'Line for Cedar' }).fill('Your new stores are a great fit for a student team.');
+  await lines.getByRole('checkbox', { name: 'Confirm the line for Cedar' }).check();
+  await lines.getByTestId('suggest-lines').click();
+  await expect(lines.getByRole('textbox', { name: 'Line for Acme' })).toHaveValue('A line for Acme.');
+  expect(server.suggested).toEqual([{ company: 'Acme', previous: '' }]);
+  await expect(lines.locator('[data-company="Acme"]')).toContainText("From the club's register notes.");
+
+  // Regenerate asks for a different line; a new line is unconfirmed until confirmed again.
+  await lines.locator('[data-company="Acme"]').getByRole('button', { name: 'Regenerate' }).click();
+  await expect(lines.getByRole('textbox', { name: 'Line for Acme' })).toHaveValue('Another line for Acme.');
+  expect(server.suggested.at(-1)).toEqual({ company: 'Acme', previous: 'A line for Acme.' });
+  await expect(rail.getByTestId('send-button')).toBeDisabled();
+  await lines.getByRole('checkbox', { name: 'Confirm the line for Acme' }).check();
+  // Editing a confirmed line takes the confirmation back.
+  await lines.getByRole('textbox', { name: 'Line for Cedar' }).fill('');
+  await expect(rail.getByTestId('send-button')).toBeDisabled();
+  await expect(lines.locator('[data-company="Cedar"]')).toContainText('Confirmed: no line');
+  await lines.getByRole('checkbox', { name: 'Confirm the line for Cedar' }).check();
+
+  await expect(rail.getByTestId('send-button')).toBeEnabled();
   await rail.getByTestId('send-button').click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Send 6' }).click();
-  await expect(rail.getByTestId('sent-summary')).toContainText('Queued 6 emails');
-  // Drafts are attached the way Drafts attaches them: by person, no copy typed here.
-  expect(server.created).toHaveLength(1);
-  expect(server.attached).toHaveLength(1);
-  expect((server.attached[0].contact_ids as number[]).length).toBe(6);
-  expect(server.releases).toEqual(['/api/campaigns/55/release']);
-  expect(server.builds).toHaveLength(0);
+  await page.getByRole('dialog').getByRole('button', { name: 'Send 4' }).click();
+  await expect(rail.getByTestId('sent-summary')).toContainText('Queued 4 emails');
+  expect(server.builds[0]).toMatchObject({ template_id: 11, personalisation: { Acme: 'Another line for Acme.', Cedar: '' } });
+  expect(server.suggested).toHaveLength(2);
 });
 
-test('when the AI is unavailable the screen says so and offers the template', async ({ page }) => {
-  await mock(page, { aiDown: true, heldName: 'nobody' });
+test('writing to one team at a company warns, and "Keep the most senior 2" unticks the rest', async ({ page }) => {
+  const server = await mock(page, { heldName: 'nobody', warnTeams: true });
   await page.goto('/scraper?view=company&companies=BigTeam');
   await page.getByTestId('search-all').click();
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
   await expect(pipeline.getByTestId('selected-count')).toHaveText('6 can be emailed', { timeout: 20_000 });
 
-  await rail.getByRole('button', { name: 'Write with AI instead' }).click();
-  await rail.getByTestId('draft-all').click();
-  const notice = rail.getByRole('status').filter({ hasText: 'AI drafting is unavailable right now' });
-  await expect(notice).toBeVisible();
-  await expect(pipeline.getByRole('alert')).toHaveCount(0);
-
-  await notice.getByRole('button', { name: 'Use a template' }).click();
-  await expect(rail.getByLabel('Template')).toHaveValue('11');
+  // A warning, never a block: Send is open and the confirm says why to think twice.
   await expect(rail.getByTestId('send-button')).toBeEnabled();
+  await rail.getByTestId('send-button').click();
+  const dialog = page.getByRole('dialog');
+  const warnings = dialog.getByTestId('confirm-warnings');
+  await expect(warnings).toContainText("You're emailing 6 people on the Sales / BD team at BigTeam — they often compare notes; consider 1–2.");
+  await expect(warnings).toContainText("You're emailing 6 people at BigTeam");
+
+  await warnings.getByRole('button', { name: 'Keep the most senior 2' }).click();
+  await expect(pipeline.getByTestId('selected-count')).toHaveText('2 can be emailed');
+  await expect(dialog.getByRole('heading')).toHaveText('Send 2 emails from your Gmail?');
+  await expect(dialog.getByTestId('confirm-warnings')).toHaveCount(0);
+
+  // The two kept are the two the server ranked most senior.
+  const picker = pipeline.getByTestId('recipient-picker');
+  for (const name of ['Edsger TeammateF', 'Alan TeammateE']) {
+    await expect(picker.getByRole('checkbox', { name: `Write to ${name}` })).toBeChecked();
+  }
+  await expect(picker.getByRole('checkbox', { name: 'Write to Jean TeammateA' })).not.toBeChecked();
+
+  await dialog.getByRole('button', { name: 'Send 2' }).click();
+  await expect(rail.getByTestId('sent-summary')).toContainText('Queued 2 emails');
+  expect(server.builds[0].contact_ids as number[]).toHaveLength(2);
 });

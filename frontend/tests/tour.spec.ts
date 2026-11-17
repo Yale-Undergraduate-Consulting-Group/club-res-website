@@ -10,7 +10,6 @@ async function mockApp(page: Page) {
     else if (p === '/api/contacts') body = { items: [], total: 0, limit: 100, offset: 0 };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (/runs$|flows$|sequences$|formats$|generated$|releases$|templates$|attachments$|summary$|my-projects$|campaigns$/.test(p)) body = [];
     await route.fulfill({ json: body });
   });

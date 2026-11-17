@@ -45,6 +45,13 @@ PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
     "claude-haiku-5-5": (0.10, 0.50),
     "claude-sonnet-5-5": (2.00, 10.00),
 }
+# Haiku 5.5 prices the whole call at a higher tier when its prompt exceeds
+# 100,000 input tokens. Apply the same safe estimate to the Bedrock model id.
+LONG_PROMPT_TOKENS = 100_000
+LONG_PROMPT_PRICES: dict[str, tuple[float, float]] = {
+    "us.anthropic.claude-haiku-5-5": (0.50, 2.50),
+    "claude-haiku-5-5": (0.50, 2.50),
+}
 #: Tier -> model on Anthropic's own API. Sonnet stands in for the deep tier, so
 #: a member choosing the most capable model gets Sonnet while this key is used.
 ANTHROPIC_MODELS: dict[str, str] = {
@@ -64,12 +71,6 @@ GEO_PREMIUM = 1.10
 #: cannot slip past the club budget.
 _UNPRICED = max(PRICES_PER_MILLION.values(), key=lambda price: price[1])
 
-#: The models a member may choose; the ids are each tier's best model.
-BEDROCK_ANTHROPIC: list[dict[str, str]] = [
-    {"id": TIERS["fast"][0], "label": "Claude Haiku", "tier": "haiku", "blurb": "Fastest and cheapest"},
-    {"id": TIERS["write"][0], "label": "Claude Sonnet", "tier": "sonnet", "blurb": "Default for writing and analysis"},
-    {"id": TIERS["deep"][0], "label": "Claude Opus", "tier": "opus", "blurb": "Most capable; about twice Sonnet's price"},
-]
 _ALLOWED = {model for chain in TIERS.values() for model in chain}
 
 #: Model calls in flight at once. Anthropic's own API takes LLM_INFERENCE_SLOTS
@@ -131,6 +132,25 @@ def anthropic_key() -> str | None:
     return key
 
 
+def anthropic_key_status() -> dict[str, Any]:
+    """Return non-secret Anthropic key status for the admin cost view."""
+    configured = bool((os.getenv("ANTHROPIC_API_KEY") or "").strip())
+    expires = (os.getenv("ANTHROPIC_API_KEY_EXPIRES") or "").strip() or None
+    days_left = None
+    if configured and expires:
+        try:
+            last_day = datetime.strptime(expires, "%Y-%m-%d").date()
+            days_left = (last_day - datetime.now(timezone.utc).date()).days
+        except ValueError:
+            pass
+    return {
+        "configured": configured,
+        "expires": expires,
+        "days_left": days_left,
+        "in_use": anthropic_key() is not None,
+    }
+
+
 def llm_provider() -> str:
     return "anthropic" if anthropic_key() else "bedrock"
 
@@ -169,6 +189,8 @@ def is_bedrock_model(model_id: str | None) -> bool:
 def cost_usd(model_id: str, input_tokens: int, output_tokens: int) -> float:
     """What a call costs at list price, including the US geo-profile premium."""
     price_in, price_out = PRICES_PER_MILLION.get(model_id, _UNPRICED)
+    if model_id in LONG_PROMPT_PRICES and input_tokens > LONG_PROMPT_TOKENS:
+        price_in, price_out = LONG_PROMPT_PRICES[model_id]
     premium = GEO_PREMIUM if model_id.startswith("us.") or model_id not in PRICES_PER_MILLION else 1.0
     return (max(0, input_tokens) * price_in + max(0, output_tokens) * price_out) * premium / 1_000_000
 
@@ -179,21 +201,6 @@ def model_chain(model_id: str) -> tuple[str, ...]:
         if model_id in chain:
             return chain[chain.index(model_id):]
     return (model_id,)
-
-
-def list_models() -> dict[str, Any]:
-    if llm_provider() == "anthropic":
-        # The deep tier runs on Sonnet here, so offering "Opus" would mislead.
-        models = [m for m in BEDROCK_ANTHROPIC if m["tier"] != "opus"]
-        label = "Claude (Anthropic API)"
-    else:
-        models = [m for m in BEDROCK_ANTHROPIC if m['id'] in allowed_bedrock_models()]
-        label = "Claude on Bedrock"
-    return {
-        "provider": llm_provider(),
-        "default": default_model_id(),
-        "groups": [{"id": "anthropic", "label": label, "models": models}],
-    }
 
 
 def complete_text(
@@ -426,7 +433,8 @@ def _anthropic_converse(
     from fastapi import HTTPException
 
     from app.services.generation_policy import (
-        complete_bedrock_invocation, release_bedrock_invocation, reserve_bedrock_invocation,
+        BUDGET_SPENT, complete_bedrock_invocation, release_bedrock_invocation,
+        reserve_bedrock_invocation,
     )
     model = ANTHROPIC_MODELS[_tier_of(requested)]
     body: dict[str, Any] = {
@@ -463,6 +471,9 @@ def _anthropic_converse(
         # answered before any inference, so nothing was spent.
         if response.status_code < 500:
             release_bedrock_invocation(reservation_id)
+        if _anthropic_spend_stop(response):
+            # The key's own limit or credit is used up; retrying cannot help.
+            raise HTTPException(429, BUDGET_SPENT)
         if response.status_code == 429:
             raise HTTPException(429, 'Draft generation is busy; please retry shortly')
         raise HTTPException(503, _UNAVAILABLE)
@@ -471,3 +482,20 @@ def _anthropic_converse(
     if on_model:
         on_model(model)
     return result
+
+
+def _anthropic_spend_stop(response: Any) -> bool:
+    """Return whether Anthropic refused the call because money ran out."""
+    if response.status_code not in (400, 402, 429):
+        return False
+    try:
+        error = (response.json() or {}).get("error") or {}
+    except ValueError:
+        return False
+    message = str(error.get("message") or "").lower()
+    code = str((error.get("details") or {}).get("error_code") or "")
+    return (
+        code == "enforced_spend_limit_reached"
+        or message.startswith("you have reached your specified")
+        or "credit balance is too low" in message
+    )

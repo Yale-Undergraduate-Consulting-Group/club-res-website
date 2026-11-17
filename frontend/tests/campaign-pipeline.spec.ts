@@ -68,14 +68,7 @@ async function mockPipeline(page: Page) {
     else if (p === '/api/outreach/flows') body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
-    else if (p === '/api/projects/suggest-citations') {
-      body = {
-        projects: [{ id: 1, client_name: 'Google', description: 'Brand refresh', semester: 'Spring 2026' }],
-        team_experience: [{ user_name: 'Aaron Combs', role_in_project: 'Market Analyst', client_name: 'Adidas', semester: 'Fall 2025' }],
-      };
-    }
     else if (/\/sequences$|\/custom-formats$/.test(p)) body = [];
     await route.fulfill({ json: body });
   });
@@ -183,16 +176,35 @@ test('the member sets how many people to find, watches the rounds, and is told p
   await expect(group.locator('[data-found="501"]').getByTestId('group-unit')).toHaveText('A24 Music');
 });
 
-test('the goal defaults to what the API defaults to, and is clamped to what the server accepts', async ({ page }) => {
+test('the goal is sized by the server unless the member types one, and a typed one is clamped to what the server accepts', async ({ page }) => {
   const { runsCreated } = await mockPipeline(page);
   await page.goto('/scraper?view=company');
   const pipeline = page.locator('[data-section="campaign-pipeline"]');
   const rail = pipeline.locator('[data-rail]');
   const goal = rail.getByLabel('How many people');
-  await expect(goal).toHaveValue('120');
+  // Empty is Auto: the search asks for no number and the server sizes it.
+  await expect(goal).toHaveValue('');
+  await expect(goal).toHaveAttribute('placeholder', 'Auto');
   await goal.fill('5000');
   await goal.blur();
   await expect(goal).toHaveValue('800');
+  // Clearing it goes back to Auto.
+  await goal.fill('');
+  await goal.blur();
+  await expect(goal).toHaveValue('');
+  await rail.getByLabel('Company').fill('A24');
+  await rail.getByRole('button', { name: 'Add', exact: true }).click();
+  await rail.getByTestId('search-all').click();
+  await expect.poll(() => runsCreated.length).toBe(1);
+  expect(runsCreated[0].max_prospects).toBeUndefined();
+});
+
+test('a typed goal over the ceiling is asked for as the ceiling', async ({ page }) => {
+  const { runsCreated } = await mockPipeline(page);
+  await page.goto('/scraper?view=company');
+  const rail = page.locator('[data-section="campaign-pipeline"] [data-rail]');
+  const goal = rail.getByLabel('How many people');
+  await goal.fill('5000');
   await rail.getByLabel('Company').fill('A24');
   await rail.getByRole('button', { name: 'Add', exact: true }).click();
   await rail.getByTestId('search-all').click();

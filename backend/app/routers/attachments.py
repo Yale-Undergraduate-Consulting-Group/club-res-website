@@ -114,9 +114,11 @@ async def upload_attachment(
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"File type not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
-    content = await file.read()
+    # At most one byte over the limit is read: the upload is spooled to disk
+    # by the form parser, and a whole oversized file never enters memory.
+    content = await file.read(MAX_FILE_SIZE + 1)
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(400, f"File too large. Max {MAX_FILE_SIZE // (1024*1024)} MB.")
+        raise HTTPException(413, f"File too large. Max {MAX_FILE_SIZE // (1024*1024)} MB.")
     storage_name = f"{uuid.uuid4().hex}{ext}"
     storage_path = ATTACHMENTS_DIR / storage_name
     storage_path.write_bytes(content)

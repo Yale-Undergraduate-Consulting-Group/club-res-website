@@ -99,9 +99,11 @@ async def delete_version(bucket: str, key: str, version_id: str | None) -> None:
     await asyncio.to_thread(_delete_sync, bucket, key, version_id)
 
 
-# --- Local download links ----------------------------------------------------
-# A local file is served by the app itself, behind the member's session and a
+# --- Signed local links --------------------------------------------------------
+# A local file is served by the app itself, behind the viewer's session and a
 # short-lived signed link, so a link copied out of the browser stops working.
+# Each link names its purpose, so a link for one use (a download, an upload,
+# an alumni cover) is never accepted for another.
 
 def _secret() -> bytes:
     from app.jwt_utils import JWT_SECRET
@@ -113,46 +115,78 @@ def _sign(payload: str) -> str:
     return hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def local_download_url(version_id: int, expires: int = 60) -> str:
-    payload = f"{int(version_id)}.{int(time.time()) + expires}"
-    token = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
-    return f"{LOCAL_URL_PATH}?token={token}.{_sign(payload)}"
+def signed_token(purpose: str, item_id: int, expires: int) -> str:
+    """A token naming ``item_id`` for ``purpose``, valid for ``expires`` seconds."""
+    payload = f"{purpose}.{int(item_id)}.{int(time.time()) + expires}"
+    return f"{base64.urlsafe_b64encode(payload.encode()).decode().rstrip('=')}.{_sign(payload)}"
 
 
-def read_local_token(token: str) -> int | None:
-    """The version id a valid, unexpired local link names, else None."""
+def read_signed_token(token: str, purpose: str) -> int | None:
+    """The id a valid, unexpired token for ``purpose`` names, else None."""
     try:
         encoded, signature = token.rsplit(".", 1)
         payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
-        version_id, expires = payload.split(".")
-        if not hmac.compare_digest(signature, _sign(payload)) or int(expires) < time.time():
+        named, item_id, expires = payload.split(".")
+        if named != purpose or not hmac.compare_digest(signature, _sign(payload)) or int(expires) < time.time():
             return None
-        return int(version_id)
+        return int(item_id)
     except (ValueError, UnicodeDecodeError):
         return None
 
 
-# --- Local upload links ------------------------------------------------------
-# The local stand-in for a presigned PUT: one version, short-lived, and signed
-# with a purpose marker so a download link can never be used to write.
+def local_download_url(version_id: int, expires: int = 60) -> str:
+    return f"{LOCAL_URL_PATH}?token={signed_token('d', version_id, expires)}"
 
+
+def read_local_token(token: str) -> int | None:
+    """The version id a valid, unexpired local download link names, else None."""
+    return read_signed_token(token, "d")
+
+
+#: The local stand-in for a presigned PUT: one version, short-lived.
 LOCAL_UPLOAD_URL_PATH = "/api/resources/local-upload"
 
 
 def local_upload_url(version_id: int, expires: int = 300) -> str:
-    payload = f"u.{int(version_id)}.{int(time.time()) + expires}"
-    token = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
-    return f"{LOCAL_UPLOAD_URL_PATH}?token={token}.{_sign(payload)}"
+    return f"{LOCAL_UPLOAD_URL_PATH}?token={signed_token('u', version_id, expires)}"
 
 
 def read_local_upload_token(token: str) -> int | None:
     """The version id a valid, unexpired local upload link names, else None."""
+    return read_signed_token(token, "u")
+
+
+async def receive_local_put(key: str, byte_size: int, request) -> None:
+    """The body of a local upload link's PUT, streamed to ``key``: exactly
+    ``byte_size`` bytes, never held in memory, refused when something is
+    already stored there. Authorization is the caller's."""
+    from fastapi import HTTPException
+
+    path = local_path(key)
+    if path.exists():
+        raise HTTPException(409, "This upload already has data")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > byte_size:
+        raise HTTPException(413, "The file is larger than reserved")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
     try:
-        encoded, signature = token.rsplit(".", 1)
-        payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
-        purpose, version_id, expires = payload.split(".")
-        if purpose != "u" or not hmac.compare_digest(signature, _sign(payload)) or int(expires) < time.time():
-            return None
-        return int(version_id)
-    except (ValueError, UnicodeDecodeError):
-        return None
+        out = open(part, "xb")
+    except FileExistsError:
+        raise HTTPException(409, "This upload is already in progress") from None
+    try:
+        size = 0
+        with out:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > byte_size:
+                    raise HTTPException(413, "The file is larger than reserved")
+                out.write(chunk)
+        if size != byte_size:
+            raise HTTPException(422, "The file is not the reserved size")
+        try:
+            os.link(part, path)
+        except FileExistsError:
+            raise HTTPException(409, "This upload already has data") from None
+    finally:
+        part.unlink(missing_ok=True)
