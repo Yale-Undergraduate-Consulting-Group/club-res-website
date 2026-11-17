@@ -1,6 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type BuildResult, type SendAllowance, type Template } from '../../api';
+import { companyKey } from '../../lib/recipients';
+import { usesPersonalisation } from '../../lib/sendChecks';
+import { useCompanyLines } from '../../lib/useCompanyLines';
+import CompanyLinesField, { LinesPending } from '../CompanyLinesField';
 import { Button, Notice } from '../ui/Primitives';
 
 /** Who the outreach is for: a target list the server resolves (and checks the
@@ -9,16 +13,18 @@ export type OutreachSource = { label: string; targetListId?: number; contactIds?
 
 /** Held people listed before "and N more"; the count is always the whole. */
 const HELD_SHOWN = 6;
+const TYPING_PAUSE_MS = 250;
 
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
 /**
- * One panel from a list of people to a released campaign: choose a template,
- * read who will and will not be written to (and why), then create the campaign
- * and release it. The preview is the same /build call that makes the campaign,
- * so what is read here is what is created. Nothing is sent by choosing a
- * template; sending starts only at the final button, and the member's daily
- * limit still paces it.
+ * One panel from a list of people to a released campaign: the club's template
+ * (or a choice, for a member with templates of their own), one confirmed line
+ * for each company when the template asks for it, who will and will not be
+ * written to (and why), then create the campaign and release it. The preview
+ * is the same /build call that makes the campaign, so what is read here is
+ * what is created. Nothing is sent until the final button, and the member's
+ * daily limit still paces it.
  */
 export default function QueueOutreach({ source, onClose }: { source: OutreachSource; onClose: () => void }) {
   const [templates, setTemplates] = useState<Template[] | null>(null);
@@ -60,30 +66,47 @@ export default function QueueOutreach({ source, onClose }: { source: OutreachSou
     [targetListId, idsKey],
   );
 
+  const template = templates?.find((t) => t.id === templateId);
+
+  // The companies come from the server's preview: a target list is resolved
+  // there. The last answer stands while the next is asked for, so the lines
+  // do not vanish while the member types one.
+  const [settled, setSettled] = useState<{ key: string; result?: BuildResult; error?: string } | null>(null);
+  const companiesKey = JSON.stringify(settled?.result?.companies ?? []);
+  const companies = useMemo(
+    () => (JSON.parse(companiesKey) as string[]).map((name) => ({ key: companyKey(name), name })),
+    [companiesKey],
+  );
+  const companyLines = useCompanyLines(companies, usesPersonalisation(`${template?.subject ?? ''}\n${template?.body ?? ''}`));
+  const { personalisation } = companyLines;
+  const linesKey = personalisation ? JSON.stringify(personalisation) : '';
+
   // The answer to one request, tagged with that request's key: a request still
   // in flight is simply one nobody has answered yet.
-  const requestKey = `${templateId}|${targetListId ?? idsKey}`;
-  const [settled, setSettled] = useState<{ key: string; result?: BuildResult; error?: string } | null>(null);
+  const requestKey = `${templateId}|${targetListId ?? idsKey}|${linesKey}`;
   useEffect(() => {
     if (templateId === '') return;
     let live = true;
-    api.campaigns.build({ ...target, template_id: templateId, preview_only: true })
-      .then((result) => { if (live) setSettled({ key: requestKey, result }); })
-      .catch((e) => { if (live) setSettled({ key: requestKey, error: message(e, 'Could not preview this template') }); });
-    return () => { live = false; };
-  }, [templateId, target, requestKey]);
+    const timer = window.setTimeout(() => {
+      const lineMap = linesKey ? JSON.parse(linesKey) as Record<string, string> : undefined;
+      api.campaigns.build({ ...target, template_id: templateId, preview_only: true, personalisation: lineMap })
+        .then((result) => { if (live) setSettled({ key: requestKey, result }); })
+        .catch((e) => { if (live) setSettled({ key: requestKey, error: message(e, 'Could not preview this template') }); });
+    }, TYPING_PAUSE_MS);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [templateId, target, requestKey, linesKey]);
   const answered = settled?.key === requestKey ? settled : null;
   const previewing = templateId !== '' && !answered;
-  const preview = answered?.result ?? null;
-
-  const template = templates?.find((t) => t.id === templateId);
+  // The last answer stands while the next is asked for, so the preview does
+  // not blink out at each keystroke of a line.
+  const preview = templateId !== '' ? answered?.result ?? settled?.result ?? null : null;
 
   const create = async () => {
     if (!template) return;
     setBusy(true);
     setError('');
     try {
-      const built = await api.campaigns.build({ ...target, template_id: template.id, name: `${source.label}: ${template.name}` });
+      const built = await api.campaigns.build({ ...target, template_id: template.id, name: `${source.label}: ${template.name}`, personalisation });
       setCreatedId(built.campaign_id);
       const released = await api.campaigns.release(built.campaign_id);
       setDone({ campaignId: built.campaign_id, queued: built.created, allowance: released.allowance });
@@ -147,6 +170,7 @@ export default function QueueOutreach({ source, onClose }: { source: OutreachSou
                 There are no templates yet. <Link className="underline" to="/outreach?view=resources">Write one</Link> and come back.
               </Notice>
             )}
+            <CompanyLinesField state={companyLines} disabled={busy} />
 
             {previewing && <p className="text-sm text-slate-500" role="status">Checking who this reaches…</p>}
             {preview && (
@@ -183,9 +207,11 @@ export default function QueueOutreach({ source, onClose }: { source: OutreachSou
                 {createdId && <> Campaign #{createdId} was created but not released. <Link className="underline" to={`/campaigns/${createdId}`}>Open it</Link> to release it yourself.</>}
               </Notice>
             )}
+            <LinesPending state={companyLines} />
             <div className="ui-dialog__actions">
               <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-              <Button onClick={() => void create()} disabled={busy || previewing || !preview || (preview.ready ?? 0) === 0}>
+              <Button onClick={() => void create()}
+                      disabled={busy || previewing || !preview || (preview.ready ?? 0) === 0 || companyLines.pending > 0 || companyLines.suggesting}>
                 {busy ? 'Queuing…' : preview?.ready ? `Create campaign and release ${preview.ready}` : 'Create campaign and release'}
               </Button>
             </div>

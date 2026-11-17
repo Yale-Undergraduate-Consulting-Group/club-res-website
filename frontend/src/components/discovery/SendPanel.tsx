@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ApiError, api, type BuildResult, type Contact, type SendAllowance, type Template } from '../../api';
-import {
-  beyondMostSenior, companiesOf, liveWarnings, personalisationFor, unconfirmed, usesPersonalisation, warningText,
-  type CompanyLine,
-} from '../../lib/sendChecks';
+import { api, type BuildResult, type Contact, type SendAllowance, type Template } from '../../api';
+import { beyondMostSenior, companiesOf, liveWarnings, usesPersonalisation, warningText } from '../../lib/sendChecks';
+import { useCompanyLines } from '../../lib/useCompanyLines';
+import CompanyLinesField, { LinesPending } from '../CompanyLinesField';
 import { Button, ConfirmDialog, Notice } from '../ui/Primitives';
 
 /**
@@ -25,16 +24,12 @@ import { Button, ConfirmDialog, Notice } from '../ui/Primitives';
 /** Held people named in the confirm before "and N more"; the count is the whole. */
 const HELD_SHOWN = 6;
 const TYPING_PAUSE_MS = 250;
-/** Suggestions asked for at once: the server runs two model calls for the whole club. */
-const SUGGEST_WORKERS = 2;
 
 export type Held = { name: string; reason: string };
 
 type Sent = { campaignId: number; queued: number; allowance?: SendAllowance };
 
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
-/** The model is off, or the month's budget is spent: every later suggestion would fail the same way. */
-const stopsEverySuggestion = (e: unknown) => e instanceof ApiError && (e.status === 503 || (e.status === 429 && /budget/i.test(e.message)));
 
 /** The club's Intro template if there is one, else the first club template. */
 function defaultTemplate(list: Template[]): Template | undefined {
@@ -93,44 +88,10 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
     return () => { live = false; };
   }, []);
 
-  // --- One line for each company -----------------------------------------
-  // The Intro leaves room for one sentence about each company. The member
-  // asks for a suggestion (one model call per company, from that company's
-  // material only) or writes it, and confirms it; an empty confirmed line
-  // sends without one. Writing it yourself makes no model call.
-  const [lines, setLines] = useState<Record<string, CompanyLine>>({});
+  // --- One line for each company (useCompanyLines) -------------------------
   const companies = useMemo(() => companiesOf(recipients), [recipients]);
-  const needsLines = usesPersonalisation(body) || usesPersonalisation(subject);
-  const pendingLines = needsLines ? unconfirmed(companies, lines) : 0;
-  const suggestingAny = companies.some((c) => lines[c.key]?.suggesting);
-  const personalisation = useMemo(
-    () => (needsLines ? personalisationFor(companies, lines) : undefined),
-    [needsLines, companies, lines],
-  );
-  const setLine = (key: string, change: Partial<CompanyLine>) =>
-    setLines((all) => ({ ...all, [key]: { ...(all[key] ?? { text: '', confirmed: false }), ...change } }));
-
-  const suggest = async (company: { key: string; name: string }): Promise<boolean> => {
-    const previous = (lines[company.key]?.text || '').trim();
-    setLine(company.key, { suggesting: true, error: undefined, confirmed: false });
-    try {
-      const answer = await api.campaigns.personalisation(company.name, previous);
-      setLine(company.key, { text: answer.line, sources: answer.sources, suggesting: false });
-      return true;
-    } catch (e) {
-      setLine(company.key, { suggesting: false, error: message(e, 'Could not suggest a line') });
-      return !stopsEverySuggestion(e);
-    }
-  };
-  const suggestAll = async () => {
-    const queue = companies.filter((c) => !lines[c.key]?.confirmed && !(lines[c.key]?.text || '').trim());
-    let carryOn = true;
-    const work = async () => {
-      for (let next = queue.shift(); next && carryOn; next = queue.shift()) carryOn = await suggest(next);
-    };
-    await Promise.all(Array.from({ length: SUGGEST_WORKERS }, work));
-  };
-  const unwritten = companies.filter((c) => !lines[c.key]?.confirmed && !(lines[c.key]?.text || '').trim()).length;
+  const companyLines = useCompanyLines(companies, usesPersonalisation(body) || usesPersonalisation(subject));
+  const { personalisation } = companyLines;
 
   const tickedKey = ticked.map((p) => p.id).join(',');
 
@@ -180,7 +141,8 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
   // What is sent: the chosen template as it is, or - once the member has
   // edited it - the text on screen.
   const outgoing = usesTemplate && template ? { template_id: template.id } : hasText ? { subject: subject.trim(), body: body.trim() } : null;
-  const ready = count > 0 && !busy && Boolean(outgoing) && !previewing && !answered?.error && pendingLines === 0 && !suggestingAny;
+  const ready = count > 0 && !busy && Boolean(outgoing) && !previewing && !answered?.error
+    && companyLines.pending === 0 && !companyLines.suggesting;
 
   const send = async () => {
     if (!outgoing) return;
@@ -249,52 +211,7 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
           </Notice>
         )}
 
-        {needsLines && companies.length > 0 && (
-          <fieldset className="space-y-2 border border-pale-sky p-3" data-testid="company-lines">
-            <legend className="px-1 text-xs font-semibold text-deep-navy">A line for each company</legend>
-            <p className="text-xs text-slate-600">
-              Follows “I'd love to work with them on a project in the new year.” Suggest one or write your own,
-              then confirm it. Confirm an empty line to send without one.
-            </p>
-            {unwritten > 0 && (
-              <Button size="sm" variant="secondary" disabled={busy || suggestingAny} onClick={() => void suggestAll()}
-                      data-testid="suggest-lines">
-                {unwritten === 1 ? 'Suggest a line' : `Suggest lines for ${unwritten} companies`}
-              </Button>
-            )}
-            <ul className="space-y-3">
-              {companies.map((c) => {
-                const line = lines[c.key] ?? { text: '', confirmed: false };
-                return (
-                  <li key={c.key} data-testid="company-line" data-company={c.name} className="space-y-1">
-                    <label className="block text-xs font-medium text-slate-600">
-                      {c.name}
-                      <textarea className="ui-input mt-1 block w-full" rows={2} value={line.text} aria-label={`Line for ${c.name}`}
-                                disabled={busy || line.suggesting}
-                                placeholder={line.suggesting ? 'Suggesting…' : 'One sentence about this company'}
-                                onChange={(e) => setLine(c.key, { text: e.target.value, confirmed: false, sources: undefined })} />
-                    </label>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Button size="sm" variant="ghost" disabled={busy || line.suggesting} onClick={() => void suggest(c)}>
-                        {line.suggesting ? 'Suggesting…' : line.text.trim() ? 'Regenerate' : 'Suggest'}
-                      </Button>
-                      <label className="flex items-center gap-1.5 text-xs text-slate-700">
-                        <input type="checkbox" checked={line.confirmed} disabled={busy || line.suggesting}
-                               aria-label={`Confirm the line for ${c.name}`}
-                               onChange={(e) => setLine(c.key, { confirmed: e.target.checked })} />
-                        {line.text.trim() ? 'Confirmed' : 'Confirmed: no line'}
-                      </label>
-                    </div>
-                    {line.sources && line.sources.length > 0 && (
-                      <p className="text-xs text-slate-500">From {line.sources.join(', ')}.</p>
-                    )}
-                    {line.error && <p className="text-xs text-red-700" role="alert">{line.error}</p>}
-                  </li>
-                );
-              })}
-            </ul>
-          </fieldset>
-        )}
+        <CompanyLinesField state={companyLines} disabled={busy} />
 
         {previewing && <p className="text-xs text-slate-500" role="status">Checking who this reaches…</p>}
         {preview?.sample && (
@@ -321,11 +238,7 @@ export default function SendPanel({ ticked, recipients, held, heldPeople, leftOu
           {count > 0 ? `Send to ${count}` : 'Send'}
         </Button>
         {count === 0 && <p className="text-xs text-slate-500">Nobody can be emailed yet: tick people on the right.</p>}
-        {count > 0 && pendingLines > 0 && (
-          <p className="text-xs text-slate-500" data-testid="lines-pending">
-            Confirm each company's line to send: {companies.length - pendingLines} of {companies.length} confirmed.
-          </p>
-        )}
+        {count > 0 && <LinesPending state={companyLines} />}
         {draftsHref && (
           <p className="text-xs text-slate-500">
             Want to read or edit each email first?{' '}

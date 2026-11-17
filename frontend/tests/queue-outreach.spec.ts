@@ -14,6 +14,11 @@ const TEMPLATES = [
   { id: 12, name: 'My pitch', subject: 'For {company}', body: 'Hi {first}', use_case: 'project pitch', industry: null, scope: 'mine', mine: true, editable: true },
 ];
 
+/** The club's one template, which asks for a line per company. */
+const CLUB_INTRO = [
+  { id: 11, name: 'Intro', subject: 'Introduction from YUCG', body: 'Hi {first}, about {company} in the new year. {personalisation}', use_case: 'intro', industry: null, scope: 'club', mine: false, editable: false },
+];
+
 const PEOPLE = [
   { id: 1, name: 'Jordan Rivers', email: 'jordan@acme.com', title: 'VP Marketing', company: 'Acme Corp' },
   { id: 2, name: 'Sam Lee', email: 'sam@acme.com', title: 'Head of Strategy', company: 'Acme Corp' },
@@ -36,17 +41,23 @@ const DIRECTORY = [
   dirPerson('Ada Lovelace', 'ada@acme.com', { contact_id: 23, ready: false, reach: { state: 'contacted', by: 'Ana', by_me: false, at: null, sends: 1, claimed_by: null } }),
 ];
 
-async function mockServer(page: Page, opts: { aiDown?: boolean } = {}) {
+async function mockServer(page: Page, opts: { aiDown?: boolean; clubIntro?: boolean } = {}) {
   const builds: Record<string, unknown>[] = [];
   const imports: Record<string, unknown>[] = [];
   const releases: string[] = [];
+  const suggested: string[] = [];
   await page.route('**/api/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     let body: unknown = {};
     let status = 200;
     if (path === '/api/auth/me') body = { authenticated: true, user };
-    else if (path === '/api/outreach/templates') body = TEMPLATES;
+    else if (path === '/api/outreach/templates') body = opts.clubIntro ? CLUB_INTRO : TEMPLATES;
+    else if (path === '/api/campaigns/personalisation') {
+      const { company } = request.postDataJSON();
+      suggested.push(company);
+      body = { company, line: `A line for ${company}.`, sources: [] };
+    }
     else if (path === '/api/outreach/templates/preview') {
       const draft = request.postDataJSON();
       body = {
@@ -68,6 +79,7 @@ async function mockServer(page: Page, opts: { aiDown?: boolean } = {}) {
         recipients: 3, ready: 2, skipped: 1,
         held: [{ contact_id: 3, email: 'info@acme.com', name: '', reason: 'info@acme.com has no first on record, and the message uses it.' }],
         sample: { email: 'jordan@acme.com', subject: 'Hello Jordan', body: 'Hi Jordan' },
+        companies: ['Acme Corp', 'Globex'],
       };
       body = sent.preview_only ? preview : { campaign_id: 42, created: 2, held: preview.held, name: sent.name };
     } else if (path === '/api/campaigns/42/release') {
@@ -93,7 +105,7 @@ async function mockServer(page: Page, opts: { aiDown?: boolean } = {}) {
     else if (/\/companies\/summary$|\/sequences$|\/generated$|\/releases$|\/my-projects$|\/attachments$/.test(path)) body = [];
     await route.fulfill({ status, json: body });
   });
-  return { builds, releases, imports };
+  return { builds, releases, imports, suggested };
 }
 
 async function pickTemplateAndQueue(page: Page) {
@@ -181,4 +193,37 @@ test('the template editor previews the merge and flags a field that does not exi
   // A club template cannot be deleted by a member; their own private one can.
   await expect(page.getByText('Intro').first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(1);
+});
+
+test('the club template asks for a confirmed line for each company before it queues', async ({ page }) => {
+  const { builds, suggested } = await mockServer(page, { clubIntro: true });
+  await page.goto('/outreach?view=worklists');
+  await page.getByText('Spring targets').first().click();
+  await page.getByRole('button', { name: 'Queue outreach' }).click();
+  const panel = page.getByTestId('queue-outreach');
+
+  // One template: nothing to choose, and each company the list reaches gets a line.
+  await expect(panel.getByLabel('Template')).toHaveCount(0);
+  const lines = panel.getByTestId('company-lines');
+  await expect(lines.getByTestId('company-line')).toHaveCount(2);
+  const create = panel.getByRole('button', { name: 'Create campaign and release 2' });
+  await expect(create).toBeDisabled();
+  await expect(panel.getByTestId('lines-pending')).toHaveText("Confirm each company's line to send: 0 of 2 confirmed.");
+
+  // A line written by hand costs no model call; the other is suggested.
+  await lines.getByRole('textbox', { name: 'Line for Globex' }).fill('Your grid storage work caught our eye.');
+  await lines.getByRole('checkbox', { name: 'Confirm the line for Globex' }).check();
+  await lines.getByTestId('suggest-lines').click();
+  await expect(lines.getByRole('textbox', { name: 'Line for Acme Corp' })).toHaveValue('A line for Acme Corp.');
+  expect(suggested).toEqual(['Acme Corp']);
+  await expect(create).toBeDisabled();
+  await lines.getByRole('checkbox', { name: 'Confirm the line for Acme Corp' }).check();
+
+  await expect(create).toBeEnabled();
+  await create.click();
+  await expect(panel.getByRole('status').filter({ hasText: 'Queued 2 emails from campaign #42' })).toBeVisible();
+  expect(builds.at(-1)).toEqual({
+    target_list_id: 7, template_id: 11, name: 'Spring targets: Intro',
+    personalisation: { 'Acme Corp': 'A line for Acme Corp.', Globex: 'Your grid storage work caught our eye.' },
+  });
 });

@@ -85,8 +85,10 @@ def the_sign_off_reads_like_the_clubs_with_logo_divider_and_notice() -> None:
     assert '<img src="https://club.example.org/yucg-email-logo.png"' in doc and 'width="72"' in doc
     assert "border-left:1px solid" in doc, "the thin divider between the logo and the details"
     assert doc.index("--") < doc.index("yucg-email-logo.png") < doc.index("Sam Lee") < doc.index("Associate")
-    assert '<em style="font-weight:400;">(they/them)</em>' in doc
-    assert 'href="https://linkedin.com/in/example"' in doc and "LinkedIn</a> | +1 203 555 0100" in doc
+    # Amber's: "Sam Lee (they/them)" all bold and black, the pronouns italic too.
+    assert '<div style="font-weight:700;color:#000000;">Sam Lee (<em>they/them</em>)</div>' in doc
+    assert 'href="https://linkedin.com/in/example" style="color:#1155cc;text-decoration:underline;">LinkedIn</a> | +1 203 555 0100' in doc
+    assert "Lato" not in doc and doc.count("font-family:Arial,Helvetica,sans-serif") >= 3, "body and sign-off in Arial"
     assert "font-style:italic" in doc and CONFIDENTIALITY_NOTICE in doc
     assert doc.index("Sam Lee") < doc.index("makes protecting client information")
 

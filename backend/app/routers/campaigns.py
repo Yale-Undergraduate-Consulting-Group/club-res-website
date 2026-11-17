@@ -670,6 +670,10 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
                 "messages_used": len(per_company) or (1 if subject and body else 0),
                 # Never a block: who this writes to at one company, for the confirm step.
                 "warnings": batch_warnings([p for p in recipients if p["id"] in ready_ids]),
+                # Who gets a {personalisation} line: each company the message reaches, once.
+                "companies": list(dict.fromkeys(
+                    (p.get("company") or "").strip() for p in recipients
+                    if p["id"] in ready_ids and (p.get("company") or "").strip())),
             }
         if not ready:
             raise HTTPException(422, "No recipient can receive this message yet")

@@ -99,6 +99,8 @@ export type BuildResult = {
   sample?: { subject: string; body: string; email?: string } | null; held: BuildHold[];
   /** Preview only. */
   warnings?: SendWarning[];
+  /** Preview only: each company the message reaches, once (who gets a {personalisation} line). */
+  companies?: string[];
 };
 export type Sequence = { id: number; name: string; steps?: { days_after: number; subject: string; body: string }[] };
 export type ContactNote = { id: number; note: string; created_at: string; user_id?: number };

@@ -127,6 +127,8 @@ def the_intro_merges_names_company_and_each_companys_line() -> None:
                             "Globex Energy": ""},
     }).json()
     assert shown["ready"] == 2 and shown["held"] == [], shown
+    # The companies a line is asked for, once each (the Queue panel has no contact rows to read them from).
+    assert shown["companies"] == ["Acme Health", "Globex Energy"], shown
     assert shown["sample"]["body"] == (
         "Hi Dana,\n\nI hope you're doing well!\n\n"
         "I'm Ana and I'm reaching out from the Yale Undergraduate Consulting Group. We're a team of undergraduate "

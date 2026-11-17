@@ -138,6 +138,11 @@ CONFIDENTIALITY_NOTICE = (
     "this in error, please contact the sender and immediately delete this email and any attachments."
 )
 
+#: The club's emails are set in Arial, which every mail client has.
+FONT_STACK = "Arial,Helvetica,sans-serif"
+#: The blue mail clients draw a plain link in.
+LINK_BLUE = "#1155cc"
+
 #: The club logo the site serves itself (frontend/public): 144px wide for a 72px slot.
 CLUB_LOGO_PATH = "/yucg-email-logo.png"
 
@@ -189,11 +194,12 @@ def sign_off_html(sign_off: SignOff) -> str:
         return ""
     e = lambda v: html.escape((v or "").strip())  # noqa: E731 - local shorthand
 
+    # Amber's: the name and pronouns in bold, the pronouns also italic, all in black.
     name_line = e(sign_off.name)
     if sign_off.pronouns.strip():
-        name_line += f' <em style="font-weight:400;">({e(sign_off.pronouns)})</em>'
+        name_line += f' (<em>{e(sign_off.pronouns)}</em>)'
 
-    lines = [f'<div style="font-weight:700;color:#00356b;">{name_line}</div>']
+    lines = [f'<div style="font-weight:700;color:#000000;">{name_line}</div>']
     if sign_off.role.strip():
         lines.append(f'<div>{e(sign_off.role)}</div>')
     if sign_off.organization.strip():
@@ -201,18 +207,19 @@ def sign_off_html(sign_off: SignOff) -> str:
 
     links = []
     if _linkedin(sign_off):
-        links.append(f'<a href="{html.escape(_linkedin(sign_off), quote=True)}" style="color:#00356b;">LinkedIn</a>')
+        links.append(f'<a href="{html.escape(_linkedin(sign_off), quote=True)}" '
+                     f'style="color:{LINK_BLUE};text-decoration:underline;">LinkedIn</a>')
     if sign_off.phone.strip():
         links.append(e(sign_off.phone))
     if links:
-        lines.append(f'<div style="margin-top:2px;">{" | ".join(links)}</div>')
+        lines.append(f'<div>{" | ".join(links)}</div>')
 
     # Logo, then the divider as the details cell's left border: a 1px spacer
     # column is what Outlook collapses, a td border it draws.
     logo = sign_off.logo_url.strip()
     cells = ""
     # Clients without a doctype do not let a table inherit its font, so the cell names its own.
-    details_style = "vertical-align:middle;font-family:Lato,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;color:#333;"
+    details_style = f"vertical-align:middle;font-family:{FONT_STACK};font-size:13px;line-height:1.45;color:#000000;"
     if logo.lower().startswith(("http://", "https://", "cid:")):
         cells = (
             '<td style="vertical-align:middle;padding:0 12px 0 0;">'
@@ -223,7 +230,7 @@ def sign_off_html(sign_off: SignOff) -> str:
     cells += f'<td style="{details_style}">{"".join(lines)}</td>'
 
     return (
-        '<div style="margin-top:20px;font-family:Lato,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;color:#333;">'
+        f'<div style="margin-top:20px;font-family:{FONT_STACK};font-size:13px;line-height:1.45;color:#000000;">'
         '<div style="margin:0 0 8px 0;">--</div>'
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">'
         f'<tr>{cells}</tr></table>'
@@ -303,7 +310,7 @@ def render_email(
 
     text = "\n\n".join(p for p in (body_text, attach_text, sig_text) if p)
     html_doc = (
-        '<html><body style="margin:0;padding:0;font-family:Lato,Helvetica,Arial,sans-serif;'
+        f'<html><body style="margin:0;padding:0;font-family:{FONT_STACK};'
         'font-size:14px;line-height:1.5;color:#1a1a1a;">'
         f"{body_html}{attach_html}{sig_html}</body></html>"
     )
