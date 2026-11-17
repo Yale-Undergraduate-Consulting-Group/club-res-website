@@ -124,7 +124,7 @@ def link_text(member: dict | None) -> str:
         )
     return (
         "*Link your Slack to YUCG Resources*\n"
-        f"1. Open {_link('Profile → Integrations', '/profile?view=integrations')} and sign in.\n"
+        f"1. Open {_link('Profile → Integrations', '/profile?tab=integrations')} and sign in.\n"
         "2. Press *Connect Slack* and approve.\n"
         "3. Come back and send `/yucg onboard`.\n"
         "Once linked, I can answer questions about the contacts, campaigns and drafts you can see."
@@ -166,11 +166,11 @@ async def onboard_text(member: dict | None) -> str:
         "I'm the club's assistant in Slack. Here's the one-minute tour.",
         "",
         "*1. Your setup*",
-        step(bool(member), "Link Slack", "/profile?view=integrations",
+        step(bool(member), "Link Slack", "/profile?tab=integrations",
              "so I know which club account you are (`/yucg link`)."),
-        step(bool(facts.get("gmail")), "Connect your Gmail", "/profile?view=integrations",
+        step(bool(facts.get("gmail")), "Connect your Gmail", "/profile?tab=integrations",
              "outreach goes out from your own account."),
-        step(bool(facts.get("sign_off")), "Set your email sign-off", "/profile?view=settings",
+        step(bool(facts.get("sign_off")), "Set your email sign-off", "/profile?tab=settings",
              "your name, role and links under every email."),
         "",
         "*2. Try one of these*",

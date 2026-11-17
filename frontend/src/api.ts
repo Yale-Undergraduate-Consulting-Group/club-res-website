@@ -150,6 +150,15 @@ export type InboxItem = { name?: string; email?: string; status?: string; email_
 export type Member = { id: number; email: string; name?: string; role: string; is_active: number };
 /** A member's setup steps; only Gmail blocks sending (backend/app/services/member_readiness.py). */
 export type Readiness = { signed_in: boolean; gmail: boolean; sign_off: boolean; slack: boolean; project: boolean; has_sent: boolean; ready_to_send: boolean };
+/** One incomplete member in Admin → Members → Send setup reminders (backend/app/services/setup_reminders.py). */
+export type ReminderMember = {
+  user_id: number; name: string; email: string;
+  missing: { key: string; label: string }[];
+  /** UTC "YYYY-MM-DD HH:MM:SS" of a reminder sent in the last 7 days, else null. */
+  reminded_at: string | null;
+};
+export type ReminderPreview = { slack_connected: boolean; members: ReminderMember[] };
+export type ReminderResult = { user_id: number; status: 'sent' | 'not_found' | 'failed' | 'skipped'; error: string | null; items: string[] };
 /** One semester target in Admin → Metrics; `met` is null until `of` reaches the minimum sample. */
 export type MetricTarget = { key: string; label: string; count: number; of: number; value: number | null; target: string; met: boolean | null };
 export type ApproachRow = { template_id: number | null; template: string | null; angle: string | null; sent: number; replied: number; value: number | null; met: boolean | null };
@@ -1333,6 +1342,11 @@ export const api = {
     users: {
       list: () => fetchApi<Member[]>('/api/admin/users'),
       readiness: () => fetchApi<(Readiness & { user_id: number })[]>('/api/admin/users/readiness'),
+      setupReminders: {
+        preview: () => fetchApi<ReminderPreview>('/api/admin/setup-reminders'),
+        send: (userIds: number[]) =>
+          fetchApi<{ results: ReminderResult[] }>('/api/admin/setup-reminders', { method: 'POST', body: JSON.stringify({ user_ids: userIds }) }),
+      },
       invite: (email: string) =>
         fetchApi<unknown>('/api/admin/users/invite', { method: 'POST', body: JSON.stringify({ email }) }),
       updateRole: (userId: number, role: string) =>

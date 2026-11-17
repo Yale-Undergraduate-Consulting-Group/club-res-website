@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timezone, timedelta
 
 from app.database import get_db
+from app.services import slack_dm
 
 
 async def run_notification_digests() -> dict:
@@ -91,30 +92,12 @@ async def run_notification_digests() -> dict:
                 errors.append({"user_id": user_id, "error": "No usable Slack token"})
                 continue
             user_slack_id = slack_row["user_slack_id"]
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                try:
-                    open_res = await client.post(
-                        "https://slack.com/api/conversations.open",
-                        json={"users": [user_slack_id]},
-                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    )
-                    if not open_res.json().get("ok"):
-                        errors.append({"user_id": user_id, "error": "Slack DM open failed"})
-                        continue
-                    channel = open_res.json().get("channel", {}).get("id")
-                    if not channel:
-                        continue
-                    msg_res = await client.post(
-                        "https://slack.com/api/chat.postMessage",
-                        json={"channel": channel, "text": text},
-                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    )
-                    if msg_res.json().get("ok"):
-                        sent += 1
-                    else:
-                        errors.append({"user_id": user_id, "error": msg_res.text or "postMessage failed"})
-                except Exception as e:
-                    errors.append({"user_id": user_id, "error": str(e)})
+            async with slack_dm.new_client() as client:
+                error = await slack_dm.post_dm(client, token, user_slack_id, text)
+            if error:
+                errors.append({"user_id": user_id, "error": f"Slack DM failed ({error})"})
+            else:
+                sent += 1
 
         # If no DMs were sent, post one digest to the club channel. The token
         # comes from an install where possible: with rotation enabled, a token
