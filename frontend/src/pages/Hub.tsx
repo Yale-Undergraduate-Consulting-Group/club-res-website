@@ -8,9 +8,11 @@ import { memberFirstName } from '../lib/memberName';
  * core's gets a tile. Opening one brings in that app's own bar.
  */
 export default function Hub() {
-  const { user, onLogout } = useOutletContext<{
+  const { user, onLogout, alumni } = useOutletContext<{
     user: { name?: string; email: string; role?: string; apps?: string[] };
     onLogout: () => void;
+    /** An alumni session is valid too (components/shell/AppShell.tsx). */
+    alumni: boolean;
   }>();
   const apps = usableModules(user.apps).filter((module) => module.id !== 'core');
 
@@ -31,6 +33,7 @@ export default function Hub() {
       <nav className="hub-footer" aria-label="Account">
         <Link to="/profile">Profile</Link>
         {user.role === 'admin' && <Link to="/admin">Admin</Link>}
+        {alumni && <Link to="/alumni">Switch to alumni</Link>}
         <button type="button" onClick={onLogout}>Log out</button>
       </nav>
     </div>

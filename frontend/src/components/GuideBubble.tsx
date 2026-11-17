@@ -28,7 +28,7 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
         'Find people is one screen: add companies by name, by pasting a list, by importing a spreadsheet of them, or from the index, then press Search.',
         'Everyone found is on the list at once. The number at the top is how many can be emailed; beside it are the reasons for everyone left out.',
         'Board seats are ticked only if you choose Board under "Who to look for", and the very senior are never ticked for you: they rarely answer a cold email.',
-        'The Intro template is already chosen. Switch template or have the AI write each email, then "Send to N". Nothing leaves until you confirm.',
+        'Every email is the club\'s Intro. Confirm one line for each company (suggested for you, or your own), then "Send to N". Nothing leaves until you confirm.',
       ],
       next: { to: '/campaigns', label: 'Overview' },
     },
@@ -61,8 +61,8 @@ const GUIDES: { match: (path: string) => boolean; guide: Guide }[] = [
     guide: {
       title: 'Drafts',
       steps: [
-        'Studio writes one bespoke email to one named person.',
-        'To write to several people, tick them and use "Write to each of these N": each gets an advisory draft of their own.',
+        'A contact with no saved draft opens written from the club template; confirm their company\'s line, then edit by hand if you like.',
+        'To write to several people, tick them and use "Write to each of these N": open them one by one, or queue them all with the club template.',
       ],
       next: { to: '/scraper?view=company', label: 'Find people' },
     },

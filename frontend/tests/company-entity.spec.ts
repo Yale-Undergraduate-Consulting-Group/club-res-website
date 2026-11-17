@@ -54,7 +54,6 @@ async function mockEntity(page: Page, opts: { skipped?: boolean } = {}) {
     else if (p === '/api/contacts') body = { items: [], total: 0, limit: 800, offset: 0 };
     else if (p === '/api/contacts/companies/summary') body = [];
     else if (p === '/api/outreach/flows') body = [];
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     else if (/\/sequences$|\/custom-formats$/.test(p)) body = [];
     await route.fulfill({ json: body });

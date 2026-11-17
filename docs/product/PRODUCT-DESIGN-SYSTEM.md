@@ -40,8 +40,7 @@ Labels should describe a member action or a real object. Avoid internal implemen
 | Rebuild Think-Cell pack | Refresh outreach workbook | Recreate the export after selection changes |
 | MX inbox check | Mail-domain check | Confirms a domain mail route, not a person's inbox |
 | AI verdict | Evidence review | A model may summarize evidence; it does not verify identity |
-| Generate email | Create starting draft | The member remains responsible for claims and final text |
-| Cache | Draft history | Member-owned saved/generated drafts |
+| Cache | Draft history | Member-owned saved drafts |
 | Pipeline run | Campaign delivery | A controlled attempt to send frozen messages |
 
 Use sentence case. Prefer “Save draft,” “Review recipients,” and “Send campaign” over title-case controls. Status language must state whether the system observed, inferred, or awaits an outcome.

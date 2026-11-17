@@ -40,10 +40,9 @@ import { companiesFromPaste, companiesFromRows, parseDelimited, type SheetCompan
 const MAX_COMPANIES_PER_CAMPAIGN = 500;
 /** Chips drawn before the row collapses to a count. */
 const CHIP_WINDOW = 24;
-/** Qualified people one search keeps going for unless the member says
- *  otherwise: the API's own default (YUCG_DEFAULT_PROSPECTS). */
-const DEFAULT_MAX_PROSPECTS = 120;
-/** The server's ceiling (YUCG_MAX_PROSPECTS), restated for the input. */
+/** The server's ceiling (YUCG_MAX_PROSPECTS), restated for the input. Left
+ *  empty, the goal is the server's: sized to each company (company_size_target),
+ *  a few hundred for the largest. */
 const MAX_PROSPECTS = 800;
 /** People read from the club's contacts for the chosen companies at once:
  *  the server's page ceiling. */
@@ -120,8 +119,11 @@ function CompanyChip({ company, onRemove }: { company: ChosenCompany; onRemove: 
   );
 }
 
-function clampProspects(raw: number): number {
-  return Number.isFinite(raw) && raw > 0 ? Math.min(MAX_PROSPECTS, Math.max(1, Math.round(raw))) : DEFAULT_MAX_PROSPECTS;
+/** The goal typed, within the server's ceiling, or null when the box is empty
+ *  (or holds no positive number): the server then sizes it to the company. */
+function parseProspects(text: string): number | null {
+  const raw = Number(text);
+  return text.trim() && Number.isFinite(raw) && raw > 0 ? Math.min(MAX_PROSPECTS, Math.max(1, Math.round(raw))) : null;
 }
 
 /** What a company's search was told: who to look for, how many, and where.
@@ -184,12 +186,11 @@ export default function CampaignPipeline() {
   const [titleHints, setTitleHints] = useState(() => (params.get('titles') || '').trim());
   const [showOtherTitles, setShowOtherTitles] = useState(() => Boolean((params.get('titles') || '').trim()));
   // The goal a search keeps going for: it stops at this many qualified
-  // people, or sooner only when the company has no more to find. Kept as
-  // text while typing so clearing the box to retype is not fought.
-  const [maxText, setMaxText] = useState(() => String(
-    params.get('max') ? clampProspects(Number(params.get('max'))) : DEFAULT_MAX_PROSPECTS,
-  ));
-  const maxProspects = clampProspects(Number(maxText));
+  // people, or sooner only when the company has no more to find. Empty means
+  // the server sizes it to each company. Kept as text while typing so
+  // clearing the box to retype is not fought.
+  const [maxText, setMaxText] = useState(() => String(parseProspects(params.get('max') || '') ?? ''));
+  const maxProspects = parseProspects(maxText);
   const searchTitles = titleHints.trim() || levelTitles(levels);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [resolving, setResolving] = useState(0);
@@ -650,8 +651,9 @@ export default function CampaignPipeline() {
                 max={MAX_PROSPECTS}
                 value={maxText}
                 onChange={(e) => setMaxText(e.target.value)}
-                onBlur={() => setMaxText(String(maxProspects))}
-                title="Per company. A search keeps going until it has this many, or the company has no more."
+                onBlur={() => setMaxText(String(maxProspects ?? ''))}
+                placeholder="Auto"
+                title="Per company. Empty: sized to the company, up to 300 for the largest. A search keeps going until it has this many, or the company has no more."
                 className="w-24 border border-pale-sky px-3 py-2 text-sm text-deep-navy"
               />
               <Button
@@ -680,6 +682,7 @@ export default function CampaignPipeline() {
             contact_ids: recipients.map((r) => r.id).join(','),
           })}` : ''}
           onHeld={setHeld}
+          onUntick={(ids) => changeSelection(selected.filter((id) => !ids.includes(id)))}
         />
 
         {error && <p className="ui-notice ui-notice--danger mx-5 my-4">{error}</p>}

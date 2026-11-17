@@ -71,6 +71,14 @@ export function sanitizeRichText(value: string): string {
   });
 }
 
+/** Typed text (a rendered template) as editor HTML: blank lines make
+ *  paragraphs, single line breaks stay breaks, and nothing is markup. */
+export function textToHtml(text: string): string {
+  const escape = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c);
+  return text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+    .map((p) => `<p>${p.split('\n').map(escape).join('<br>')}</p>`).join('');
+}
+
 /** Browser paste/drop must be sanitized before it enters a live editable node. */
 export function insertSafeTransfer(transfer: DataTransfer): void {
   const html = transfer.getData('text/html');

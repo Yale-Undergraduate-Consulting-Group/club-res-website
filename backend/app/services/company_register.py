@@ -610,7 +610,9 @@ async def ingest_sec_public() -> dict[str, Any]:
     # except the name. Excluded the same way Form D and Form 5500 already
     # exclude pooled/financial vehicles - just by name here, since this file
     # carries no industry classification to filter on instead.
-    batch = datetime.now(timezone.utc).strftime("%Y-%m")
+    # "r2": ranks are now each company's first (best) listing; the suffix makes
+    # the first scheduler pass after this release read the listing again.
+    batch = datetime.now(timezone.utc).strftime("%Y-%m") + "r2"
     try:
         raw = await _http_get(SEC_TICKERS_URL, timeout=60.0)
         data = json.loads(raw.decode("utf-8"))
@@ -620,6 +622,7 @@ async def ingest_sec_public() -> dict[str, Any]:
     rows = []
     skipped_etf = 0
     rank = 0
+    seen: set[str] = set()
     for item in (data or {}).values():
         if not isinstance(item, dict):
             continue
@@ -630,6 +633,12 @@ async def ingest_sec_public() -> dict[str, Any]:
         if _SEC_FUND_NAME.search(name):
             skipped_etf += 1
             continue
+        # A company lists once per security (GOOGL, GOOG; JPM's preferred
+        # shares far down the file). Each row used to overwrite the last, so
+        # Alphabet ranked 8101 and JPMorgan 9778; the first is its rank.
+        if cik in seen:
+            continue
+        seen.add(cik)
         rows.append({
             "source": "sec_public", "source_key": cik.zfill(10), "tier": "us_public", "country": "US",
             "company_name": name,
@@ -1489,7 +1498,7 @@ async def drain_company_register() -> dict[str, Any]:
         return {"ok": True, "skipped": "disabled"}
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     result: dict[str, Any] = {"ok": True}
-    if not await _already_ingested("sec_public", month):
+    if not await _already_ingested("sec_public", month + "r2"):
         result["sec_public"] = await ingest_sec_public()
         return result
     for quarter in recent_form_d_quarters():

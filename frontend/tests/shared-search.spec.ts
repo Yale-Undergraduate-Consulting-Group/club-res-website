@@ -49,7 +49,6 @@ async function mockSearch(page: Page) {
     else if (p === '/api/outreach/flows' || /\/sequences$|\/custom-formats$/.test(p)) body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     await route.fulfill({ json: body });
   });

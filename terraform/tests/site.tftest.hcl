@@ -144,6 +144,13 @@ run "box_is_hardened" {
     condition     = aws_flow_log.vpc.vpc_id == aws_vpc.main.id && aws_route53_resolver_query_log_config_association.main.resource_id == aws_vpc.main.id
     error_message = "VPC flow logs and DNS query logs must cover the VPC."
   }
+  assert {
+    condition = one([
+      for s in jsondecode(aws_iam_role_policy.box.policy).Statement :
+      s.Resource == "*" && s.Action == "ce:GetCostAndUsage" if s.Sid == "ReadDailyCosts"
+    ])
+    error_message = "The box may read Cost Explorer only through the one required action; Cost Explorer has no resource-level scope."
+  }
 }
 
 run "data_buckets_are_private_encrypted_and_vpc_bound" {

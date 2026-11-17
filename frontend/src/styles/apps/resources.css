@@ -151,28 +151,6 @@
 .resource-row__labels { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.875rem; min-width: 0; }
 .resource-file-count { color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; }
 
-/* Labels are plain text with a coloured dot; only buttons have a box. */
-.resource-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-.resource-tag::before {
-  content: '';
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--steel-400);
-}
-.resource-tag--public::before { background: var(--success); }
-.resource-tag--name_only::before { background: var(--warning); }
-.resource-tag--private::before { background: var(--navy-900); }
-.dark .resource-tag--private::before { background: var(--accent); }
-.resource-tag--status::before { width: 0.375rem; height: 0.375rem; background: transparent; border: 1px solid currentColor; }
-
 .resource-link { flex: 0 0 auto; align-self: center; margin-right: 0.75rem; }
 .resource-link__arrow { font-size: 0.875rem; line-height: 1; }
 

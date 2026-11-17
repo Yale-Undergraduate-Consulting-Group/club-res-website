@@ -121,5 +121,93 @@ class PolicyTests(unittest.TestCase):
             self.assertTrue(scope['image'])
 
 
+class CandidateScopeTests(unittest.TestCase):
+    """Scope is the whole candidate against its destination, merge commits included."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.git('init', '-q', '-b', 'integration')
+        self.write('README.md', 'club\n')
+        self.commit('base')
+        self.base = self.git('rev-parse', 'HEAD')
+        # feature gets a backend change, then merges a sibling branch that changed
+        # the frontend: the candidate head is a merge commit, as in PR #189.
+        self.git('checkout', '-q', '-b', 'sibling', self.base)
+        self.write('frontend/src/app.ts', 'export {}\n')
+        self.commit('sibling')
+        self.git('checkout', '-q', '-b', 'feature', self.base)
+        self.write('backend/app/main.py', 'x = 1\n')
+        self.commit('feature')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                 'merge', '-q', '--no-ff', '-m', 'Merge sibling', 'sibling')
+        self.head = self.git('rev-parse', 'HEAD')
+        self.assertEqual(len(self.git('rev-list', '--parents', '-1', self.head).split()), 3)
+        # What GitHub checks out for a pull_request run: head merged into the base.
+        tree = self.git('merge-tree', '--write-tree', self.base, self.head)
+        self.merge_ref = self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                                  'commit-tree', tree, '-p', self.base, '-p', self.head, '-m', 'merge ref')
+
+    def git(self, *args):
+        return subprocess.check_output(['git', '-C', self.tmp.name, *args], text=True).strip()
+
+    def write(self, name, text):
+        path = Path(self.tmp.name, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def commit(self, message):
+        self.git('add', '.')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', message)
+
+    def classify(self, stage, event, head, base_sha, destination):
+        import json
+        import os
+
+        self.git('update-ref', f'refs/remotes/origin/{destination}', self.integration_tip)
+        output = Path(self.tmp.name, '.out')
+        output.unlink(missing_ok=True)
+        env = dict(os.environ, GITHUB_SHA=head, PHASE='verify', GITHUB_EVENT_NAME=event,
+                   BASE_SHA=base_sha, GITHUB_OUTPUT=str(output),
+                   GITHUB_STEP_SUMMARY=str(Path(self.tmp.name, '.summary')))
+        subprocess.run([sys.executable, str(Path(__file__).parents[1] / 'scripts/ci_policy.py'), stage],
+                       cwd=self.tmp.name, env=env, check=True)
+        return json.loads(next(line[6:] for line in output.read_text().splitlines() if line.startswith('scope=')))
+
+    def test_open_pull_request_selects_backend_and_frontend(self):
+        self.integration_tip = self.base
+        scope = self.classify('intake', 'pull_request', self.merge_ref, self.base, 'integration')
+        self.assertTrue(scope['backend'] and scope['frontend'])
+
+    def test_pull_request_run_that_starts_after_the_merge_is_not_blind(self):
+        # Promotion merged the PR; the queued run starts when origin/integration already
+        # holds the candidate. Job #43962482890 selected no lane here.
+        self.git('checkout', '-q', 'integration')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                 'merge', '-q', '--no-ff', '-m', 'Merge pull request', self.head)
+        self.integration_tip = self.git('rev-parse', 'HEAD')
+        scope = self.classify('intake', 'pull_request', self.merge_ref, self.base, 'integration')
+        self.assertTrue(scope['backend'] and scope['frontend'])
+
+    def test_dev_stage_pull_request_after_the_merge_is_not_blind(self):
+        self.git('checkout', '-q', 'integration')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                 'merge', '-q', '--no-ff', '-m', 'Merge pull request', self.head)
+        self.integration_tip = self.git('rev-parse', 'HEAD')
+        scope = self.classify('dev', 'pull_request', self.merge_ref, self.base, 'dev')
+        self.assertTrue(scope['backend'] and scope['frontend'] and scope['infra'] and scope['image'])
+
+    def test_push_of_a_merge_commit_head_selects_backend_and_frontend(self):
+        self.integration_tip = self.base
+        # A push supplies only the branch's previous tip, which verification ignores.
+        scope = self.classify('intake', 'push', self.head, self.git('rev-parse', self.head + '^1'), 'integration')
+        self.assertTrue(scope['backend'] and scope['frontend'])
+
+    def test_pull_request_without_a_base_falls_back_to_the_merge_ref_parent(self):
+        self.integration_tip = self.base
+        scope = self.classify('intake', 'pull_request', self.merge_ref, '', 'integration')
+        self.assertTrue(scope['backend'] and scope['frontend'])
+
+
 if __name__ == '__main__':
     unittest.main()

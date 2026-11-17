@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 
 from app.database import get_db
 from app.services.discovery_gate import discovery_job
+from app.services.costs import record_paid_call
 from app.services.llm import complete_json, rank_model_id
 
 
@@ -47,6 +48,25 @@ def public_url(value: str) -> bool:
             return host.lower() not in ('metadata.google.internal', 'localhost')
     except ValueError:
         return False
+
+
+async def refuse_private_destination(request: httpx.Request) -> None:
+    """httpx request hook: refuse any hop (redirects included) whose URL is not
+    public or whose host resolves to a non-public address (loopback, VPC,
+    instance metadata). ponytail: it resolves before httpx connects, so a
+    rebinding DNS answer could still differ; fetch_public_page pins the address
+    where page text is returned to the member."""
+    url = str(request.url)
+    if not public_url(url):
+        raise httpx.ConnectError('non-public destination refused', request=request)
+    host = request.url.host
+    port = request.url.port or (443 if request.url.scheme == 'https' else 80)
+    try:
+        addresses = await asyncio.to_thread(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+    except OSError:
+        raise httpx.ConnectError('destination did not resolve', request=request) from None
+    if not addresses or not all(ipaddress.ip_address(row[4][0]).is_global for row in addresses):
+        raise httpx.ConnectError('non-public destination refused', request=request)
 
 
 async def reserve_request(actor_id: int, provider: str, key: str) -> tuple[int, object | None]:
@@ -115,6 +135,7 @@ async def search_sources(actor_id: int, query: str) -> list[dict]:
     if cached is not None:
         return cached
     try:
+        await record_paid_call("tavily", actor_id, search_depth="basic")
         async with httpx.AsyncClient(timeout=28, trust_env=False) as client:
             response = await client.post('https://api.tavily.com/search', json={
                 'api_key': key, 'query': query[:1200], 'search_depth': 'basic', 'max_results': 8,

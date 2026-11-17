@@ -3,8 +3,8 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * The Find contacts screen's search choices, with every API mocked: who to
  * look for is a set of levels, searches run a few at a time, a company is
- * searched again from its own heading in the sheet, and the message can be
- * saved as a template without leaving the screen.
+ * searched again from its own heading in the sheet, and every member sends
+ * the club's one template.
  */
 
 const user = { id: 1, email: 'andre.h.costa@yale.edu', name: 'Andre H. Costa', role: 'admin', is_active: 1 };
@@ -23,10 +23,7 @@ type Run = { id: number; company: string; finished: boolean };
 async function mock(page: Page, opts: { people?: typeof PEOPLE; searched?: string[]; maxActive?: number } = {}) {
   const runsCreated: Record<string, unknown>[] = [];
   const runs: Run[] = (opts.searched ?? []).map((company, i) => ({ id: 100 + i, company, finished: true }));
-  const templates: Record<string, unknown>[] = [INTRO];
-  const templatePosts: Record<string, unknown>[] = [];
   const builds: Record<string, unknown>[] = [];
-  const refuseTemplate = { message: '' };
   const maxActive = opts.maxActive ?? 3;
   const runBody = (r: Run) => ({
     id: r.id, company_name: r.company, status: r.finished ? 'completed' : 'running',
@@ -42,18 +39,7 @@ async function mock(page: Page, opts: { people?: typeof PEOPLE; searched?: strin
     let status = 200;
     if (p === '/api/auth/me') body = { authenticated: true, user };
     else if (p === '/api/contacts') body = { items: opts.people ?? [], total: (opts.people ?? []).length, limit: 2000, offset: 0 };
-    else if (p === '/api/outreach/templates' && method === 'POST') {
-      const payload = request.postDataJSON();
-      templatePosts.push(payload);
-      if (refuseTemplate.message) {
-        status = 409;
-        body = { detail: refuseTemplate.message };
-      } else {
-        const id = 70 + templates.length;
-        templates.push({ id, name: payload.name, subject: payload.subject, body: payload.body, use_case: null, industry: null, scope: 'mine', mine: true, editable: true });
-        body = { id, ok: true };
-      }
-    } else if (p === '/api/outreach/templates') body = templates;
+    else if (p === '/api/outreach/templates') body = [INTRO];
     else if (p === '/api/campaigns/build') {
       const payload = request.postDataJSON();
       builds.push(payload);
@@ -82,11 +68,10 @@ async function mock(page: Page, opts: { people?: typeof PEOPLE; searched?: strin
     else if (/\/sequences$|\/custom-formats$/.test(p)) body = [];
     else if (p === '/api/yucgoutreach/register/summary') body = { tiers: [], sectors: [], recent_ingests: [] };
     else if (p === '/api/yucgoutreach/register') body = { items: [], total: 0, limit: 40, offset: 0 };
-    else if (p === '/api/ai/models') body = { groups: [] };
     else if (p.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     await route.fulfill({ status, json: body });
   });
-  return { runsCreated, runs, templatePosts, builds, refuseTemplate };
+  return { runsCreated, runs, builds };
 }
 
 test('who to look for is a set: the counts follow it and the last choice cannot be switched off', async ({ page }) => {
@@ -177,42 +162,19 @@ test('a company is searched again from its own heading in the sheet, and only th
   expect(server.runsCreated.map((r) => r.company_name)).toEqual(['A24']);
 });
 
-test('the message is saved as a template from the send panel and chosen at once', async ({ page }) => {
+test('every member sends the club template: no picker, no saving, and an edit is what is sent', async ({ page }) => {
   const server = await mock(page, { people: PEOPLE, searched: ['A24'] });
   await page.goto('/scraper?view=company&companies=A24');
   const rail = page.locator('[data-section="campaign-pipeline"] [data-rail]');
   const message = rail.getByTestId('message-panel');
   const subject = message.getByLabel('Subject');
-  await expect(message.getByLabel('Template')).toHaveValue('11');
   await expect(subject).toHaveValue('Hello {first}');
-  const open = message.getByTestId('save-template-open');
+  // One template for everyone: nothing to choose and nothing to save.
+  await expect(message.getByLabel('Template')).toHaveCount(0);
+  await expect(rail.getByRole('button', { name: /save as template/i })).toHaveCount(0);
+  await expect.poll(() => server.builds.at(-1)).toMatchObject({ template_id: 11 });
 
-  // Nothing to save without a subject and a message.
-  await subject.fill('');
-  await expect(open).toBeDisabled();
-
-  // An edited message is what is previewed and sent: no saved template stands in for it.
+  // An edited message is what is previewed and sent: the saved template no longer stands in for it.
   await subject.fill('Quick intro for {company}');
-  await expect(open).toBeEnabled();
   await expect.poll(() => server.builds.some((b) => b.subject === 'Quick intro for {company}' && !('template_id' in b))).toBe(true);
-
-  // The server's refusal is shown, and the name can be fixed and saved again.
-  server.refuseTemplate.message = 'You already have a template called Intro for A24';
-  await open.click();
-  const form = message.getByTestId('save-template-form');
-  await form.getByLabel('Name for this template').fill('Intro for A24');
-  await form.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(message.getByRole('alert')).toHaveText('You already have a template called Intro for A24');
-  server.refuseTemplate.message = '';
-  await form.getByLabel('Name for this template').fill('Intro for A24 v2');
-  await form.getByRole('button', { name: 'Save', exact: true }).click();
-
-  await expect(form).toHaveCount(0);
-  expect(server.templatePosts.at(-1)).toEqual({ name: 'Intro for A24 v2', subject: 'Quick intro for {company}', body: 'Hi {first}, we are YUCG.' });
-  const picker = message.getByLabel('Template');
-  await expect(picker).toHaveValue('71');
-  await expect(picker.locator('optgroup[label="My templates"] option')).toHaveText(['Intro for A24 v2']);
-  await expect(subject).toHaveValue('Quick intro for {company}');
-  // Saved, it is sent as the template itself.
-  await expect.poll(() => server.builds.at(-1)).toMatchObject({ template_id: 71 });
 });

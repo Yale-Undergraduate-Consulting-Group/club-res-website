@@ -58,19 +58,19 @@ const STOPS: Stop[] = [
     route: '/scraper?view=company',
     target: '[data-testid="message-panel"]',
     title: '4 · Write and send',
-    body: 'The club\'s Intro template is already chosen, with a preview of the first email. Switch template, or choose "Write with AI instead" for an email of their own for each person. "Send to N" asks once, then sends from your own Gmail.',
+    body: 'Every email is the club\'s Intro, with a preview of the first one. Add one line for each company: suggest it, edit it, confirm it (or confirm it empty). "Send to N" asks once, warns if you are writing to many people at one company, then sends from your own Gmail.',
   },
   {
     route: '/studio',
     target: '.email-studio-contacts',
     title: 'Drafts',
-    body: 'Optional: to read and edit each email before it goes, tick people here and press "Write to each of these", or arrive from "Open these in Drafts" on Find people. "Draft an advisory email for each" writes every person a note proposing two or three projects a YUCG team could build for their company.',
+    body: 'Optional: to read and edit each email before it goes, tick people here and press "Write to each of these", or arrive from "Open these in Drafts" on Find people. Each opens written from the club template, with its company\'s line to confirm.',
   },
   {
     route: '/studio',
     target: '#email-editor-section',
     title: 'Read, edit, test',
-    body: 'Open anyone to read and change their draft. "Send test" mails it to you first, so you see exactly what they would. Then save the drafts as a campaign.',
+    body: 'Open anyone to read and change their email. "Send test" mails it to you first, so you see exactly what they would. Then save the drafts as a campaign.',
   },
   {
     route: '/outreach',

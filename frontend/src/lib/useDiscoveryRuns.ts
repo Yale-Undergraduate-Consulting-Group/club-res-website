@@ -108,9 +108,10 @@ function pausedOf(run: DiscoveryRun): string | undefined {
 }
 
 /** `levels` is who to look for: the server's goal counts people at any of
- *  them, and its searches and ranking follow them. */
+ *  them, and its searches and ranking follow them. `maxProspects` null lets
+ *  the server size the goal to the company. */
 export type SearchOptions = {
-  titleHints: string; maxProspects: number; levels: Level[]; domain?: string;
+  titleHints: string; maxProspects: number | null; levels: Level[]; domain?: string;
 };
 
 /** Options are read when the search starts, not when it joins the queue:
@@ -269,7 +270,7 @@ export function useDiscoveryRuns({ chosen, linkedRunId, onImported }: {
         company_name: item.company.name,
         company_domain: options.domain || item.company.domain || undefined,
         title_hints: options.titleHints.trim() || undefined,
-        max_prospects: options.maxProspects,
+        max_prospects: options.maxProspects ?? undefined,
         levels: options.levels,
         // A country only when the member chose one: by default the search
         // skips the excluded entities and their countries, not everyone

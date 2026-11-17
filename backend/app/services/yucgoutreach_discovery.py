@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Callable
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,27 +45,81 @@ class DiscoveryLeaseLost(RuntimeError):
     """This worker no longer owns the durable discovery run."""
 
 YUCG_MAX_PROSPECTS = int(os.getenv("YUCG_MAX_PROSPECTS", "800"))
-#: The goal a search keeps going for when nobody names one: the API's default
-#: and the page's, so a company searched from either looks for the same number
-#: of people. The page restates it (DEFAULT_MAX_PROSPECTS in CampaignPipeline).
+#: The goal a search keeps going for when nobody names one and the company's
+#: size is unknown or small. A member who leaves "How many people" empty gets
+#: company_size_target instead.
 YUCG_DEFAULT_PROSPECTS = 120
+#: Goals by company size, first match wins: (SEC market-cap rank below, or
+#: headcount at least, or a Companies House size band among, goal). The SEC
+#: ticker file's order is by market cap, so rank 1000 is about a $10B company;
+#: only Companies House, Form 5500 and IRS 990 rows carry a headcount.
+SIZE_TARGETS: tuple[tuple[int, int, tuple[int, ...], int], ...] = (
+    (1000, 10_000, (), 300),
+    (3000, 1_000, (0, 1), 200),
+)
 
 # A run's max_prospects is its goal: it keeps searching until that many
 # qualified people are saved, the sources run dry, or its time is spent.
 #
-#: Wall clock after which no further round starts. One worker drains the
-#: queue, so this bounds how long the next member's search waits behind this
-#: one (plus the round already in flight, typically under a minute).
+#: Wall clock after which no further round starts, for a default-sized goal;
+#: a larger goal gets search_scale times as long. Runs go side by side, so
+#: this bounds one search, not the queue behind it.
 DISCOVERY_RUN_BUDGET_SEC = float(os.getenv("DISCOVERY_RUN_BUDGET_SEC", "240") or 240)
-#: Rounds after the first wave, and the most searches one round asks.
+#: Rounds after the first wave for a default-sized goal (a larger goal gets
+#: search_scale times as many), and the most searches one round asks.
 DISCOVERY_MAX_ROUNDS = int(os.getenv("DISCOVERY_MAX_ROUNDS", "4") or 4)
 DISCOVERY_ROUND_QUERIES = int(os.getenv("DISCOVERY_ROUND_QUERIES", "8") or 8)
 #: A round that saves fewer new qualified people than this means the company
 #: has no more to find through these sources.
 DISCOVERY_ROUND_MIN_NEW = int(os.getenv("DISCOVERY_ROUND_MIN_NEW", "2") or 2)
+#: How often a run re-writes its progress while it waits on something (the
+#: club's search pace, a crawl slot, the register), so no run sits frozen.
+PROGRESS_TICK_SEC = float(os.getenv("DISCOVERY_PROGRESS_TICK_SEC", "3") or 3)
 #: What a run's goal counts, in the words the page uses.
 _LEVEL_WORD = {"working": "team leads", "executive": "senior leaders", "board": "board members",
                "unknown": "people with no title shown"}
+
+
+def search_scale(target: int) -> int:
+    """How many default-sized searches a goal of ``target`` people gets: 1 up
+    to the default goal, then one more per 120 people, at most 5. It multiplies
+    the rounds, the time budget and the depth of round_query_pool."""
+    return max(1, min(5, -(-int(target) // YUCG_DEFAULT_PROSPECTS)))
+
+
+def target_for_size(prominence_rank: int | None, employees: int | None, size_rank: int | None) -> int:
+    """The goal for a company of this size (see SIZE_TARGETS)."""
+    for rank_below, staff_at_least, bands, goal in SIZE_TARGETS:
+        if ((prominence_rank is not None and prominence_rank < rank_below)
+                or (employees or 0) >= staff_at_least or size_rank in bands):
+            return goal
+    return YUCG_DEFAULT_PROSPECTS
+
+
+async def company_size_target(company_name: str, domain: str | None, *, legal_name: str | None = None) -> int:
+    """The goal for a search the member did not size: from the company's
+    register rows (roster_email.register_entity_keys, and the registered name a
+    curated brand stands for, so "Google" is sized as Alphabet), the default
+    when the register does not know it."""
+    from app.services.company_register import brand_alias_names
+    from app.services.roster_email import register_entity_keys
+
+    keys = await register_entity_keys(company_name, domain, legal_name=legal_name)
+    for alias in brand_alias_names(company_name):
+        keys |= await register_entity_keys(alias, None)
+    if not keys:
+        return YUCG_DEFAULT_PROSPECTS
+    db = await get_db()
+    try:
+        marks = ",".join("?" * len(keys))
+        row = await (await db.execute(
+            f"""SELECT MIN(prominence_rank) AS rank, MAX(employees) AS staff, MIN(size_rank) AS band
+                FROM company_register WHERE entity_key IN ({marks})""",
+            tuple(sorted(keys)),
+        )).fetchone()
+    finally:
+        await db.close()
+    return target_for_size(row["rank"], row["staff"], row["band"]) if row else YUCG_DEFAULT_PROSPECTS
 
 
 def _levels_phrase(levels: tuple[str, ...]) -> str:
@@ -81,15 +135,16 @@ _STOP_LABEL = {
     "round_cap": "search round limit reached",
     "search_failed": "web search failing",
 }
-# Searches per run, against the shared TinyFish/Monid request pace and wallet:
-# the first wave asks 19 web queries for the default levels (team leads and
-# senior leaders; 17 for one level, at most 25 for all three with titles typed
-# in) plus 1 company-meta query - the seeds reading shares the first one. That
-# wave includes the public-source searches (org charts, press releases, speaker
-# lists, profile directories, the company's own leadership pages). Later rounds
-# draw from round_query_pool (about 34 queries), at most DISCOVERY_MAX_ROUNDS x
-# DISCOVERY_ROUND_QUERIES = 32 of them. So <= ~52 searches for a run that never
-# reaches its goal, and ~20 for one the first wave satisfies.
+# Searches per run, against the shared TinyFish/Monid request pace (30 a minute
+# for the whole club): the first wave asks 19 web queries for the default
+# levels (team leads and senior leaders; 17 for one level, at most 25 for all
+# three with titles typed in) plus 1 company-meta query - the seeds reading
+# shares the first one. That wave includes the public-source searches (org
+# charts, press releases, speaker lists, profile directories, the company's
+# own leadership pages). Later rounds draw from round_query_pool, at most
+# DISCOVERY_MAX_ROUNDS x DISCOVERY_ROUND_QUERIES x search_scale of them: about
+# 52 searches for a 120-person goal that is never met, ~84 for 200, ~116 for
+# 300, ~180 for 500. A goal the first wave meets asks ~20.
 
 
 async def add_yale_signal(db) -> None:
@@ -735,12 +790,33 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     domain = mail_domain or (normalize_domain(domain_in) if domain_in else "")
     skips: dict[str, dict[str, str]] = {}
 
-    await _run_update(
-        run_id,
-        status="running",
-        progress_pct=3.0,
-        progress_message="Website, web search, and club roster first; then inbox checks…",
-    )
+    #: What the run last told the member, which a wait repeats with its seconds.
+    live: dict[str, Any] = {"pct": 3.0, "message": "Website, web search, and club roster first; then inbox checks…"}
+
+    async def _say(pct: float, message: str, **fields: Any) -> None:
+        live.update(pct=pct, message=message)
+        await _run_update(run_id, progress_pct=pct, progress_message=message, **fields)
+
+    async def _waiting(work: Any, line: Callable[[], tuple[float, str]] | None = None) -> Any:
+        """Await ``work``. While it is out, every PROGRESS_TICK_SEC the run's
+        progress is written again from ``line()`` (by default what the run last
+        said) with the seconds it has waited. Several searches share the
+        club's search pace, the crawl slots and the model, and a run waiting on
+        one of them used to sit on its last message for minutes."""
+        task = asyncio.ensure_future(work)
+        since = time.monotonic()
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=PROGRESS_TICK_SEC)
+                if not task.done():
+                    pct, message = line() if line else (live["pct"], live["message"])
+                    await _run_update(run_id, progress_pct=pct,
+                                      progress_message=f"{message} · {time.monotonic() - since:.0f} s")
+            return task.result()
+        finally:
+            task.cancel()
+
+    await _run_update(run_id, status="running", progress_pct=live["pct"], progress_message=live["message"])
 
     # A run with an entity profile was resolved before it was queued, and the
     # resolver already asked discover_company_domain; asking again cost a
@@ -756,7 +832,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         from app.services.company_email_cache import discover_company_domain
 
         try:
-            domain = await _timed(timings, "domain_lookup", discover_company_domain(company))
+            domain = await _timed(timings, "domain_lookup", _waiting(
+                discover_company_domain(company), lambda: (3.0, "Finding the company's mail domain")))
         except Exception:
             logger.exception("company domain lookup failed; running without a domain")
             domain = ""
@@ -772,20 +849,21 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     # Pages and people already read, shared by every round of this run.
     seen: dict[str, set[str]] = {"urls": set(), "names": set()}
 
+    # Where the website crawl and the roster stand, for the progress line.
+    site = {"text": "starting"}
+    roster_said = {"text": "reading"}
+
     async def _domain() -> list[dict]:
         if not domain:
             return []
 
-        async def on_page(_i: int, _n: int, url: str) -> None:
-            if url == "queued":
-                await _run_update(
-                    run_id,
-                    progress_message="Waiting for website crawl slot (web search keeps going)",
-                )
+        async def on_page(i: int, n: int, url: str) -> None:
+            site["text"] = ("waiting for a crawl slot" if url == "queued"
+                            else "reading" if url == "started" else f"reading page {i} of {n}")
 
-        return await scrape_contacts_from_domain(
-            domain=domain, company_name=company, on_page=on_page
-        )
+        rows = await scrape_contacts_from_domain(domain=domain, company_name=company, on_page=on_page)
+        site["text"] = f"done, {len(rows)} people"
+        return rows
 
     async def _web() -> list[dict]:
         if not web_on:
@@ -838,9 +916,12 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             # Companies House, read just now when none were stored) join the
             # roster's people.
             register_rows = await register_officer_contacts(company, domain, legal_name=legal_name)
-            return merge_register_officers(rows, register_rows), await roster_refresh_note(company, domain)
+            people = merge_register_officers(rows, register_rows)
+            roster_said["text"] = f"done, {len(people)} people"
+            return people, await roster_refresh_note(company, domain)
         except Exception:
             logger.exception("roster cache-first lookup failed")
+            roster_said["text"] = "unavailable"
             return [], ""
 
     async def _seeds() -> list[dict]:
@@ -856,6 +937,11 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         begin_search_run, end_search_run, person_name_key, round_query_pool, search_errors_summary,
         skipped_summary,
     )
+    from app.services.web_fetch import search_pace_waiting
+
+    # A goal of a few hundred people gets more rounds, more time and a deeper
+    # pool of searches, in proportion (see search_scale).
+    scale = search_scale(max_prospects)
 
     # One search run for every round, so no query is asked twice and the
     # failure count covers the whole run.
@@ -868,13 +954,32 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
     saved_before_facts: list[int] = []
     meta_task = asyncio.ensure_future(_timed(timings, "company_meta", _company_meta(company, domain)))
     seeds_task = asyncio.ensure_future(_timed(timings, "name_seeds", _seeds()))
+
+    def _web_line() -> tuple[float, str]:
+        """(share of the run's searches answered, what the web search is doing)."""
+        asked = search_run["queries"]
+        answered = sum(1 for task in search_run["inflight"].values() if task.done())
+        queued = search_pace_waiting(search_run["pace"])
+        text = f"web {answered} of {asked} searches answered"
+        if queued:
+            text += f", {queued} queued at the club's shared search pace"
+        return (answered / asked if asked else 0.0), text
+
+    def _sources_line() -> tuple[float, str]:
+        share, web = _web_line()
+        parts = [web] if web_on else []
+        if domain:
+            parts.append(f"website {site['text']}")
+        parts.append(f"roster {roster_said['text']}")
+        return 3.0 + 19.0 * share, "Searching — " + " · ".join(parts)
+
     try:
         t_sources = time.monotonic()
-        domain_contacts, web_contacts, (roster_contacts, roster_note) = await asyncio.gather(
+        domain_contacts, web_contacts, (roster_contacts, roster_note) = await _waiting(asyncio.gather(
             _timed(timings, "website_crawl", _domain()),
             _timed(timings, "web_search", _web()),
             _timed(timings, "roster", _roster()),
-        )
+        ), _sources_line)
         timings["sources"] = time.monotonic() - t_sources
         search_errors = search_errors_summary(search_run)
         # The crawl and the roster are read through the same gate the web stage
@@ -887,12 +992,9 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         n_site = max(0, len(domain_contacts) - len(roster_contacts))
         n_web = len(web_contacts)
 
-        await _run_update(
-            run_id,
-            progress_pct=22.0,
-            progress_message=(
-                f"Sources: website {n_site} · roster {len(roster_contacts)} · web {n_web} — merging…"
-            ),
+        await _say(
+            22.0,
+            f"Sources: website {n_site} · roster {len(roster_contacts)} · web {n_web} — merging…",
             research_json=json.dumps(
                 {
                     "title_hints": title_hints or None,
@@ -924,6 +1026,8 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         tried: set[str] = set()
         saved_rows: list[dict] = []
         totals = {"merged": 0, "verified": 0, "junk": 0, "log": 0}
+        #: People saved by each verification pass: the first wave, then each round.
+        round_saved: list[int] = []
         round_no = 1
 
         def _fresh(rows: list[dict]) -> list[dict]:
@@ -958,11 +1062,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 pct = min(90.0, base + (done / max(total, 1)) * span)
             else:
                 pct = min(97.0, 40.0 + 55.0 * _matched() / max_prospects)
-            await _run_update(
-                run_id,
-                progress_pct=pct,
-                progress_message=f"{_found()} — {label} {done}/{total}" + (f" — {detail}" if detail else ""),
-            )
+            await _say(pct, f"{_found()} — {label} {done}/{total}" + (f" — {detail}" if detail else ""))
 
         async def _save(candidates: list[dict]) -> list[dict]:
             """Store one round's survivors; the rows actually written."""
@@ -1097,19 +1197,15 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             if not to_verify and not junk_log:
                 return 0
             if round_no == 1:
-                await _run_update(
-                    run_id,
-                    progress_pct=32.0,
-                    progress_message=f"Reviewing {len(to_verify)} contact address(es) — mail-domain and source evidence…",
-                )
+                await _say(32.0, f"Reviewing {len(to_verify)} contact address(es) — mail-domain and source evidence…")
             marks.clear()
             t_verify = time.monotonic()
-            verified, discovery_log = await run_contact_verify_pipeline(
+            verified, discovery_log = await _waiting(run_contact_verify_pipeline(
                 to_verify,
                 company_name=company,
                 domain=domain,
                 on_progress=_pipe_progress if to_verify else None,
-            )
+            ))
             # "verify" is the whole pass. Inside it the identity gate runs first,
             # then the inbox checks and the AI review side by side; each is
             # measured to its last progress report.
@@ -1140,6 +1236,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                             reverse=True)
             written = await _timed(timings, "save", _save(candidates))
             saved_rows.extend(written)
+            round_saved.append(len(written))
             return len(written)
 
         # Later rounds: new searches only (round_query_pool never repeats a
@@ -1148,7 +1245,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         # previous round is being verified whenever even a clean sweep of that
         # round would leave the run short, so no search is spent on a run
         # that could already reach its target.
-        pool = round_query_pool(cn, domain, title_hints, entity, levels, function) if web_on else []
+        pool = round_query_pool(cn, domain, title_hints, entity, levels, function, depth=scale) if web_on else []
         # Why no further round was started. Only "exhausted" claims the company
         # has no more people; the others say the search itself stopped.
         state = {"rounds": 0, "why": None, "stop": "exhausted"}
@@ -1156,15 +1253,17 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
         def _next_round() -> asyncio.Future | None:
             nonlocal pool
             if not pool:
-                state["why"] = "exhausted"
+                # Every search planned for this goal was asked while rounds
+                # still found people: the search's limit, not the company's.
+                state["why"] = "round_cap" if state["rounds"] else "exhausted"
                 return None
             if (search_errors_summary(search_run) or {}).get("all_failed"):
                 state["why"] = "search_failed"
                 return None
-            if state["rounds"] >= DISCOVERY_MAX_ROUNDS:
+            if state["rounds"] >= DISCOVERY_MAX_ROUNDS * scale:
                 state["why"] = "round_cap"
                 return None
-            if time.monotonic() - started >= DISCOVERY_RUN_BUDGET_SEC:
+            if time.monotonic() - started >= DISCOVERY_RUN_BUDGET_SEC * scale:
                 state["why"] = "time_budget"
                 return None
             missing = max(1, max_prospects - _matched())
@@ -1206,7 +1305,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                     if pending is None:
                         state["stop"] = state["why"] or "exhausted"
                         break
-                rows = _fresh(await pending)
+                rows = _fresh(await _waiting(pending, lambda: (live["pct"], f"{_found()} — {_web_line()[1]}")))
                 rows += _seeded()
                 pending = None
                 round_no += 1
@@ -1216,20 +1315,19 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 if (not exhausted and len(rows) >= DISCOVERY_ROUND_MIN_NEW
                         and _matched() + len(rows) < max_prospects):
                     pending = _next_round()
-                await _run_update(run_id, progress_pct=min(97.0, 40.0 + 55.0 * _matched() / max_prospects),
-                                  progress_message=_found())
+                await _say(min(97.0, 40.0 + 55.0 * _matched() / max_prospects), _found())
                 exhausted = await _qualify(rows) < DISCOVERY_ROUND_MIN_NEW
             if not seeds["taken"] and _matched() < max_prospects:
                 # The sources ran dry or the rounds are spent; the name seeds
                 # are the last reading still to come.
-                await seeds_task
+                await _waiting(seeds_task)
                 extra = _seeded()
                 if extra:
                     await _qualify(extra)
         finally:
             if pending is not None:
                 pending.cancel()
-        meta = await meta_task
+        meta = await _waiting(meta_task)
         if saved_before_facts:
             await _fill_company_facts(run_id, meta)
         # Rounds whose searches mostly failed or hit the provider limit say
@@ -1269,6 +1367,7 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
             prospects_count=0,
             research_json=json.dumps({"skipped": skipped, "search_errors": search_errors,
                                       "rounds": round_no, "shortfall": shortfall,
+                                      "searches": search_run["queries"], "search_scale": scale,
                                       **_timing_fields(final=True)}),
             completed=True,
         )
@@ -1299,6 +1398,11 @@ async def execute_yucgoutreach_run(run_id: int) -> None:
                 "skipped": skipped,
                 "search_errors": search_errors,
                 "rounds": round_no,
+                # Searches asked (cache hits included) and the people each
+                # verification pass saved: where a short run's yield stopped.
+                "searches": search_run["queries"],
+                "search_scale": scale,
+                "round_saved": round_saved,
                 "shortfall": shortfall,
                 **_timing_fields(final=True),
             }

@@ -61,7 +61,51 @@ def create_token(
 
 
 def decode_token(token: str) -> dict | None:
+    """A member session. A token with an audience (the alumni session) is
+    refused here: PyJWT rejects an ``aud`` claim when none is expected."""
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
         return None
+
+
+# --- Alumni sessions (app/routers/alumni.py) ----------------------------------
+# A separate cookie, scoped to the alumni API, holding a token with its own
+# audience: it is never a member session anywhere (decode_token refuses it).
+ALUMNI_COOKIE = "yucg_alumni"
+ALUMNI_AUDIENCE = "yucg-alumni"
+ALUMNI_EXPIRY_HOURS = 24
+
+
+def alumni_cookie_kwargs() -> dict:
+    return {
+        "key": ALUMNI_COOKIE,
+        "httponly": True,
+        "samesite": "lax",
+        "secure": (os.getenv("FRONTEND_URL") or "").startswith("https"),
+        "max_age": ALUMNI_EXPIRY_HOURS * 3600,
+        "path": "/api/alumni",
+    }
+
+
+def create_alumni_token(account_id: int) -> str:
+    now = datetime.utcnow()
+    payload = {"sub": str(account_id), "aud": ALUMNI_AUDIENCE, "iat": now,
+               "exp": now + timedelta(hours=ALUMNI_EXPIRY_HOURS)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_alumni_token(token: str) -> dict | None:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], audience=ALUMNI_AUDIENCE)
+    except Exception:
+        return None
+
+
+def end_sessions(response):
+    """Sign-out from either area ends both: one YUCG Connect sign-in set them
+    (app/routers/auth.py), so neither outlives the other on a shared computer."""
+    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(PENDING_2FA_COOKIE, path="/")
+    response.delete_cookie(ALUMNI_COOKIE, path="/api/alumni")
+    return response

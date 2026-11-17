@@ -10,7 +10,7 @@ from app.routers import analytics, campaigns, contacts, directory, emails, outre
 from app.routers.campaigns import drain_releasing_campaigns
 from app.services.company_email_cache import unprove_scraped_patterns
 from app.services.catalog_builder import builder_tick
-from app.services.email_templates import add_approach_tracking
+from app.services.email_templates import add_approach_tracking, one_club_template
 from app.services.company_register import (
     add_register_search_index,
     backfill_register_entities,
@@ -51,8 +51,9 @@ MODULE = Module(
         Migration(2, "company register name search index", add_register_search_index),
         Migration(3, "remove scrape-only format proof", unprove_scraped_patterns),
         Migration(4, "club mailbox verdicts, 250-credit ceiling", add_mailbox_verdicts),
-        Migration(5, "template and approach on campaign rows, club starter templates", add_approach_tracking),
+        Migration(5, "template and approach on campaign rows", add_approach_tracking),
         Migration(6, "Yale signal on found people and contacts", add_yale_signal),
+        Migration(7, "the club's one template: Amber's Intro", one_club_template),
     ),
     settings=(
         Setting("MONID_API_KEY", "People search and page reading (TinyFish's free tier through Monid)"),
@@ -62,6 +63,8 @@ MODULE = Module(
         Setting("VERIFALIA_API_KEY", "Mailbox verification of guessed addresses"),
         Setting("TAVILY_API_KEY", "Optional extra web search"),
         Setting("CATALOG_BUCKET", "The prospect spreadsheet and catalog exports"),
+        Setting("SEND_WARN_PEOPLE_PER_COMPANY", "Send panel: warn (never block) when one send writes to at least this many people at one company (default 5)"),
+        Setting("SEND_WARN_PEOPLE_PER_TEAM", "Send panel: warn (never block) when one send writes to at least this many people in one function at one company (default 3)"),
     ),
     jobs=(
         Job("company_discovery_queue", drain_queued_yucgoutreach_runs, "interval", {"seconds": 10}),

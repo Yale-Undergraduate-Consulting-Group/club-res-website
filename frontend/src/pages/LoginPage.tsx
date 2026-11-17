@@ -1,13 +1,38 @@
 /**
- * Login page - shown when user is NOT authenticated.
+ * YUCG Connect: the one sign-in page, shown when no member session exists.
+ * One Google sign-in; the server decides where it leads (backend
+ * routers/auth.py): members to the club site (with the alumni session too when
+ * they are also on the alumni lists), alumni to the alumni portal.
  */
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getBackendOriginForOAuth } from '../api';
+import { showsDevSignIn } from '../lib/devSignIn';
 import { Button } from '../components/ui/Primitives';
+
+const ERRORS: Record<string, string> = {
+  invalid_callback: 'Your sign-in session expired. Start again; if the problem continues, contact a club administrator.',
+  token_exchange_failed: 'Authentication failed. Please try again.',
+  no_access_token: 'Could not get access. Please try again.',
+  userinfo_failed: 'Could not load your profile. Please try again.',
+  no_email: 'No email from Google. Please use an account with email.',
+  email_not_verified: 'Google has not verified this email address. Verify it with Google, then try again.',
+  domain_not_allowed: 'This Google account cannot sign in. Members use their @yale.edu account; alumni use the address the club added for them, such as an @aya.yale.edu YaleMail address.',
+  invitation_required: 'This Google account has no access yet. Members join through an invitation or a join QR code from a club admin; alumni ask a club admin to add their address.',
+  invitation_invalid: 'This invitation is for another address, or it expired, was revoked or was already used. Ask a club admin for a new one.',
+  join_closed: 'This join QR code is closed, expired or full. Ask a club admin for a new one.',
+  account_deactivated: 'Your account has been deactivated. Contact an admin.',
+  identity_mismatch: 'This address signed in before with a different Google account. Use that account, or ask a club admin.',
+  // From links to the former alumni sign-in page (/alumni/login redirects here).
+  not_eligible: 'This Google account is not on the club’s alumni list. Sign in with your alumni address (for example your @aya.yale.edu YaleMail), or ask a club admin to add the address you use.',
+  revoked: 'Alumni access for this address has been turned off. Contact a club admin.',
+  callback_failed: 'Sign-in could not be completed. Try again; if the problem continues, contact a club administrator.',
+  oauth_not_configured: 'Club sign-in is temporarily unavailable. Contact a club administrator.',
+};
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const error = searchParams.get('error');
   const need2fa = searchParams.get('need_2fa') === '1';
   const [code, setCode] = useState('');
@@ -42,26 +67,12 @@ export default function LoginPage() {
             decoding="async"
           />
         </div>
-        <h1 className="text-2xl font-bold text-center text-deep-navy mb-8">YUCG Resources</h1>
+        <h1 className="text-2xl font-bold text-center text-deep-navy mb-2">YUCG Connect</h1>
+        <p className="text-sm text-center text-slate-600 mb-8">One sign-in for members and alumni.</p>
 
         {error && (
           <div className="mb-4 ui-notice ui-notice--danger">
-            {error === 'invalid_callback' &&
-              'Your sign-in session expired. Start again; if the problem continues, contact a club administrator.'}
-            {error === 'token_exchange_failed' && 'Authentication failed. Please try again.'}
-            {error === 'no_access_token' && 'Could not get access. Please try again.'}
-            {error === 'userinfo_failed' && 'Could not load your profile. Please try again.'}
-            {error === 'no_email' && 'No email from Google. Please use an account with email.'}
-            {error === 'domain_not_allowed' && 'Only @yale.edu email addresses are allowed to sign in.'}
-            {error === 'join_closed' && 'This join QR code is closed, expired or full. Ask a club admin for a new one.'}
-            {error === 'account_deactivated' && 'Your account has been deactivated. Contact an admin.'}
-            {error === 'callback_failed' && (
-              <>Sign-in could not be completed. Try again; if the problem continues, contact a club administrator.</>
-            )}
-            {error === 'oauth_not_configured' && (
-              <>Club sign-in is temporarily unavailable. Contact a club administrator.</>
-            )}
-            {!['invalid_callback', 'token_exchange_failed', 'no_access_token', 'userinfo_failed', 'no_email', 'domain_not_allowed', 'oauth_not_configured', 'account_deactivated', 'callback_failed', 'join_closed'].includes(error) && error}
+            {ERRORS[error] ?? 'Sign-in could not be completed. Please try again.'}
           </div>
         )}
 
@@ -95,26 +106,41 @@ export default function LoginPage() {
           Sign in with Google
         </Button>
 
-        {/* Local review only: a dev server, or the dev box reached through its
-            SSM tunnel at localhost. The endpoint behind it 404s unless
-            DEV_LOGIN_EMAIL is set and the request's own host is loopback, so
-            the public site (its CloudFront address, no setting) cannot sign
-            anyone in this way. Google will only redirect to the registered
-            production callback, so without this dev cannot be reviewed. */}
-        {(import.meta.env.DEV || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) && (
-          <Button
-            variant="secondary"
-            className="mt-3 w-full"
-            onClick={async () => {
-              await fetch('/api/auth/dev-login', { method: 'POST', credentials: 'include' });
-              window.location.assign('/');
-            }}
-          >
-            Dev sign-in (local only)
-          </Button>
+        {/* Local review only (lib/devSignIn.ts): the endpoints 404 unless their
+            DEV_LOGIN_EMAIL / DEV_ALUMNI_EMAIL is set, the app is not production
+            and the request's own host is loopback, so the public site cannot
+            sign anyone in this way; the alumni address must still be on the
+            lists. Google only returns to the production callback, so without
+            these a local or dev-box build cannot be reviewed. */}
+        {showsDevSignIn(window.location.hostname, import.meta.env.DEV) && (
+          <div className="mt-3 grid gap-3">
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={async () => {
+                await fetch('/api/auth/dev-login', { method: 'POST', credentials: 'include' });
+                window.location.assign('/');
+              }}
+            >
+              Dev sign-in: member (local only)
+            </Button>
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={async () => {
+                const response = await fetch('/api/alumni/dev-login', { method: 'POST', credentials: 'include' });
+                if (response.ok) window.location.assign('/alumni');
+                else navigate('/login?error=not_eligible', { replace: true });
+              }}
+            >
+              Dev sign-in: alumni (local only)
+            </Button>
+          </div>
         )}
 
-        <p className="mt-6 text-center text-xs text-slate-500">@yale.edu accounts only.</p>
+        <p className="mt-6 text-center text-xs text-slate-500">
+          Members: your @yale.edu Google account. Alumni: the address the club added for you.
+        </p>
       </div>
     </div>
   );

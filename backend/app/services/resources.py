@@ -10,7 +10,7 @@ the import all go through them (docs/product/RESOURCES-PLAN.md):
 * past project, ``private``: only the team and admins see it at all;
 * revenue, client contacts and files marked ``admin_only`` (statements of
   work, which state the fee): admins only;
-* the resource's SharePoint or Google Drive link: whoever may open its files.
+* the resource's SharePoint or Google Drive link: whoever may open its files;
 
 The team is the member accounts a resource's names were matched to when it was
 imported (or re-matched by an admin); a later name change grants nothing.

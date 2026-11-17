@@ -357,6 +357,14 @@ class BuildFromTemplate(BaseModel):
     angle: str = ""
     # A target list (outreach_campaigns) to write to: its contacts, resolved here.
     target_list_id: int | None = None
+    # The line the member confirmed for each company, keyed by company name: it
+    # fills {personalisation}. A company without one renders it empty, which
+    # the member chose by confirming an empty line.
+    personalisation: dict[str, str] = {}
+
+
+#: One sentence, with room to spare; longer is a paragraph pasted by mistake.
+PERSONALISATION_MAX_CHARS = 500
 
 
 # One campaign stays something a member can review before release. Beyond
@@ -429,26 +437,6 @@ async def _pipeline_recipients(db, payload: BuildFromTemplate, user: dict) -> tu
     return [dict(r) for r in rows], chosen
 
 
-class DraftGroupTemplate(BaseModel):
-    """Ask for one message that will personalise itself per recipient."""
-
-    companies: list[str] = []
-    roles: str = ""
-    goal: str
-    proof: str = ""
-    length: str = "short"
-    # One message each, written from what the club already recorded about that
-    # company, instead of one message for all of them.
-    per_company: bool = False
-
-
-#: Drafting is a model call and a quota unit per company, so a run stays
-#: something a member waits through rather than abandons.
-MAX_DRAFTED_COMPANIES = 12
-
-AI_DRAFTING_UNAVAILABLE = "AI drafting is unavailable right now — use a template."
-
-
 def _angle(explicit: str | None, template: dict | None) -> str | None:
     """The approach a send is filed under: what the member named, else the
     template's use case. Lower-cased so "Intro" and "intro" count together."""
@@ -488,61 +476,42 @@ async def _company_notes(db, companies: list[str]) -> dict[str, str]:
     return notes
 
 
-@router.post("/draft-template")
-async def draft_group_template(payload: DraftGroupTemplate, user: dict = Depends(get_current_user)):
-    """Write the campaign's message: one for the group, or one per company.
+class PersonalisationRequest(BaseModel):
+    """Suggest the Intro's line for one company; `previous` asks for a different one."""
 
-    Studio drafts to one person, which is right for a bespoke email and wrong
-    for a campaign. Without this a member either writes the same message
-    twenty times or sends twenty identical notes addressed to nobody.
-    """
-    from starlette.concurrency import run_in_threadpool
+    company: str
+    previous: str = ""
 
-    from app.services.ollama_email_service import generate_group_template
 
-    async def write(companies: list[str], notes: str) -> tuple[str, str]:
-        try:
-            return await run_in_threadpool(
-                generate_group_template,
-                companies=companies,
-                goal=payload.goal,
-                proof=payload.proof,
-                roles=payload.roles,
-                length=payload.length,
-                company_notes=notes,
-            )
-        except HTTPException as exc:
-            # The model is switched off or unreachable. Say what to do instead
-            # of surfacing the provider's error.
-            if exc.status_code == 503:
-                raise HTTPException(503, {"message": AI_DRAFTING_UNAVAILABLE, "fallback": "template"}) from exc
-            raise
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
+@router.post("/personalisation")
+async def suggest_personalisation(payload: PersonalisationRequest, user: dict = Depends(get_current_user)):
+    """One sentence for one company, from that company's material only.
 
-    if not payload.per_company:
-        subject, body = await write(payload.companies, "")
-        return {"subject": subject, "body": body}
+    One request per company, so no sentence is ever shared across a batch;
+    the member confirms or rewrites each before sending (services/personalisation.py
+    says what the model may read)."""
+    from app.services import personalisation
 
-    named = [c.strip() for c in payload.companies if c.strip()]
-    if not named:
-        raise HTTPException(422, "Name at least one company")
-    if len(named) > MAX_DRAFTED_COMPANIES:
-        raise HTTPException(
-            422,
-            f"{len(named)} companies chosen; a message each is written for at most "
-            f"{MAX_DRAFTED_COMPANIES}. Write one message for the group, or split the campaign.",
-        )
+    company = payload.company.strip()
+    if not company:
+        raise HTTPException(422, "Name the company")
     db = await get_db()
     try:
-        notes = await _company_notes(db, named)
+        notes = (await _company_notes(db, [company])).get(company.lower(), "")
+        related = personalisation.related_projects(company, notes, await personalisation.disclosed_projects(db))
     finally:
         await db.close()
-    messages: dict[str, dict[str, str]] = {}
-    for company in named:
-        subject, body = await write([company], notes.get(company.lower(), ""))
-        messages[company] = {"subject": subject, "body": body}
-    return {"messages": messages, "grounded": sorted(c for c in named if notes.get(c.lower()))}
+    prompt = personalisation.brief(company, notes, related, payload.previous)
+    try:
+        line = await asyncio.to_thread(personalisation.write_line, prompt, user["id"])
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise HTTPException(503, personalisation.UNAVAILABLE) from exc
+        raise
+    if not line:
+        raise HTTPException(502, "The model returned no sentence; write this line yourself or leave it empty.")
+    await log_event(user["id"], "personalisation_suggested", "campaign", {"grounded": bool(notes or related)})
+    return {"company": company, "line": line, "sources": personalisation.sources(notes, related)}
 
 
 @router.post("/build")
@@ -553,7 +522,9 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
     before pressing the button is produced by the code that will write the
     drafts, so it cannot promise something different from what is created.
     """
-    from app.services.merge_fields import render_for_each, unknown_fields
+    from app.services.merge_fields import first_name, render_for_each, unknown_fields
+    from app.services.send_warnings import batch_warnings
+    from app.services.settings_service import load_sign_off
 
     subject = (payload.subject or "").strip()
     body = (payload.body or "").strip()
@@ -563,8 +534,14 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
         for company, message in (payload.messages or {}).items()
         if company.strip() and (message.get("subject") or "").strip() and (message.get("body") or "").strip()
     }
+    personal = {company.strip().lower(): (line or "").strip()
+                for company, line in (payload.personalisation or {}).items() if company.strip()}
+    if any(len(line) > PERSONALISATION_MAX_CHARS for line in personal.values()):
+        raise HTTPException(422, f"Keep each company's line under {PERSONALISATION_MAX_CHARS} characters: one sentence.")
     if payload.template_id and (subject or body or payload.messages):
         raise HTTPException(422, "Use a saved template or write your own message, not both")
+    # {sender_first_name} is the sender's, as their sign-off names them.
+    sender_first = first_name((await load_sign_off(user["id"])).name)
 
     db = await get_db()
     try:
@@ -596,10 +573,12 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
                     "reason": f"No message written for {p.get('company') or 'their company'} yet.",
                 } for p in people)
                 continue
-            rendered, withheld = render_for_each(text[0], text[1], people)
+            rendered, withheld = render_for_each(text[0], text[1], people, sender_first_name=sender_first,
+                                                 personalisation=personal.get(company_key, ""))
             ready.extend(rendered)
             held.extend(withheld)
         if payload.preview_only:
+            ready_ids = {item["contact_id"] for item in ready}
             return {
                 "recipients": len(recipients),
                 "ready": len(ready),
@@ -612,6 +591,12 @@ async def build_campaign_from_template(payload: BuildFromTemplate, user: dict = 
                 # reads what the first recipient will read.
                 "sample": ready[0] if ready else None,
                 "messages_used": len(per_company) or (1 if subject and body else 0),
+                # Never a block: who this writes to at one company, for the confirm step.
+                "warnings": batch_warnings([p for p in recipients if p["id"] in ready_ids]),
+                # Who gets a {personalisation} line: each company the message reaches, once.
+                "companies": list(dict.fromkeys(
+                    (p.get("company") or "").strip() for p in recipients
+                    if p["id"] in ready_ids and (p.get("company") or "").strip())),
             }
         if not ready:
             raise HTTPException(422, "No recipient can receive this message yet")
@@ -677,7 +662,10 @@ async def add_contacts_to_campaign(
         angle = _angle(payload.angle, template)
 
         from app.services.contact_access import require_contact_access
-        from app.services.merge_fields import MergeError, render
+        from app.services.merge_fields import MergeError, first_name, render
+        from app.services.settings_service import load_sign_off
+        # This path has no per-company line to confirm, so {personalisation} renders empty.
+        sender_first = first_name((await load_sign_off(user["id"])).name) if template else ""
         added = 0
         seen_contact_ids = set()
         for cid in payload.contact_ids:
@@ -697,8 +685,8 @@ async def add_contacts_to_campaign(
             if template and (not subj or not body):
                 person = dict(contact)
                 try:
-                    subj = subj or render(template["subject"], person)
-                    body = body or render(template["body"], person)
+                    subj = subj or render(template["subject"], person, sender_first_name=sender_first)
+                    body = body or render(template["body"], person, sender_first_name=sender_first)
                 except MergeError as exc:
                     held.append({"contact_id": cid, "email": person.get("email"),
                                  "name": person.get("name"), "reason": str(exc)})

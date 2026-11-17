@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.database import get_db
 
 DEFAULT_MONTHLY_BUDGET_USD = 50.0
+BUDGET_SPENT = "The club's AI budget for this month is used up."
 # Spend this calendar month (UTC): the provider-reported cost of finished calls,
 # and the worst-case estimate of calls still running or of uncertain outcome.
 _MONTH_SPEND_SQL = """SELECT COALESCE(SUM(COALESCE(
@@ -59,7 +60,7 @@ def reserve_bedrock_invocation(
                 db.execute('BEGIN IMMEDIATE')
                 spent = float(db.execute(_MONTH_SPEND_SQL).fetchone()[0] or 0.0)
                 if spent + estimate > budget:
-                    raise HTTPException(429, "The club's AI budget for this month is used up.")
+                    raise HTTPException(429, BUDGET_SPENT)
                 cursor = db.execute("""INSERT INTO usage_events(user_id,event_type,resource_type,details_json)
                     VALUES(?,'bedrock_reserved',?,?)""", (user_id, purpose, json.dumps({
                         'model_id': model,
@@ -182,23 +183,3 @@ async def reserve_tinyfish_call(user_id: int):
         await db.commit()
     finally:
         await db.close()
-
-
-async def draft_evidence(db, contact: dict, actor_id: int) -> dict:
-    """Use member-accepted public/project facts, never another member's private research."""
-    from app.services.contact_intelligence import contact_evidence
-    from app.services.delivery_policy import require_recipient_allowed
-    await require_recipient_allowed(db, contact.get("email") or "")
-    evidence = await contact_evidence(db, contact["id"], actor_id)
-    if not evidence:
-        return {"sources": [], "context_origin": "catalog_unreviewed"}
-    if evidence.get("identity") in {"rejected", "conflicted"} or evidence.get("employment") in {"former", "stale"}:
-        raise HTTPException(409, "Review current identity and employment evidence before drafting.")
-    # A shared catalog entry is usable for an honest introduction. Its fields
-    # are not permission to assert another member's research as established fact.
-    if evidence.get("disposition") != "accepted":
-        return {**evidence, "sources": [], "source_ids": [], "context_origin": "catalog_unreviewed"}
-    accepted_ids = {str(value) for value in evidence.get("accepted_source_ids", [])}
-    sources = [source for source in evidence.get("sources", []) if str(source.get("id")) in accepted_ids]
-    return {**evidence, "sources": sources, "source_ids": [source["id"] for source in sources],
-            "context_origin": "accepted_evidence"}

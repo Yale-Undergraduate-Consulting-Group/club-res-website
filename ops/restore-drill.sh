@@ -43,12 +43,20 @@ IMAGE=$(docker inspect --format '{{.Image}}' "yucg-$(cat /etc/yucg/active-slot)"
 docker run -d --name yucg-restore-drill --network none --memory 1g -v "$D:/drill" \
   -e DATABASE_URL=sqlite:////drill/snapshot.db -e JWT_SECRET=restore-drill-only-not-a-real-secret-0123456789 \
   "$IMAGE" >/dev/null
+healthy=0
 for _ in $(seq 1 60); do
   if docker exec yucg-restore-drill python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" 2>/dev/null; then
     echo "restored app answers /api/health"
+    healthy=1
     break
   fi
   sleep 2
 done
+# A restore that does not boot is a failed drill, not a slow one.
+if [ "$healthy" -ne 1 ]; then
+  echo "restore drill FAILED: the restored app did not answer /api/health within 120s" >&2
+  docker logs --tail 50 yucg-restore-drill >&2 || true
+  exit 1
+fi
 T4=$(t)
 python3 -c "import sys; a=[float(x) for x in sys.argv[1:]]; print(f'timing: download {a[2]-a[1]:.1f}s, verify {a[3]-a[2]:.1f}s, boot {a[4]-a[3]:.1f}s, total {a[4]-a[0]:.1f}s')" "$T0" "$T1" "$T2" "$T3" "$T4"

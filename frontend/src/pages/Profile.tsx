@@ -11,6 +11,8 @@ import { useTheme } from '../contexts/useTheme';
 import AppTabMenu from '../components/AppTabMenu';
 import AppSubnav from '../components/AppSubnav';
 import SlackIntegration from '../components/SlackIntegration';
+import SignOffPreview from '../components/SignOffPreview';
+import { EMPTY_SIGN_OFF, signOffFrom } from '../lib/signOff';
 import { useUrlTab } from '../lib/useUrlTab';
 import { getStoredPreferences, savePreferences, applyUserPreferences, resetPreferencesToDefault, type UserPreferences } from '../lib/userPreferences';
 
@@ -47,15 +49,7 @@ export default function Profile() {
 
   // Settings state (for Settings tab)
   const isAdmin = user?.role === 'admin';
-  const [signOff, setSignOff] = useState({
-    name: user?.name || '',
-    pronouns: '',
-    role: '',
-    organization: 'Yale Undergraduate Consulting Group',
-    linkedin: '',
-    phone: '',
-    logoUrl: '',
-  });
+  const [signOff, setSignOff] = useState({ ...EMPTY_SIGN_OFF, name: user?.name || '' });
   const [dailySendLimit, setDailySendLimit] = useState('');
   const [dailySendWarnAt, setDailySendWarnAt] = useState('');
   const [customFormats, setCustomFormats] = useState<CustomFormat[]>([]);
@@ -88,15 +82,7 @@ export default function Profile() {
   useEffect(() => {
     if (activeTab !== 'settings') return;
     api.settings.get().then((s) => {
-      setSignOff({
-        name: s.sign_off_name || user?.name || '',
-        pronouns: s.sign_off_pronouns || '',
-        role: s.sign_off_role || '',
-        organization: s.sign_off_organization || 'Yale Undergraduate Consulting Group',
-        linkedin: s.sign_off_linkedin || '',
-        phone: s.sign_off_phone || '',
-        logoUrl: s.sign_off_logo_url || '',
-      });
+      setSignOff(signOffFrom(s, user?.name || ''));
       setDailySendLimit(s.daily_send_limit != null ? String(s.daily_send_limit) : '');
       setDailySendWarnAt(s.daily_send_warn_at ? String(s.daily_send_warn_at) : '');
     }).catch(() => {});
@@ -418,18 +404,10 @@ export default function Profile() {
                     <input type="tel" value={signOff.phone} onChange={(e) => setSignOff((v) => ({ ...v, phone: e.target.value }))} placeholder="+1 203 555 0123" className="ui-input mt-1 w-full" />
                   </label>
                   <label className="text-sm text-slate-600 sm:col-span-2">YUCG logo URL
-                    <input type="url" value={signOff.logoUrl} onChange={(e) => setSignOff((v) => ({ ...v, logoUrl: e.target.value }))} placeholder="https://..." className="ui-input mt-1 w-full" />
+                    <input type="url" value={signOff.logoUrl} onChange={(e) => setSignOff((v) => ({ ...v, logoUrl: e.target.value }))} placeholder={signOff.logoDefault ? 'Blank: the club logo' : 'https://...'} className="ui-input mt-1 w-full" />
                   </label>
                 </div>
-                <div className="mt-5 border-t border-slate-200 pt-4 flex items-start gap-4 text-sm text-slate-700">
-                  {signOff.logoUrl && <img src={signOff.logoUrl} alt="YUCG" className="w-[72px] h-auto object-contain" />}
-                  <div>
-                    <div className="font-bold text-deep-navy">{signOff.name || 'Your name'} {signOff.pronouns && <em className="font-normal">({signOff.pronouns})</em>}</div>
-                    {signOff.role && <div>{signOff.role}</div>}
-                    <div>{signOff.organization}</div>
-                    {(signOff.linkedin || signOff.phone) && <div className="mt-0.5 text-deep-navy">{signOff.linkedin ? 'LinkedIn' : ''}{signOff.linkedin && signOff.phone ? ' | ' : ''}{signOff.phone}</div>}
-                  </div>
-                </div>
+                <SignOffPreview signOff={signOff} className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-700" />
               </div>
               <div className="surface-card">
                 <h2 className="font-semibold text-deep-navy mb-1">Send pacing</h2>

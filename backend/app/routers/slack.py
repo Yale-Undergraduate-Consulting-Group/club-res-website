@@ -28,6 +28,26 @@ router = APIRouter()
 # Events the helper answers. Anything else (channel joins, edits, bot chatter)
 # is acknowledged and ignored.
 ANSWERED_EVENTS = {"app_mention", "message"}
+#: Slack's commands and events are a few kilobytes. These routes read the body
+#: before any signature check, so anyone could otherwise make the server hold
+#: up to nginx's 100 MB per request in memory.
+MAX_BODY_BYTES = 256 * 1024
+
+
+async def _body(request: Request) -> bytes | None:
+    """The request body, or None when it is larger than MAX_BODY_BYTES. The
+    body is kept on the request, so ``form()`` and ``json()`` still work."""
+    declared = request.headers.get("content-length") or ""
+    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        return None
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            return None
+        chunks.append(chunk)
+    request._body = b"".join(chunks)  # Starlette's own cache: form() and json() read it
+    return request._body
 
 
 def _signed(request: Request, body: bytes) -> bool:
@@ -41,7 +61,9 @@ def _signed(request: Request, body: bytes) -> bool:
 @router.post("/commands")
 async def slack_command(request: Request, background: BackgroundTasks):
     """The `/yucg` slash command. Model questions finish after the immediate ack."""
-    body = await request.body()
+    body = await _body(request)
+    if body is None:
+        return JSONResponse({"error": "too_large"}, status_code=413)
     if not _signed(request, body):
         return JSONResponse({"error": "invalid_signature"}, status_code=401)
 
@@ -101,7 +123,9 @@ async def slack_command(request: Request, background: BackgroundTasks):
 @router.post("/events")
 async def slack_events(request: Request, background: BackgroundTasks):
     """Mentions and direct messages — the helper members actually talk to."""
-    body = await request.body()
+    body = await _body(request)
+    if body is None:
+        return JSONResponse({"error": "too_large"}, status_code=413)
     payload = await request.json()
 
     # Slack verifies a new event subscription by asking for the challenge

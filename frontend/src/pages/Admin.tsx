@@ -12,15 +12,17 @@ import { StatusBadge } from '../components/ui/Primitives';
 import { useToast } from '../contexts/useToast';
 import { AnimatedEventTypeChart, AnimatedResourceChart } from '../components/AnimatedOperationsCharts';
 import AppTabMenu from '../components/AppTabMenu';
+import AlumniAccess from '../components/admin/AlumniAccess';
 import AppAccess from '../components/admin/AppAccess';
 import ClubMetrics from '../components/admin/ClubMetrics';
+import Costs from '../components/admin/Costs';
 import { useUrlTab } from '../lib/useUrlTab';
 
 export default function Admin() {
   const { user } = useOutletContext<{ user: { id?: number; email: string; role?: string } }>();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useUrlTab<'users' | 'metrics' | 'apps' | 'projects' | 'audit' | 'apikeys' | '2fa' | 'catalog' | 'operations'>(
-    ['users', 'metrics', 'apps', 'projects', 'audit', 'apikeys', '2fa', 'catalog', 'operations'],
+  const [activeTab, setActiveTab] = useUrlTab<'users' | 'metrics' | 'costs' | 'apps' | 'alumni' | 'projects' | 'audit' | 'apikeys' | '2fa' | 'catalog' | 'operations'>(
+    ['users', 'metrics', 'costs', 'apps', 'alumni', 'projects', 'audit', 'apikeys', '2fa', 'catalog', 'operations'],
     'users',
   );
   const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof api.admin.catalog>> | null>(null);
@@ -235,7 +237,7 @@ export default function Admin() {
   }
 
   return (
-    <div className="app-workspace max-w-5xl">
+    <div className="app-workspace max-w-5xl min-w-0 w-full">
       <PageHeader title="Admin" subtitle="Manage members, project access, and club settings." actions={
         <button
           onClick={() => api.admin.exportAllZip().then(() => toast.addToast('Export all (ZIP) downloaded.', 'success')).catch((e) => toast.addToast((e as Error).message, 'error'))}
@@ -246,7 +248,7 @@ export default function Admin() {
       } />
 
       <AppTabMenu
-        tabs={[{ id: 'users', label: 'Members' }, { id: 'metrics', label: 'Metrics' }, { id: 'apps', label: 'Apps' }, { id: 'projects', label: 'Projects' }, { id: 'audit', label: 'Activity' }, { id: 'apikeys', label: 'Settings' }]}
+        tabs={[{ id: 'users', label: 'Members' }, { id: 'metrics', label: 'Metrics' }, { id: 'costs', label: 'Costs' }, { id: 'apps', label: 'Apps' }, { id: 'alumni', label: 'Alumni' }, { id: 'projects', label: 'Projects' }, { id: 'audit', label: 'Activity' }, { id: 'apikeys', label: 'Settings' }]}
         active={['apikeys', '2fa', 'catalog', 'operations'].includes(activeTab) ? 'apikeys' : activeTab}
         onChange={(id) => setActiveTab(id as typeof activeTab)}
         label="Admin sections"
@@ -262,7 +264,9 @@ export default function Admin() {
       {error && <p className="ui-notice ui-notice--danger mb-4">{error}</p>}
 
       {activeTab === 'metrics' && <ClubMetrics />}
+      {activeTab === 'costs' && <Costs />}
       {activeTab === 'apps' && <AppAccess />}
+      {activeTab === 'alumni' && <AlumniAccess />}
 
       {activeTab === 'users' && (
         <div className="space-y-6">

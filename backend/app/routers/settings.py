@@ -34,10 +34,14 @@ class CustomFormatCreate(BaseModel):
 
 @router.get("")
 async def get_settings(user: dict = Depends(get_current_user)):
-    """Read this member's own settings."""
+    """Read this member's own settings, and what the sign-off adds on its own
+    (the club logo when none is set, the confidentiality notice) for previews."""
+    from app.services.email_body import CONFIDENTIALITY_NOTICE, club_logo_url
     from app.services.settings_service import member_daily_send_limit
 
     result = {key: await get_member_setting(user["id"], key) or "" for key in SIGN_OFF_KEYS}
+    result["sign_off_logo_default"] = club_logo_url()
+    result["sign_off_notice"] = CONFIDENTIALITY_NOTICE
     result["daily_send_limit"] = await member_daily_send_limit(user["id"])
     result["daily_send_warn_at"] = await get_member_setting(user["id"], "daily_send_warn_at") or ""
     return result
