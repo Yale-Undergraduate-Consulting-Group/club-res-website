@@ -8,9 +8,11 @@ type AppShellDrawerProps = {
   user: { email: string; name?: string; picture?: string };
   onLogout: () => void;
   items: NavItem[];
+  /** An alumni session is valid too: offer "Switch to alumni". */
+  alumni: boolean;
 };
 
-export default function AppShellDrawer({ open, onClose, user, onLogout, items }: AppShellDrawerProps) {
+export default function AppShellDrawer({ open, onClose, user, onLogout, items, alumni }: AppShellDrawerProps) {
   if (!open) return null;
 
   return (
@@ -52,6 +54,11 @@ export default function AppShellDrawer({ open, onClose, user, onLogout, items }:
             <NavLink to="/profile" onClick={onClose} className="app-sidebar-link mb-2">
               Profile &amp; preferences
             </NavLink>
+            {alumni && (
+              <NavLink to="/alumni" onClick={onClose} className="app-sidebar-link mb-2">
+                Switch to alumni
+              </NavLink>
+            )}
             <button
               type="button"
               className="app-sidebar-link w-full text-left"

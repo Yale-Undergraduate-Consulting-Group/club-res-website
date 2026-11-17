@@ -84,18 +84,37 @@ once; deactivated members stay out and existing members just sign in. Closing it
 stops it at once, even for a sign-in already under way. Anyone who sees the code
 while it is open can join, so close it when the room is done.
 
+Alumni (`routers/alumni.py` and `routers/alumni_portal.py`, migrations `core:4`
+and `core:7`; sign-in design in [night/security.md](night/security.md), portal
+data rules in [product/ALUMNI-PORTAL.md](product/ALUMNI-PORTAL.md)): sign-in on
+YUCG Connect (`/login`, the members' Google sign-in), open to a verified address
+an admin allow-listed or in a domain an admin listed (Admin → Alumni; both lists
+start empty) when it is not a member; a member also on the lists gets both
+sessions and a "Switch to alumni" link. Alumni are not members: they live in
+`alumni_accounts`, never in `users`, and their session is the `yucg_alumni`
+cookie (path `/api/alumni`) holding a token the member session check refuses.
+`/alumni` is the alumni portal: news posts, events, an opt-in directory and a
+contact form to the alumni board. Alumni get no club data (no Resources,
+projects, members or clients).
+Club admins mark alumni board members; the board and club admins (through
+`/api/admin/alumni`) write posts and events and read the board inbox. Every
+alumni request re-checks the lists, so a removal or revocation applies at once.
+`backend/tests/test_alumni.py` checks every route the server serves: an alumni
+token gets nothing a request without a session would not.
+`backend/tests/test_alumni_portal.py` checks every portal route for anonymous,
+member, club admin, alumnus and board member.
+
 ## Apps today
 
 | App | Server prefixes | Pages | Jobs |
 |---|---|---|---|
-| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home (the hub), Profile, Admin | — |
+| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`, `/apps`, `/alumni`), `/api/attachments`, `/api/telemetry`, `/api/slack`, `/api/alumni` | Home (the hub), Profile, Admin; Alumni sign-in and portal (outside the member shell) | daily Cost Explorer cache |
 | `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Overview (`/campaigns`), Find contacts, Drafts, Pipeline, Directory, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
-| `projects` | `/api/projects` | (inside Admin) | — |
 | `surveys` | `/api/surveys` | Survey builder | — |
 | `sentiment` | `/api/sentiment` | Market sentiment (Interviews, Reddit, Google reviews) | stale-run reaper (fails runs left `running` by a restart) |
 | `resources` | `/api/resources` | Resources | — |
 
-`/api/health` and `/api/ai/models` belong to the server itself.
+`/api/health` belongs to the server itself.
 
 ### Resources (`resources`)
 
@@ -159,9 +178,8 @@ says Qualtrics is not configured. Conversations are not stored.
 ## Steps
 
 1. **App manifests and registry** — done. The server and the browser are
-   built from manifests. Verified: all 183 API paths and all 213 path/method
-   pairs resolve to the same handlers as before, and the same 12 production
-   and 8 beta jobs are scheduled.
+   built from manifests. The Cost Explorer cache adds one leader-only daily
+   core job; mail-reading and mail-sending jobs remain excluded from beta.
 2. **Versioned migrations** — done. `app.database._baseline_schema` is the
    frozen baseline: it still runs on every start (it also promotes the first
    member to admin when there is none), and nothing new is added to it. Every
@@ -175,7 +193,8 @@ says Qualtrics is not configured. Conversations are not stored.
    seconds (big backfills are batched leader-only jobs); it uses `execute`,
    never `commit` or `executescript`. A failure applies nothing, records
    nothing, and stops the new container from starting, so the old one keeps
-   serving. Versions run 1, 2, 3 per app (`test_modules.py`).
+   serving. Versions are contiguous from 1 for each app (`test_modules.py`);
+   `core:4` adds the one-row Cost Explorer cache used by Admin → Costs.
 3. **Access per app** — done. Every app is open to all active members until an
    admin restricts it (Admin → Apps); a restricted app is open to the members
    listed for it and to admins. Core (sign-in, profile, admin) and the

@@ -66,9 +66,45 @@ export type ResourceQuery = { q?: string; kind?: string; semester?: string; indu
 export type ResourceLinkCreate = {
   kind: ResourceKind; title: string; semester?: string; industry?: string; disclosure: ResourceDisclosure; url: string;
 };
+/** The alumni portal (backend/app/routers/alumni_portal.py). Image URLs are server paths: prefix with API_BASE to render. */
+export type PortalPost = {
+  id: number; title: string; body_html: string; status: 'draft' | 'published'; pinned: boolean; author: string;
+  created_at: number; updated_at: number; published_at: number | null; cover: { id: number; url: string } | null;
+};
+export type PortalPostInput = { title: string; body_html: string; status: 'draft' | 'published'; pinned: boolean; cover_image_id: number | null };
+export type PortalEvent = {
+  id: number; title: string; starts_at: number; timezone: string; starts_local: string; place: string | null;
+  online_url: string | null; description_html: string; created_at: number; updated_at: number;
+};
+export type PortalEventInput = { title: string; starts_local: string; timezone: string; place: string | null; online_url: string | null; description_html: string };
+export type DirectoryEntry = {
+  id: number; display_name: string; class_year: number | null; company: string | null; role: string | null; city: string | null;
+  linkedin_url: string | null; note: string | null; coffee_chats: boolean; email: string | null;
+};
+export type AlumniProfile = {
+  display_name: string; class_year: number | null; company: string | null; role: string | null; city: string | null;
+  linkedin_url: string | null; note: string | null; coffee_chats: boolean; listed: boolean; show_email: boolean; updated_at: number;
+};
+export type AlumniProfileInput = Omit<AlumniProfile, 'updated_at'>;
+export type InboxMessage = {
+  id: number; subject: string; created_at: number; read: boolean; archived: boolean;
+  sender: { name: string | null; email: string } | null; body?: string;
+};
+export type AlumniHome = {
+  me: { email: string; name: string | null; board: boolean };
+  profile: { exists: boolean; listed: boolean };
+  posts: PortalPost[]; events: PortalEvent[]; unread: number | null;
+};
+/** Admin → Alumni: who may sign in on the alumni page, who did, and revocation. */
+export type AlumniOverview = {
+  domains: { domain: string; added_at: number }[];
+  allowlist: { email: string; note: string | null; added_at: number }[];
+  accounts: { id: number; email: string; name: string | null; created_at: number; last_sign_in_at: number | null; revoked_at: number | null; allowed: boolean; board: boolean }[];
+  sign_ins: { at: number; outcome: 'signed_in' | 'not_eligible' | 'revoked' | 'identity_mismatch'; email_domain: string; email: string | null }[];
+};
 /** The document register's per-file limit, which resource uploads share (backend UploadRequest). */
 export const RESOURCE_FILE_MAX_BYTES = 100 * 1024 * 1024;
-/** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
+/** `scope` is club (shared by an administrator, or the club's seeded Intro) or mine (private); `editable` says whether this member may delete it. */
 export type Template = {
   id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
   scope: 'club' | 'mine'; mine: boolean; editable: boolean; owner_name?: string | null;
@@ -82,13 +118,25 @@ export type BuildRequest = {
   name?: string; companies?: string[]; contact_ids?: number[]; subject?: string; body?: string;
   messages?: Record<string, { subject: string; body: string }>; preview_only?: boolean;
   template_id?: number; angle?: string; target_list_id?: number;
+  /** The line confirmed for each company, by company name: fills {personalisation}. */
+  personalisation?: Record<string, string>;
 };
 export type BuildHold = { contact_id?: number; email?: string; name?: string; reason: string };
+/** A warning, never a block, about who one send writes to at one company
+ *  (backend/app/services/send_warnings.py); `contact_ids` most senior first. */
+export type SendWarning = {
+  kind: 'company' | 'team'; company: string; team?: string; count: number; threshold: number;
+  keep?: number; contact_ids: number[];
+};
 export type BuildResult = {
   campaign_id: number; created: number; name: string; template?: string | null; recipients?: number; ready?: number;
   /** Chosen people left out before rendering: no email on file, or another member's private contact. */
   skipped?: number;
   sample?: { subject: string; body: string; email?: string } | null; held: BuildHold[];
+  /** Preview only. */
+  warnings?: SendWarning[];
+  /** Preview only: each company the message reaches, once (who gets a {personalisation} line). */
+  companies?: string[];
 };
 export type Sequence = { id: number; name: string; steps?: { days_after: number; subject: string; body: string }[] };
 export type ContactNote = { id: number; note: string; created_at: string; user_id?: number };
@@ -99,10 +147,6 @@ export type Worklist = { owner_email?: string; owner_name?: string; id: number; 
 export type ReleasePerson = { id: number; full_name?: string; title?: string; email?: string; company?: string; company_domain?: string; kept: number; email_status?: string; vendor_check?: string };
 export type Release = { id: number; name: string; status: string; people?: ReleasePerson[]; targets?: { id: number; company: string; company_domain?: string }[] };
 export type InboxItem = { name?: string; email?: string; status?: string; email_verification_status?: string; id: number; subject?: string; body?: string; from_email?: string; received_at?: string };
-export type CitationSuggestions = {
-  projects: { id: number; client_name?: string; description?: string; semester?: string }[];
-  team_experience: { user_name?: string; role_in_project?: string; client_name?: string; semester?: string }[];
-};
 export type Member = { id: number; email: string; name?: string; role: string; is_active: number };
 /** A member's setup steps; only Gmail blocks sending (backend/app/services/member_readiness.py). */
 export type Readiness = { signed_in: boolean; gmail: boolean; sign_off: boolean; slack: boolean; project: boolean; has_sent: boolean; ready_to_send: boolean };
@@ -121,6 +165,22 @@ export type ClubMetrics = {
   members: MemberMetrics[];
   not_measured: string[];
 };
+export type CostTrendPoint = { month: string; calls: number; usd: number | null };
+export type CostReport = {
+  generated_at: string;
+  aws: {
+    connected: boolean; month: string; fetched_at: string | null; total_usd: number | null;
+    request_usd?: number; message: string;
+    by_service: { name: string; usd: number }[];
+    by_environment: { name: string; usd: number }[];
+  };
+  providers: {
+    id: string; name: string; calls: number; estimated_usd: number | null;
+    budget_or_limit: string | null; unit: string; unit_cost_usd: number | null;
+    trend: CostTrendPoint[]; note: string;
+  }[];
+  recommendations: { rank: number; title: string; saving: string; risk: string }[];
+};
 export type LogEntry = { user_id?: number; name?: string; id: number; created_at: string; email?: string; user_email?: string; action?: string; details?: string; ip_address?: string; event_type?: string; resource_type?: string };
 export type ApiKey = { key_prefix?: string; id: number; name: string; scopes?: string; created_at?: string; last_used_at?: string };
 export type StoredObject = { byte_size?: number; source?: string; id: number; kind: string; s3_key: string; bytes?: number; created_at?: string };
@@ -133,6 +193,10 @@ export type Settings = {
   sign_off_linkedin?: string;
   sign_off_phone?: string;
   sign_off_logo_url?: string;
+  /** Read only: the club logo a blank logo signs with ('' when the site has no public address). */
+  sign_off_logo_default?: string;
+  /** Read only: the confidentiality notice under every sign-off. */
+  sign_off_notice?: string;
   daily_send_limit?: number;
   daily_send_warn_at?: number | string;
 };
@@ -711,7 +775,8 @@ async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
         message = text.replace(/\s+/g, ' ').trim().slice(0, 320) || message;
       }
     }
-    if (res.status === 401 && path !== '/api/auth/me' && typeof window !== 'undefined') {
+    // The alumni area has its own session: its 401 says nothing about the member's.
+    if (res.status === 401 && path !== '/api/auth/me' && !path.startsWith('/api/alumni/') && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('yucg:unauthorized'));
     }
     throw new ApiError(message, res.status);
@@ -728,7 +793,93 @@ async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+export const COVER_MAX_BYTES = 5 * 1024 * 1024;
+export const COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+/** A server-relative image path becomes an address the browser can load. */
+export function portalImageUrl(url: string): string {
+  return url.startsWith('/') ? `${API_BASE}${url}` : url;
+}
+
+/** The posts, events, directory and inbox calls, shared by the alumni board and club admins. */
+export function alumniPortalApi(base: '/api/alumni' | '/api/admin/alumni') {
+  const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
+  return {
+    posts: {
+      list: (limit = 50, offset = 0) => fetchApi<{ items: PortalPost[]; total: number }>(`${base}/posts?limit=${limit}&offset=${offset}`),
+      get: (id: number) => fetchApi<PortalPost>(`${base}/posts/${id}`),
+      create: (post: PortalPostInput) => fetchApi<PortalPost>(`${base}/posts`, json('POST', post)),
+      update: (id: number, post: PortalPostInput) => fetchApi<PortalPost>(`${base}/posts/${id}`, json('PUT', post)),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`${base}/posts/${id}`, json('DELETE')),
+    },
+    /**
+     * Stores a post's cover: the server reserves it, the browser sends the bytes
+     * (to the server itself without a bucket, otherwise straight to storage),
+     * and the server checks the file really is that image.
+     */
+    uploadCover: async (file: File): Promise<{ id: number; url: string }> => {
+      if (!COVER_TYPES.includes(file.type)) throw new Error('The cover must be a PNG, JPEG or WebP image.');
+      if (file.size > COVER_MAX_BYTES) throw new Error('The cover must be 5 MB or smaller.');
+      if (file.size === 0) throw new Error('This file is empty.');
+      const started = await fetchApi<{ image_id: number; upload: { url: string; method: string; headers: Record<string, string> } }>(
+        `${base}/images`, json('POST', { byte_size: file.size, content_type: file.type }));
+      const own = started.upload.url.startsWith('/');
+      let sent = false;
+      try {
+        const response = await fetch(own ? `${API_BASE}${started.upload.url}` : started.upload.url, {
+          method: started.upload.method,
+          headers: own ? { ...started.upload.headers, ...getAuthHeaders() } : started.upload.headers,
+          credentials: own ? 'include' : 'omit',
+          body: file,
+        });
+        if (!response.ok && own) throw new ApiError(problemDetail(await response.text()), response.status);
+        sent = response.ok;
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        sent = false;
+      }
+      if (!sent) throw new Error('The image could not be sent. Try again.');
+      return fetchApi<{ id: number; url: string }>(`${base}/images/${started.image_id}/complete`, json('POST'));
+    },
+    events: {
+      list: () => fetchApi<{ upcoming: PortalEvent[]; past: PortalEvent[] }>(`${base}/events`),
+      create: (event: PortalEventInput) => fetchApi<PortalEvent>(`${base}/events`, json('POST', event)),
+      update: (id: number, event: PortalEventInput) => fetchApi<PortalEvent>(`${base}/events/${id}`, json('PUT', event)),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`${base}/events/${id}`, json('DELETE')),
+    },
+    directory: (q: string, signal?: AbortSignal) =>
+      fetchApi<{ items: DirectoryEntry[] }>(`${base}/directory?${new URLSearchParams(q.trim() ? { q: q.trim() } : {})}`, { signal }),
+    inbox: {
+      list: (archived: boolean) => fetchApi<{ items: InboxMessage[]; unread: number }>(`${base}/inbox?archived=${archived}`),
+      open: (id: number) => fetchApi<InboxMessage>(`${base}/inbox/${id}`),
+      change: (id: number, change: 'unread' | 'archive' | 'restore') => fetchApi<{ ok: boolean }>(`${base}/inbox/${id}/${change}`, json('POST')),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`${base}/inbox/${id}`, json('DELETE')),
+    },
+  };
+}
+
+export type PortalApi = ReturnType<typeof alumniPortalApi>;
+
 export const api = {
+  /** The alumni portal's own pages: the alumni cookie (backend/app/routers/alumni.py, alumni_portal.py). */
+  alumni: {
+    me: () => fetchApi<{ email: string; name: string | null; board: boolean }>('/api/alumni/me'),
+    logout: () => fetchApi<{ ok: boolean }>('/api/alumni/logout', { method: 'POST' }),
+    home: () => fetchApi<AlumniHome>('/api/alumni/home'),
+    profile: {
+      get: () => fetchApi<{ profile: AlumniProfile | null; email: string }>('/api/alumni/profile'),
+      save: (profile: AlumniProfileInput) =>
+        fetchApi<{ profile: AlumniProfile; email: string }>('/api/alumni/profile', { method: 'PUT', body: JSON.stringify(profile) }),
+      hide: () => fetchApi<{ ok: boolean }>('/api/alumni/profile/hide', { method: 'POST' }),
+      delete: () => fetchApi<{ ok: boolean }>('/api/alumni/profile', { method: 'DELETE' }),
+    },
+    contactBoard: (message: { subject: string; body: string }) =>
+      fetchApi<{ ok: boolean }>('/api/alumni/messages', { method: 'POST', body: JSON.stringify(message) }),
+  },
+  /** Posts, events, directory and inbox as the alumni (board) see them. */
+  alumniPortal: alumniPortalApi('/api/alumni'),
+  /** The same calls as a club admin, who acts as the board. */
+  adminPortal: alumniPortalApi('/api/admin/alumni'),
   resources: {
     list: (query: ResourceQuery, signal?: AbortSignal) => fetchApi<ResourceList>(`/api/resources?${buildResourceQuery(query)}`, { signal }),
     /** The address to open a file (or, for its managers, an older version) at: the server may answer with a path on its own origin. */
@@ -798,18 +949,8 @@ export const api = {
   },
   projects: {
     list: () => fetchApi<Project[]>('/api/workspace/projects'),
-    suggestCitations: (company: string) =>
-      fetchApi<CitationSuggestions>(`/api/projects/suggest-citations?company=${encodeURIComponent(company)}`),
   },
   health: () => fetchApi<{ status: string }>('/api/health'),
-  ai: {
-    models: () =>
-      fetchApi<{
-        provider: string;
-        default: string;
-        groups: { id: string; label: string; models: { id: string; label: string; tier: string; blurb: string }[] }[];
-      }>('/api/ai/models'),
-  },
   telemetry: {
     event: (data: { event_type: string; resource_type?: string; details?: Record<string, unknown> }) =>
       fetchApi<unknown>('/api/telemetry/event', { method: 'POST', body: JSON.stringify(data) }).catch(() => {}),
@@ -1023,19 +1164,6 @@ export const api = {
       ),
   },
   emails: {
-    generate: (data: {
-      contact_id: number;
-      tone?: string;
-      length?: string;
-      angle?: string;
-      custom_instructions?: string;
-      value_proposition?: string;
-      model?: string;
-    }) =>
-      fetchApi<{ subject: string; body: string; contact_id: number }>('/api/emails/generate', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
     testSend: (data: { to_email: string; subject: string; body: string; attachment_ids?: number[] }) =>
       fetchApi<unknown>('/api/emails/test-send', { method: 'POST', body: JSON.stringify(data) }),
     generated: (params?: { contact_id?: number; sort?: string }) =>
@@ -1048,37 +1176,16 @@ export const api = {
       fetchApi<{ ok: boolean; id: number }>(`/api/emails/generated/${id}`, { method: 'DELETE' }),
     clearGeneratedCache: () =>
       fetchApi<{ ok: boolean; deleted: number }>('/api/emails/generated', { method: 'DELETE' }),
-    generateTemplate: (data: {
-      name?: string;
-      company?: string;
-      title?: string;
-      email?: string;
-      tone?: string;
-      length?: string;
-      angle?: string;
-      custom_instructions?: string;
-      value_proposition?: string;
-      model?: string;
-    }) =>
-      fetchApi<{ subject: string; body: string; contact_id?: number | null }>('/api/emails/generate-template', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
   },
   campaigns: {
-    /** One AI draft for a whole group, or one per company when asked. */
-    draftTemplate: (data: { companies: string[]; roles?: string; goal: string; proof?: string; length?: string; per_company?: boolean }) =>
-      fetchApi<{
-        subject?: string;
-        body?: string;
-        messages?: Record<string, { subject: string; body: string }>;
-        grounded?: string[];
-      }>('/api/campaigns/draft-template', {
-        method: 'POST', body: JSON.stringify(data),
-      }),
     /** Render one written message per recipient; preview_only stops before creating. */
     build: (data: BuildRequest) =>
       fetchApi<BuildResult>('/api/campaigns/build', { method: 'POST', body: JSON.stringify(data) }),
+    /** One suggested line for one company's Intro; `previous` asks for a different one. */
+    personalisation: (company: string, previous = '') =>
+      fetchApi<{ company: string; line: string; sources: string[] }>('/api/campaigns/personalisation', {
+        method: 'POST', body: JSON.stringify({ company, previous }),
+      }),
     list: () => fetchApi<Campaign[]>('/api/campaigns'),
     get: (id: number) => fetchApi<Campaign>(`/api/campaigns/${id}`),
     delete: (id: number) => fetchApi<{ ok: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
@@ -1163,6 +1270,8 @@ export const api = {
     exportUrl: (filter: DirectoryFilter) => `${API_BASE}/api/directory/export?${directoryQuery(filter)}`,
   },
   auth: {
+    /** Whether a member session exists (the alumni portal's "Member site" link). */
+    me: () => fetchApi<{ authenticated: boolean }>('/api/auth/me'),
     profile: {
       get: () => fetchApi<MemberProfile>('/api/auth/profile'),
       update: (data: { projects?: string; experience?: string; role_title?: string; linkedin_url?: string; slack_handle?: string; other_handles?: string }) =>
@@ -1194,6 +1303,7 @@ export const api = {
         objects: StoredObject[];
         prefixes: { prefix: string; objects: StoredObject[] }[];
       }>('/api/admin/catalog'),
+    costs: () => fetchApi<CostReport>('/api/admin/costs'),
     loginLog: () => fetchApi<LogEntry[]>('/api/admin/login-log'),
     /** Who may use each app; restricted apps are open to listed members and admins. */
     apps: {
@@ -1202,6 +1312,23 @@ export const api = {
       settings: () => fetchApi<AppSetting[]>('/api/admin/apps/settings'),
       update: (app: string, body: { restricted: boolean; member_ids: number[] }) =>
         fetchApi<{ ok: boolean }>(`/api/admin/apps/${encodeURIComponent(app)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    /** Alumni sign-in: allowed domains, allow-listed addresses, accounts and their sign-ins. */
+    alumni: {
+      overview: () => fetchApi<AlumniOverview>('/api/admin/alumni'),
+      addDomain: (domain: string) =>
+        fetchApi<{ domain: string }>('/api/admin/alumni/domains', { method: 'POST', body: JSON.stringify({ domain }) }),
+      removeDomain: (domain: string) =>
+        fetchApi<{ ok: boolean }>(`/api/admin/alumni/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' }),
+      addEmail: (email: string, note: string) =>
+        fetchApi<{ email: string }>('/api/admin/alumni/emails', { method: 'POST', body: JSON.stringify({ email, note: note || null }) }),
+      removeEmail: (email: string) =>
+        fetchApi<{ ok: boolean }>(`/api/admin/alumni/emails/${encodeURIComponent(email)}`, { method: 'DELETE' }),
+      revoke: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}/revoke`, { method: 'POST' }),
+      restore: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}/restore`, { method: 'POST' }),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}`, { method: 'DELETE' }),
+      setBoard: (id: number, board: boolean) =>
+        fetchApi<{ board: boolean }>(`/api/admin/alumni/accounts/${id}/board`, { method: 'PUT', body: JSON.stringify({ board }) }),
     },
     users: {
       list: () => fetchApi<Member[]>('/api/admin/users'),

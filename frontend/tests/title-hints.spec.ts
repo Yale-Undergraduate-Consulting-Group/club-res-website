@@ -18,7 +18,6 @@ async function mockFlow(page: Page) {
     else if (path === '/api/yucgoutreach/runs' && request.method() === 'POST') body = { id: 9, status: 'queued' };
     else if (path === '/api/yucgoutreach/runs') body = [];
     else if (path === '/api/contacts') body = { items: [], total: 0, limit: 100, offset: 0 };
-    else if (path === '/api/ai/models') body = { groups: [] };
     else if (/\/companies\/summary$|\/sequences$|\/custom-formats$|\/rosters$/.test(path)) body = [];
     else if (path.startsWith('/api/yucg/rosters')) body = { rosters: [] };
     await route.fulfill({ json: body });

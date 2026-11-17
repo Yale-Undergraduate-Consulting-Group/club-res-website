@@ -33,20 +33,22 @@ later - it is never required.
 from __future__ import annotations
 
 import asyncio
+import heapq
+import itertools
 import json
 import logging
 import os
 from collections import deque
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 
 from app.database import get_db
-from app.services.discovery_gate import discovery_job
 from app.services.generation_policy import reserve_firecrawl_call, reserve_tinyfish_call
 
 logger = logging.getLogger("yucg.firecrawl")
@@ -215,21 +217,97 @@ def _search_cache_ttl_s() -> float:
         return 168 * 3600.0
 
 
+#: The searches one discovery run has asked the pacer for, a one-item list
+#: (web_contact_discovery.begin_search_run sets it). Searches with none, a
+#: member's one-off lookups, count as a run that has asked for nothing.
+search_pace_account: ContextVar[list[int] | None] = ContextVar("search_pace_account", default=None)
+#: Searches waiting for the pacer: (rank, arrival, future, account), lowest
+#: rank first. Rank is how many searches the run had asked for when this one
+#: arrived, so each run's n-th search goes before any run's (n+1)-th: a new
+#: run's first wave is not queued behind another run's later rounds.
+_pace_queue: list[tuple[int, int, asyncio.Future, list[int] | None]] = []
+_pace_arrivals = itertools.count()
+_pace_pump: asyncio.Task | None = None
+
+
+def _take_search_slot() -> float:
+    """Take a slot when the window has one and return 0, else return the
+    seconds until the oldest slot in the window frees."""
+    now = time.monotonic()
+    while _search_slots and now - _search_slots[0] >= _SEARCH_PACER_WINDOW_S:
+        _search_slots.popleft()
+    if len(_search_slots) < _searches_per_window():
+        _search_slots.append(now)
+        return 0.0
+    return _search_slots[0] + _SEARCH_PACER_WINDOW_S - now
+
+
+async def _serve_pace_queue() -> None:
+    while _pace_queue:
+        waiter = _pace_queue[0][2]
+        if waiter.done():  # its search was cancelled
+            heapq.heappop(_pace_queue)
+            continue
+        wait = _take_search_slot()
+        if wait:
+            await asyncio.sleep(wait)
+            continue
+        heapq.heappop(_pace_queue)
+        waiter.set_result(None)
+
+
+def search_pace_waiting(account: list[int] | None = None) -> int:
+    """Searches waiting for the pacer: all of them, or one run's."""
+    return sum(1 for *_, waiter, owner in _pace_queue
+               if not waiter.done() and (account is None or owner is account))
+
+
 async def _await_search_slot() -> None:
     """Wait until one more Monid search fits the sliding window, then take
-    the slot. Waiting, not failing: a burst of Find queries queues for a few
-    seconds instead of drawing 429s that read as "search is down". Check and
-    take happen with no await between them, so one event loop needs no lock.
+    the slot. Waiting, not failing: a burst of Find queries queues instead of
+    drawing 429s that read as "search is down". Waiting searches are served
+    lowest rank first (see _pace_queue).
     ponytail: in-memory window - a restart may allow one extra burst inside
     the first minute; hour/day budgets come from web_search_usage instead."""
-    while True:
-        now = time.monotonic()
-        while _search_slots and now - _search_slots[0] >= _SEARCH_PACER_WINDOW_S:
-            _search_slots.popleft()
-        if len(_search_slots) < _searches_per_window():
-            _search_slots.append(now)
-            return
-        await asyncio.sleep(_search_slots[0] + _SEARCH_PACER_WINDOW_S - now)
+    global _pace_pump
+    account = search_pace_account.get()
+    rank = account[0] if account is not None else 0
+    if account is not None:
+        account[0] += 1
+    loop = asyncio.get_running_loop()
+    # Waiters of an event loop that has ended (tests run several) never resume.
+    if any(entry[2].get_loop() is not loop for entry in _pace_queue):
+        _pace_queue[:] = [entry for entry in _pace_queue if entry[2].get_loop() is loop]
+        heapq.heapify(_pace_queue)
+    if not _pace_queue and not _take_search_slot():
+        return
+    waiter = loop.create_future()
+    heapq.heappush(_pace_queue, (rank, next(_pace_arrivals), waiter, account))
+    if _pace_pump is None or _pace_pump.done() or _pace_pump.get_loop() is not loop:
+        _pace_pump = loop.create_task(_serve_pace_queue())
+    await waiter
+
+
+def _firecrawl_slots() -> int:
+    raw = (os.getenv("FIRECRAWL_JOBS") or "").strip()
+    return max(1, min(int(raw), 4)) if raw.isdigit() else 1
+
+
+_firecrawl_gate: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None
+
+
+@asynccontextmanager
+async def _firecrawl_slot() -> AsyncIterator[None]:
+    """One of FIRECRAWL_JOBS (default 1) Firecrawl calls at once. Firecrawl
+    renders on the club's remote box, which another tenant shares. These calls
+    used to take this box's HTML crawl slot, so a run of fallback searches (up
+    to 30 s each) held every other search's website crawl."""
+    global _firecrawl_gate
+    loop = asyncio.get_running_loop()
+    if _firecrawl_gate is None or _firecrawl_gate[0] is not loop:
+        _firecrawl_gate = (loop, asyncio.Semaphore(_firecrawl_slots()))
+    async with _firecrawl_gate[1]:
+        yield
 
 
 async def _record_search_usage() -> None:
@@ -565,10 +643,8 @@ async def _firecrawl_fetch_page(url: str, *, user_id: int | None = None) -> Fetc
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     payload: dict[str, Any] = {"url": url, "formats": ["markdown", "links"]}
 
-    # Same slot budget as an HTML crawl job: Firecrawl's browser render is
-    # comparable RAM/CPU cost to this box doing its own BeautifulSoup parse.
     started = time.monotonic()
-    async with discovery_job():
+    async with _firecrawl_slot():
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
                 resp = await client.post(f"{base}/v1/scrape", json=payload, headers=headers)
@@ -619,7 +695,7 @@ async def _firecrawl_web_search(query: str, max_results: int, *, user_id: int | 
 
     await _record_search_usage()
     started = time.monotonic()
-    async with discovery_job():
+    async with _firecrawl_slot():
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
                 resp = await client.post(f"{base}/v1/search", json=payload, headers=headers)

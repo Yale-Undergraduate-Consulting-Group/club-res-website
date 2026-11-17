@@ -24,6 +24,15 @@ YUCG_WHITE = "FFFFFF"
 
 router = APIRouter()
 
+# --- Cost reporting (admin only) ---
+@router.get("/costs")
+async def costs(_admin: dict = Depends(get_current_admin)):
+    """Cached AWS billing and locally counted pay-per-call API usage."""
+    from app.services.costs import report
+
+    return await report()
+
+
 
 # --- Login log (admin only) ---
 @router.get("/login-log")

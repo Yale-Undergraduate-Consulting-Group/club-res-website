@@ -211,15 +211,20 @@ async def preview_template(payload: TemplatePreview, user: dict = Depends(get_cu
     """The template as one made-up recipient would read it, so a member sees
     the result of the merge fields while writing, and a typo as an error
     before saving. Also lists the fields the editor offers."""
-    from app.services.merge_fields import FIELD_HELP, MergeError, SAMPLE_RECIPIENT, render
+    from app.services.merge_fields import (
+        FIELD_HELP, MergeError, SAMPLE_PERSONALISATION, SAMPLE_RECIPIENT, first_name, render,
+    )
+    from app.services.settings_service import load_sign_off
     result = {
         "fields": [{"name": name, "help": text} for name, text in FIELD_HELP.items()],
         "recipient": SAMPLE_RECIPIENT,
         "subject": "", "body": "", "error": None,
     }
+    merge = {"sender_first_name": first_name((await load_sign_off(user["id"])).name),
+             "personalisation": SAMPLE_PERSONALISATION}
     try:
-        result["subject"] = render(payload.subject, SAMPLE_RECIPIENT)
-        result["body"] = render(payload.body, SAMPLE_RECIPIENT)
+        result["subject"] = render(payload.subject, SAMPLE_RECIPIENT, **merge)
+        result["body"] = render(payload.body, SAMPLE_RECIPIENT, **merge)
     except MergeError as exc:
         result["error"] = str(exc)
     return result

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../../api';
 import { appBarItems, appForPath, getNavItems } from '../../lib/navConfig';
 import { navigationStarted, pageShown } from '../../lib/pageProgress';
 import { prefetchPath, prefetchWhenIdle } from '../../lib/routePrefetch';
@@ -41,6 +42,11 @@ export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppSh
   const shown = useRef(pathname);
   // The page the app opened on appears at once (nothing to swap from); a page that replaces another fades in.
   const [openedOn] = useState(pathname);
+  // Also signed in to the alumni portal (YUCG Connect signs someone who is both into both): "Switch to alumni".
+  const [alumni, setAlumni] = useState(false);
+  useEffect(() => {
+    api.alumni.me().then(() => setAlumni(true), () => setAlumni(false));
+  }, []);
 
   useLayoutEffect(() => {
     shown.current = pathname;
@@ -87,7 +93,7 @@ export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppSh
           {/* First visit to a page (no page on screen yet): the shell stays and says so. */}
           <Suspense fallback={<p className="app-page-loading" role="status">Opening page…</p>}>
             <div key={pageKey} className={pathname === openedOn ? 'app-shell-main-inner' : 'app-shell-main-inner app-shell-main-inner--swap'}>
-              <Outlet context={{ user, onLogout: handleLogout }} />
+              <Outlet context={{ user, onLogout: handleLogout, alumni }} />
             </div>
           </Suspense>
         </main>
@@ -99,6 +105,7 @@ export default function AppShell({ user, onLogout, pageKey, headerExtra }: AppSh
         user={user}
         items={navItems}
         onLogout={handleLogout}
+        alumni={alumni}
       />
       <Tour />
     </div>

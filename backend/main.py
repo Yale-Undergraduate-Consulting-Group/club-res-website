@@ -20,11 +20,9 @@ import logging
 from app.log_redaction import RedactAccessPath
 logging.getLogger("uvicorn.access").addFilter(RedactAccessPath())
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth_deps import get_current_user
-from app.services.llm import list_models
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import init_db
@@ -95,11 +93,6 @@ mount(app, MODULES)
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "service": "YUCG Outreach"}
-
-
-@app.get("/api/ai/models")
-async def ai_models(_user: dict = Depends(get_current_user)):
-    return list_models()
 
 
 def spa_file(root: Path, full_path: str) -> Path:

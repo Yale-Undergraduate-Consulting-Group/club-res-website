@@ -77,6 +77,11 @@ printf '%s' "$SECRET_JSON" | jq -e 'type == "object"
   and all(keys[]; test("^[A-Z][A-Z0-9_]*$"))
   and all(.[]; . == null or (type == "string" and (test("[\r\n]") | not)))' >/dev/null \
   || { echo 'App secret must be a JSON object of single-line strings including JWT_SECRET'; exit 1; }
+# Local-review sign-ins (DEV_LOGIN_EMAIL, DEV_ALUMNI_EMAIL) must never reach
+# production, even though APP_ENV=production below already disables them.
+if [ "$APP_ENV" = production ] && printf '%s' "$SECRET_JSON" | jq -e 'any(keys[]; startswith("DEV_"))' >/dev/null; then
+  echo 'Production secret holds a DEV_ setting; refusing deployment'; exit 1
+fi
 install -d -m 0700 /etc/yucg
 # AI_MONTHLY_BUDGET_USD stays below the 20-dollar spending limit on the
 # temporary Anthropic API key, so the site refuses AI calls before the key

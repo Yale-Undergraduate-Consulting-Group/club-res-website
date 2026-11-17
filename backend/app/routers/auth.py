@@ -14,7 +14,7 @@ import httpx
 from datetime import datetime, timedelta
 from app.database import get_db, row_to_dict
 from app.auth_deps import get_current_user, get_current_user_optional
-from app.jwt_utils import JWT_SECRET, PENDING_2FA_COOKIE, create_token, decode_token, session_cookie_kwargs
+from app.jwt_utils import JWT_SECRET, PENDING_2FA_COOKIE, create_token, decode_token, end_sessions, session_cookie_kwargs
 from app.token_crypto import encrypt_token
 
 router = APIRouter()
@@ -138,8 +138,52 @@ async def google_callback(request: Request, code: str | None = None, state: str 
     return response
 
 
+async def _member_admission(db, challenge: dict, email: str, name, google_id, picture):
+    """The member rules for a verified Google identity, in the caller's write
+    transaction: ``(user id, role, existing users row, invitation)`` for a
+    member, else the refusal code. A refusal has written nothing."""
+    import time
+    if not email.endswith("@yale.edu"):
+        return "domain_not_allowed"
+    cursor = await db.execute(
+        "SELECT id, email, name, picture, google_id, role, is_active, totp_secret FROM users WHERE lower(email) = ?",
+        (email,),
+    )
+    row = await cursor.fetchone()
+    invitation = None
+    if challenge.get("invitation_id"):
+        invitation = await (await db.execute("SELECT * FROM membership_invitations WHERE id=? AND email=? AND state='pending' AND expires_at>?", (challenge["invitation_id"],email,int(time.time())))).fetchone()
+        if not invitation:
+            return "invitation_invalid"
+    if row:
+        row = row_to_dict(row)
+        if not row.get("is_active"):
+            return "account_deactivated"
+        if row.get("google_id") and row["google_id"] != google_id:
+            return "identity_mismatch"
+        return row["id"], row.get("role") or "standard", row, invitation
+    if invitation and challenge["purpose"] == "identity":
+        cursor = await db.execute("INSERT INTO users(email,name,role,google_id,picture) VALUES (?,?,?,?,?)",(email,name,'standard',google_id,picture))
+        return cursor.lastrowid, "standard", None, invitation
+    if challenge.get("join_session_id") and challenge["purpose"] == "identity":
+        from app.routers.invitations import admit_through_join_session
+        user_id = await admit_through_join_session(db, challenge["join_session_id"], email, name, google_id, picture)
+        return (user_id, "standard", None, invitation) if user_id else "join_closed"
+    return "invitation_required"
+
+
 async def _do_google_callback(code: str, challenge: dict | None = None):
+    """YUCG Connect: one Google sign-in, routed here by who the verified
+    identity is. A member (the rules above, unchanged) gets the member outcome,
+    plus the alumni session when the address is also on the alumni lists. Anyone
+    else gets the alumni portal if the alumni lists admit them
+    (routers/alumni.py), else the member refusal, so a refusal never says
+    whether an address is on an alumni list. Alumni never become members."""
+    from app.routers import alumni
+
     challenge = challenge or {"purpose": "identity"}
+    signing_in = challenge["purpose"] == "identity"
+    login = f"{FRONTEND_URL}/login"
     async with httpx.AsyncClient(timeout=15.0) as client:
         token_res = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -153,30 +197,27 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if token_res.status_code != 200:
+            # Google's error code only: the body can echo request details.
             try:
-                err_body = token_res.text[:500]
+                err_code = str(token_res.json().get("error") or "")[:64]
             except Exception:
-                err_body = ""
-            logger.warning(
-                "Google token exchange failed: status=%s body=%s",
-                token_res.status_code,
-                err_body,
-            )
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=token_exchange_failed")
+                err_code = ""
+            logger.warning("Google token exchange failed: status=%s error=%s", token_res.status_code, err_code)
+            return RedirectResponse(url=f"{login}?error=token_exchange_failed")
 
         tokens = token_res.json()
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")
         expires_in = tokens.get("expires_in", 3600)
         if not access_token:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_access_token")
+            return RedirectResponse(url=f"{login}?error=no_access_token")
 
         user_res = await client.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
         )
         if user_res.status_code != 200:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=userinfo_failed")
+            return RedirectResponse(url=f"{login}?error=userinfo_failed")
 
         user_info = user_res.json()
         email = (user_info.get("email") or "").strip().lower()
@@ -185,16 +226,13 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
         google_id = user_info.get("id")
 
         if user_info.get("verified_email") is not True:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=email_not_verified")
+            return RedirectResponse(url=f"{login}?error=email_not_verified")
 
         if not google_id:
-            return RedirectResponse(f"{FRONTEND_URL}/login?error=identity_missing")
+            return RedirectResponse(f"{login}?error=identity_missing")
 
         if not email:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_email")
-
-        if not email.lower().endswith("@yale.edu"):
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=domain_not_allowed")
+            return RedirectResponse(url=f"{login}?error=no_email")
 
     from datetime import datetime as dt
     token_expires_at = (dt.utcnow().timestamp() + expires_in) if expires_in else None
@@ -202,39 +240,20 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
     stored_refresh = encrypt_token(refresh_token)
 
     totp_secret = None
+    alumni_id = None
     db = await get_db()
     try:
         await db.execute("BEGIN IMMEDIATE")
-        cursor = await db.execute(
-            "SELECT id, email, name, picture, google_id, role, is_active, totp_secret FROM users WHERE lower(email) = ?",
-            (email,),
-        )
-        row = await cursor.fetchone()
-        invitation = None
-        if challenge.get("invitation_id"):
-            import time
-            invitation = await (await db.execute("SELECT * FROM membership_invitations WHERE id=? AND email=? AND state='pending' AND expires_at>?", (challenge["invitation_id"],email,int(time.time())))).fetchone()
-            if not invitation:
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=invitation_invalid")
-        if row:
-            row = row_to_dict(row)
-            if not row.get("is_active"):
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=account_deactivated")
-            if row.get("google_id") and row["google_id"] != google_id:
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=identity_mismatch")
-            user_id, role = row["id"], row.get("role") or "standard"
-        elif invitation and challenge["purpose"] == "identity":
-            cursor = await db.execute("INSERT INTO users(email,name,role,google_id,picture) VALUES (?,?,?,?,?)",(email,name,'standard',google_id,picture))
-            user_id, role = cursor.lastrowid, 'standard'
-            row = None
-        elif challenge.get("join_session_id") and challenge["purpose"] == "identity":
-            from app.routers.invitations import admit_through_join_session
-            user_id = await admit_through_join_session(db, challenge["join_session_id"], email, name, google_id, picture)
-            if not user_id:
-                return RedirectResponse(f"{FRONTEND_URL}/login?error=join_closed")
-            role, row = 'standard', None
-        else:
-            return RedirectResponse(f"{FRONTEND_URL}/login?error=invitation_required")
+        admitted = await _member_admission(db, challenge, email, name, google_id, picture)
+        if isinstance(admitted, str):
+            # Not a member: the alumni lists decide (recorded in alumni_sign_ins).
+            if signing_in:
+                alumni_id, _ = await alumni.sign_in(db, email, str(google_id), name)
+                await db.commit()
+            if alumni_id is None:
+                return RedirectResponse(f"{login}?error={admitted}")
+            return alumni.with_session(RedirectResponse(f"{FRONTEND_URL}/alumni"), alumni_id)
+        user_id, role, row, invitation = admitted
         if challenge["purpose"] == "gmail":
             if challenge.get("user_id") != user_id:
                 return RedirectResponse(f"{FRONTEND_URL}/profile?error=gmail_account_mismatch")
@@ -254,6 +273,11 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
         if challenge["purpose"] == "gmail":
             await db.execute("INSERT INTO audit_log(user_id,action,resource_type,resource_id,details) VALUES (?,'gmail_connect','user',?,'Connected own verified Google account')",(user_id,str(user_id)))
         totp_secret = (row or {}).get("totp_secret")
+        if signing_in and not totp_secret and await alumni.allowed(db, email):
+            # Also an alumnus: the alumni session too, so "Switch to alumni"
+            # needs no second sign-in. It never changes the member outcome. With
+            # two-factor it waits for the code (complete_2fa_login).
+            alumni_id, _ = await alumni.sign_in(db, email, str(google_id), name)
         await db.execute(
             "INSERT INTO login_log (user_id, email, name) VALUES (?, ?, ?)",
             (user_id, email, name),
@@ -266,7 +290,10 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
         return RedirectResponse(f"{FRONTEND_URL}/profile?tab=integrations")
 
     if totp_secret:
-        pending = create_token(user_id, email, name, picture, role, extra={"2fa": "pending"}, expiry_hours=0.25)
+        # The jti names this one pending sign-in: complete_2fa_login allows it
+        # TWO_FACTOR_MAX_FAILURES wrong codes and one success.
+        pending = create_token(user_id, email, name, picture, role, extra={"2fa": "pending", "jti": secrets.token_urlsafe(16)},
+                               expiry_hours=0.25)
         resp = RedirectResponse(url=f"{FRONTEND_URL}/login?need_2fa=1")
         resp.set_cookie(
             PENDING_2FA_COOKIE,
@@ -277,12 +304,12 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             max_age=900,
             path="/",
         )
-        return resp
-    token = create_token(user_id, email, name, picture, role)
-    resp = RedirectResponse(url=f"{FRONTEND_URL}/")
-    ck = session_cookie_kwargs()
-    resp.set_cookie(ck.pop("key"), token, **ck)
-    return resp
+    else:
+        token = create_token(user_id, email, name, picture, role)
+        resp = RedirectResponse(url=f"{FRONTEND_URL}/")
+        ck = session_cookie_kwargs()
+        resp.set_cookie(ck.pop("key"), token, **ck)
+    return alumni.with_session(resp, alumni_id) if alumni_id else resp
 
 
 def _dev_login_email() -> str:
@@ -291,10 +318,13 @@ def _dev_login_email() -> str:
     Google will only redirect to the registered production callback, so a
     frontend served from localhost can never complete a real sign-in and the
     whole app is unreviewable locally. This is the way in, and it is fenced
-    twice: the variable is unset everywhere except a developer's own machine,
-    and the route additionally refuses any request that did not arrive on a
-    loopback host. Production sets neither.
+    three times: production (``APP_ENV=production``) never offers it, the
+    variable is unset everywhere except a developer's own machine, and the
+    route additionally refuses any request that did not arrive on a loopback
+    host (a header the client controls, so it is the weakest of the three).
     """
+    if (os.getenv("APP_ENV") or "").strip().lower() == "production":
+        return ""
     return (os.getenv("DEV_LOGIN_EMAIL") or "").strip()
 
 
@@ -375,43 +405,74 @@ class TwoFactorLogin(BaseModel):
     code: str
 
 
+#: Wrong codes one pending sign-in may try before Google sign-in must start again.
+TWO_FACTOR_MAX_FAILURES = 5
+
+
+async def create_two_factor_attempts(db) -> None:
+    """Migration core:5. One row per pending sign-in (its jti) that tried a code."""
+    await db.execute(
+        """CREATE TABLE two_factor_attempts (
+               jti TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
+               used INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL)"""
+    )
+
+
 @router.post("/2fa/login")
 async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
+    import time
+
     import pyotp
     from fastapi.responses import JSONResponse
 
+    from app.routers import alumni
+
     pending = request.cookies.get(PENDING_2FA_COOKIE)
     decoded = decode_token(pending) if pending else None
-    if not decoded or decoded.get("2fa") != "pending" or not decoded.get("sub"):
+    if not decoded or decoded.get("2fa") != "pending" or not decoded.get("sub") or not decoded.get("jti"):
         raise HTTPException(401, "2FA session expired. Sign in again.")
-    user_id = int(decoded["sub"])
+    user_id, jti = int(decoded["sub"]), str(decoded["jti"])
     db = await get_db()
     try:
-        cur = await db.execute("SELECT totp_secret, email, name, picture, role FROM users WHERE id = ? AND is_active=1", (user_id,))
+        await db.execute("BEGIN IMMEDIATE")
+        now = int(time.time())
+        await db.execute("DELETE FROM two_factor_attempts WHERE expires_at < ?", (now,))
+        attempt = await (await db.execute("SELECT failures, used FROM two_factor_attempts WHERE jti = ?", (jti,))).fetchone()
+        if attempt and (attempt["used"] or attempt["failures"] >= TWO_FACTOR_MAX_FAILURES):
+            await db.commit()
+            raise HTTPException(401, "Too many attempts or already used. Sign in again.")
+        cur = await db.execute("SELECT totp_secret, email, name, picture, role, google_id FROM users WHERE id = ? AND is_active=1", (user_id,))
         row = row_to_dict(await cur.fetchone())
+        if not row or not row.get("totp_secret"):
+            await db.commit()
+            raise HTTPException(400, "2FA is not enabled")
+        ok = pyotp.TOTP(row["totp_secret"]).verify(payload.code.strip(), valid_window=1)
+        await db.execute(
+            """INSERT INTO two_factor_attempts (jti, failures, used, expires_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(jti) DO UPDATE SET failures = failures + excluded.failures, used = excluded.used""",
+            (jti, 0 if ok else 1, 1 if ok else 0, int(decoded.get("exp") or now + 900)),
+        )
+        alumni_id = None
+        # A member also on the alumni lists gets the alumni session only with
+        # the member session, after the code (_do_google_callback).
+        if ok and row.get("google_id") and await alumni.allowed(db, row["email"]):
+            alumni_id, _ = await alumni.sign_in(db, row["email"], str(row["google_id"]), row.get("name"))
+        await db.commit()
     finally:
         await db.close()
-    if not row or not row.get("totp_secret"):
-        raise HTTPException(400, "2FA is not enabled")
-    if not pyotp.TOTP(row["totp_secret"]).verify(payload.code.strip(), valid_window=1):
+    if not ok:
         raise HTTPException(400, "Invalid code")
     token = create_token(user_id, row["email"], row.get("name"), row.get("picture"), row.get("role") or "standard")
     resp = JSONResponse({"ok": True})
     ck = session_cookie_kwargs()
     resp.set_cookie(ck.pop("key"), token, **ck)
     resp.delete_cookie(PENDING_2FA_COOKIE, path="/")
-    return resp
+    return alumni.with_session(resp, alumni_id) if alumni_id else resp
 
 
 @router.post("/logout")
 async def logout():
-    from fastapi.responses import JSONResponse
-    from app.jwt_utils import COOKIE_NAME
-
-    resp = JSONResponse({"ok": True})
-    resp.delete_cookie(COOKIE_NAME, path="/")
-    resp.delete_cookie(PENDING_2FA_COOKIE, path="/")
-    return resp
+    return end_sessions(JSONResponse({"ok": True}))
 
 
 @router.get("/notification-preferences")
@@ -545,11 +606,7 @@ async def slack_connect(user: dict = Depends(get_current_user)):
 
     SLACK_CLIENT_ID, SLACK_CLIENT_SECRET = _get_slack_credentials()
     if not SLACK_CLIENT_ID or not SLACK_CLIENT_SECRET:
-        raise HTTPException(
-            400,
-            "Slack integration not configured. Add SLACK_CLIENT_ID and SLACK_CLIENT_SECRET to backend/.env. "
-            f"(Debug: client_id present={bool(SLACK_CLIENT_ID)}, client_secret present={bool(SLACK_CLIENT_SECRET)})"
-        )
+        raise HTTPException(400, "Slack integration is not configured on this server. Ask an admin.")
     # The state lives in the database and is bound to a browser secret, the
     # same way the Google flow works. It used to be a process dictionary, so a
     # container replacement or a second worker between connect and callback

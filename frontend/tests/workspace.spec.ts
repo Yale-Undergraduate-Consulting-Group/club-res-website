@@ -36,7 +36,6 @@ async function mockWorkspace(page: Page) {
     else if (/\/documents\/\d+\/versions$/.test(path)) body = [{ id: 1, state: 'ready', filename: 'report.pdf', byte_size: 1000, created_at: 1788960000 }];
     else if (/\/documents\/\d+\/shares$/.test(path)) body = [];
     else if (path === '/api/contacts') body = { items: [], total: 0, limit: 100, offset: 0 };
-    else if (path === '/api/ai/models') body = { groups: [] };
     else if (path === '/api/outreach/metrics/pipeline') body = { by_status: [] };
     else if (path === '/api/analytics/time-series') body = { labels: [], sent: [], opened: [], replied: [] };
     else if (path === '/api/analytics/insights') body = { insights: [] };
@@ -193,23 +192,21 @@ test('data arriving while the delete confirmation is open does not move focus', 
   await expect(confirm).toBeFocused();
 });
 
-test('studio workbench fills the desktop viewport instead of leaving a short generator column', async ({ page }, testInfo) => {
+test('studio workbench gives the editor the desktop viewport, with no AI assistance panel', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop');
   await page.goto('/studio');
-  await expect(page.getByRole('heading', { name: 'AI assistance' })).toBeVisible();
-  const generator = page.locator('#email-generator-section');
+  await expect(page.getByRole('heading', { name: 'AI assistance' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /generate email/i })).toHaveCount(0);
+  const contacts = page.locator('.email-studio-contacts');
   const editor = page.locator('#email-editor-section');
-  const brief = page.getByPlaceholder('For example: ask for a 20-minute call about a spring market research project');
   const body = page.locator('.email-studio-body');
-  const genBox = await generator.boundingBox();
+  const listBox = await contacts.boundingBox();
   const editBox = await editor.boundingBox();
-  const briefBox = await brief.boundingBox();
   const bodyBox = await body.boundingBox();
-  expect(genBox?.height || 0).toBeGreaterThan(520);
-  expect(Math.abs((genBox?.height || 0) - (editBox?.height || 0))).toBeLessThan(48);
-  expect(briefBox?.height || 0).toBeGreaterThan(70);
+  expect(editBox?.height || 0).toBeGreaterThan(520);
+  expect(Math.abs((listBox?.height || 0) - (editBox?.height || 0))).toBeLessThan(48);
   expect(bodyBox?.height || 0).toBeGreaterThanOrEqual(280);
-  expect(editBox!.width).toBeGreaterThan(genBox!.width * 1.5);
+  expect(editBox!.width).toBeGreaterThan(listBox!.width * 2.5);
   // The action bar is one row of one control height: the send target reads on
   // the button, so nothing wraps the row onto a second line.
   const actions = page.locator('.studio-draft-actions');
@@ -232,7 +229,7 @@ test('studio supports writing and preview without invoking generation or sending
   if (testInfo.project.name === 'desktop') {
     const before = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox();
     await page.getByRole('button', { name: 'Focus on writing' }).click();
-    await expect(page.locator('#email-generator-section')).toBeHidden();
+    await expect(page.locator('.email-studio-contacts')).toBeHidden();
     const after = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox();
     expect(after!.width).toBeGreaterThan(before!.width);
   }
@@ -339,14 +336,14 @@ test('every panel the app draws opens with the same motion', async ({ page }) =>
 test('collapsing a workspace panel eases shut instead of snapping', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'the collapsed rail exists at desktop width');
   await page.goto('/studio');
-  const panel = page.locator('#email-generator-section');
+  const panel = page.locator('.email-studio-contacts');
   const open = (await panel.boundingBox())!.width;
   expect(open).toBeGreaterThan(200);
 
   // Mid-flight the panel is between its two sizes and a transition is
   // running on it; it used to jump to the 56px rail in one frame.
   const midFlight = await panel.evaluate(async (element) => {
-    (element.querySelector('[aria-label="Collapse AI generator panel"]') as HTMLElement).click();
+    (element.querySelector('[aria-label="Collapse contacts panel"]') as HTMLElement).click();
     const settled = Promise.withResolvers<void>();
     setTimeout(settled.resolve, 70);
     await settled.promise;

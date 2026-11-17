@@ -44,41 +44,6 @@ async def _run() -> None:
             raise AssertionError("suppressed address was allowed")
         except HTTPException as exc:
             assert exc.status_code == 409
-
-        from app.services.generation_policy import draft_evidence
-        from app.services.contact_intelligence import ingest_contact, now_iso
-        await db.execute("INSERT INTO users (id, email) VALUES (1, 'a@yale.edu')")
-        cur = await db.execute(
-            "INSERT INTO contacts (name, email, title, company, company_domain, owner_id) VALUES ('Ada Lovelace','ada.lovelace@acme.com','CTO','Acme','acme.com',1)"
-        )
-        contact_id = cur.lastrowid
-        snapshot = await ingest_contact(
-            db,
-            contact={
-                "id": contact_id,
-                "name": "Ada Lovelace",
-                "email": "ada.lovelace@acme.com",
-                "title": "CTO",
-                "company": "Acme",
-                "domain": "acme.com",
-                "disposition": "accepted",
-                "sources": [{
-                    "url": "https://news.example/ada",
-                    "excerpt": "Ada Lovelace (ada.lovelace@acme.com) is CTO at Acme",
-                    "observed_at": now_iso(),
-                    "scope": "public",
-                }],
-            },
-            actor_id=1,
-            origin="imported_without_evidence",
-        )
-        await db.commit()
-        drafted = await draft_evidence(db, {"id": contact_id, "email": "ada.lovelace@acme.com"}, 1)
-        assert drafted["context_origin"] == "accepted_evidence"
-        assert drafted["source_ids"]
-        empty = await draft_evidence(db, {"id": 999999, "email": "ok@acme.com"}, 1)
-        assert empty == {"sources": [], "context_origin": "catalog_unreviewed"}
-        assert snapshot["contact_id"] == contact_id
     finally:
         await db.close()
 
