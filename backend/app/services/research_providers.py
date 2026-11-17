@@ -49,6 +49,25 @@ def public_url(value: str) -> bool:
         return False
 
 
+async def refuse_private_destination(request: httpx.Request) -> None:
+    """httpx request hook: refuse any hop (redirects included) whose URL is not
+    public or whose host resolves to a non-public address (loopback, VPC,
+    instance metadata). ponytail: it resolves before httpx connects, so a
+    rebinding DNS answer could still differ; fetch_public_page pins the address
+    where page text is returned to the member."""
+    url = str(request.url)
+    if not public_url(url):
+        raise httpx.ConnectError('non-public destination refused', request=request)
+    host = request.url.host
+    port = request.url.port or (443 if request.url.scheme == 'https' else 80)
+    try:
+        addresses = await asyncio.to_thread(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+    except OSError:
+        raise httpx.ConnectError('destination did not resolve', request=request) from None
+    if not addresses or not all(ipaddress.ip_address(row[4][0]).is_global for row in addresses):
+        raise httpx.ConnectError('non-public destination refused', request=request)
+
+
 async def reserve_request(actor_id: int, provider: str, key: str) -> tuple[int, object | None]:
     """Reserve before I/O; a crash consumes capacity rather than risking paid overflow."""
     club_cap = max(0, min(1000, int(os.getenv(f'RESEARCH_{provider.upper()}_DAILY_LIMIT', '200'))))

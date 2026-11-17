@@ -10,7 +10,10 @@ the import all go through them (docs/product/RESOURCES-PLAN.md):
 * past project, ``private``: only the team and admins see it at all;
 * revenue, client contacts and files marked ``admin_only`` (statements of
   work, which state the fee): admins only;
-* the resource's SharePoint or Google Drive link: whoever may open its files.
+* the resource's SharePoint or Google Drive link: whoever may open its files;
+* an alumnus (``role`` ``alumni``, app/routers/alumni.py): only past projects
+  whose disclosure is ``public`` and their files that are not admin-only;
+  never the team, the link, the code name or anything admin-only.
 
 The team is the member accounts a resource's names were matched to when it was
 imported (or re-matched by an admin); a later name change grants nothing.
@@ -254,6 +257,14 @@ def is_admin(viewer: dict) -> bool:
     return viewer.get("role") == "admin"
 
 
+def is_alumni(viewer: dict) -> bool:
+    return viewer.get("role") == "alumni"
+
+
+#: What an alumnus may see: a past project the client agreed to disclose.
+_ALUMNI_VISIBLE = "(r.kind = 'past_project' AND r.disclosure = 'public')"
+
+
 def _team_sql(viewer_id: int) -> tuple[str, list]:
     return (
         """(EXISTS (SELECT 1 FROM resource_team t WHERE t.resource_id = r.id AND t.user_id = ?)
@@ -267,6 +278,8 @@ def visible_sql(viewer: dict) -> tuple[str, list]:
     """WHERE condition (alias ``r``): resources the viewer may see at all."""
     if is_admin(viewer):
         return "1 = 1", []
+    if is_alumni(viewer):
+        return _ALUMNI_VISIBLE, []
     team, params = _team_sql(viewer["id"])
     return f"(r.kind != 'past_project' OR r.disclosure != 'private' OR {team})", params
 
@@ -275,6 +288,8 @@ def files_open_sql(viewer: dict) -> tuple[str, list]:
     """SQL expression (alias ``r``): the viewer may open the resource's files."""
     if is_admin(viewer):
         return "1", []
+    if is_alumni(viewer):
+        return _ALUMNI_VISIBLE, []
     team, params = _team_sql(viewer["id"])
     return f"(r.kind != 'past_project' OR r.disclosure = 'public' OR {team})", params
 
@@ -283,7 +298,7 @@ async def managed_ids(db, viewer: dict, resource_ids: list[int]) -> set[int]:
     """Of ``resource_ids`` (already visible to the viewer), those whose files
     the viewer may add to, replace, restore and delete: any resource for an
     admin; for a past project, a member of its team (the team that sees its files)."""
-    if not resource_ids:
+    if not resource_ids or is_alumni(viewer):
         return set()
     if is_admin(viewer):
         return set(resource_ids)
@@ -489,8 +504,17 @@ async def present(db, viewer: dict, rows: list[dict]) -> list[dict]:
             row = sensitive.get(r["id"])
             item["revenue"] = row["revenue"] if row else None
             item["contacts"] = json.loads(row["contacts"]) if row else []
+        elif is_alumni(viewer):
+            # Alumni: the team are members' names, the link opens more than the
+            # disclosed deliverable, the code name is internal. The keys do not exist.
+            for key in _MEMBER_ONLY_KEYS:
+                del item[key]
         items.append(item)
     return items
+
+
+#: Keys of a resource that only members (and admins) get.
+_MEMBER_ONLY_KEYS = ("team", "link", "code_name", "can_manage", "status", "files_hidden_count")
 
 
 async def file_for_download(db, viewer: dict, resource_id: int, document_id: int) -> tuple[dict, dict]:

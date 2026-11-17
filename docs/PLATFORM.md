@@ -84,11 +84,23 @@ once; deactivated members stay out and existing members just sign in. Closing it
 stops it at once, even for a sign-in already under way. Anyone who sees the code
 while it is open can join, so close it when the room is done.
 
+Alumni (`routers/alumni.py`, migration `core:4`; design and data rules in
+[night/security.md](night/security.md)): a separate sign-in at `/alumni/login`
+with Google, open to a verified address an admin allow-listed or in a domain an
+admin listed (Admin → Alumni; both lists start empty). Alumni are not members:
+they live in `alumni_accounts`, never in `users`, and their session is the
+`yucg_alumni` cookie (path `/api/alumni`) holding a token the member session
+check refuses. `/alumni` shows only past projects whose disclosure is `public`
+(`services/resources.py`, `is_alumni`), without team, link or code name.
+Every alumni request re-checks the lists, so a removal or revocation applies at
+once. `backend/tests/test_alumni.py` checks every route the server serves: an
+alumni token gets nothing a request without a session would not.
+
 ## Apps today
 
 | App | Server prefixes | Pages | Jobs |
 |---|---|---|---|
-| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`), `/api/attachments`, `/api/telemetry`, `/api/slack` | Home (the hub), Profile, Admin | — |
+| `core` | `/api/auth`, `/api/settings`, `/api/workspace`, `/api/activity`, `/api/admin` (+ `/invitations`, `/operations`, `/apps`, `/alumni`), `/api/attachments`, `/api/telemetry`, `/api/slack`, `/api/alumni` | Home (the hub), Profile, Admin; Alumni sign-in and area (outside the member shell) | — |
 | `outreach` | `/api/contacts`, `/api/emails`, `/api/campaigns`, `/api/analytics`, `/api/outreach`, `/api/track`, `/api/yucgoutreach`, `/api/yucg` (+ `/releases`) | Overview (`/campaigns`), Find contacts, Drafts, Pipeline, Directory, Analytics, campaign detail | discovery queue, catalog builder, register ingest and derivation, roster jobs, follow-ups, digests, reply sync, campaign drain |
 | `projects` | `/api/projects` | (inside Admin) | — |
 | `surveys` | `/api/surveys` | Survey builder | — |

@@ -226,7 +226,9 @@ async def crawl_stops_on_catch_all() -> None:
         return httpx.Response(200, text=home)
 
     real_client = httpx.AsyncClient
-    with patch.object(CS.httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(catch_all), **kw)):
+    # The crawler refuses hosts that resolve to non-public addresses; answer with a public one, offline.
+    public_dns = patch("socket.getaddrinfo", lambda host, port, *a, **k: [(2, 1, 6, "", ("93.184.216.34", port))])
+    with public_dns, patch.object(CS.httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(catch_all), **kw)):
         rows = await CS._scrape_contacts_from_domain_html("barclays.com", "Barclays")
     assert rows == [], rows
     # The homepage and one wave of five; the other five paths are not asked.
@@ -246,7 +248,7 @@ async def crawl_stops_on_catch_all() -> None:
             return httpx.Response(200, text="<html>home</html>")
         return httpx.Response(404, text="missing")
 
-    with patch.object(CS.httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(site), **kw)):
+    with public_dns, patch.object(CS.httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(site), **kw)):
         started = time.monotonic()
         rows = await CS._scrape_contacts_from_domain_html("acme-widgets.com", "Acme Widgets")
         elapsed = time.monotonic() - started

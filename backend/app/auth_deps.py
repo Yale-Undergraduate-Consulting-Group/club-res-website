@@ -55,7 +55,7 @@ async def _resolve_user(
             import hashlib
             key_hash = hashlib.sha256(api_key.encode()).hexdigest()
             cursor = await db.execute(
-                "SELECT u.id, u.email, u.name, u.role, u.is_active FROM users u JOIN api_keys k ON k.user_id = u.id WHERE k.key_hash = ?",
+                "SELECT u.id, u.email, u.name, u.role, u.is_active, k.scopes FROM users u JOIN api_keys k ON k.user_id = u.id WHERE k.key_hash = ?",
                 (key_hash,),
             )
             row = await cursor.fetchone()
@@ -63,6 +63,8 @@ async def _resolve_user(
                 row = row_to_dict(row)
                 if row.get("is_active") == 0 or row.get("role") == "system":
                     return None
+                if not key_allows(row.get("scopes"), request):
+                    raise HTTPException(status_code=403, detail="This API key's scope does not cover this request")
                 await db.execute(
                     "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?",
                     (key_hash,),
@@ -76,11 +78,29 @@ async def _resolve_user(
                     "role": row.get("role") or "standard",
                     "api_key": True,
                 }
+        except HTTPException:
+            raise
         except Exception:
             return None
         finally:
             await db.close()
     return None
+
+
+#: What each API-key scope opens: (HTTP methods, path prefix). A key opens
+#: nothing else - not admin routes, not writes - whatever its owner's role.
+API_KEY_SCOPES = {"contacts:read": ({"GET", "HEAD"}, "/api/contacts")}
+
+
+def key_allows(scopes: str | None, request: Request | None) -> bool:
+    if request is None:
+        return False
+    path, method = request.url.path, request.method.upper()
+    for scope in (scopes or "").replace(",", " ").split():
+        methods, prefix = API_KEY_SCOPES.get(scope, (set(), None))
+        if prefix and method in methods and (path == prefix or path.startswith(prefix + "/")):
+            return True
+    return False
 
 
 async def get_current_user(
@@ -103,6 +123,7 @@ async def get_current_user_optional(
 
 
 async def get_current_admin(user: dict = Depends(get_current_user)) -> dict:
-    if user.get("role") != "admin":
+    # An API key never acts as an administrator, whoever owns it.
+    if user.get("role") != "admin" or user.get("api_key"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user

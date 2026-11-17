@@ -66,6 +66,16 @@ export type ResourceQuery = { q?: string; kind?: string; semester?: string; indu
 export type ResourceLinkCreate = {
   kind: ResourceKind; title: string; semester?: string; industry?: string; disclosure: ResourceDisclosure; url: string;
 };
+/** An alumnus's view of a resource: public past projects only, without team, link or code name (backend/app/routers/alumni.py). */
+export type AlumniResource = Pick<ResourceItem, 'id' | 'kind' | 'title' | 'client' | 'semester' | 'industry' | 'industries' | 'areas' | 'description' | 'team_size' | 'disclosure' | 'files' | 'created_at'>;
+export type AlumniResourceList = { items: AlumniResource[]; total: number; facets: { semesters: ResourceFacet[]; industries: ResourceFacet[] } };
+/** Admin → Alumni: who may sign in on the alumni page, who did, and revocation. */
+export type AlumniOverview = {
+  domains: { domain: string; added_at: number }[];
+  allowlist: { email: string; note: string | null; added_at: number }[];
+  accounts: { id: number; email: string; name: string | null; created_at: number; last_sign_in_at: number | null; revoked_at: number | null; allowed: boolean }[];
+  sign_ins: { at: number; outcome: 'signed_in' | 'not_eligible' | 'revoked' | 'identity_mismatch'; email_domain: string; email: string | null }[];
+};
 /** The document register's per-file limit, which resource uploads share (backend UploadRequest). */
 export const RESOURCE_FILE_MAX_BYTES = 100 * 1024 * 1024;
 /** `scope` is club (shared by an administrator, or the club's seeded Intro) or mine (private); `editable` says whether this member may delete it. */
@@ -727,7 +737,8 @@ async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
         message = text.replace(/\s+/g, ' ').trim().slice(0, 320) || message;
       }
     }
-    if (res.status === 401 && path !== '/api/auth/me' && typeof window !== 'undefined') {
+    // The alumni area has its own session: its 401 says nothing about the member's.
+    if (res.status === 401 && path !== '/api/auth/me' && !path.startsWith('/api/alumni/') && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('yucg:unauthorized'));
     }
     throw new ApiError(message, res.status);
@@ -745,6 +756,17 @@ async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /** The alumni area (backend/app/routers/alumni.py): its own cookie, read-only. */
+  alumni: {
+    me: () => fetchApi<{ email: string; name: string | null }>('/api/alumni/me'),
+    logout: () => fetchApi<{ ok: boolean }>('/api/alumni/logout', { method: 'POST' }),
+    resources: (query: { q?: string; semester?: string; industry?: string }, signal?: AbortSignal) =>
+      fetchApi<AlumniResourceList>(`/api/alumni/resources?${new URLSearchParams(Object.entries(query).filter(([, v]) => v) as [string, string][])}`, { signal }),
+    download: async (id: number, fileId: number) => {
+      const file = await fetchApi<{ url: string; filename: string }>(`/api/alumni/resources/${id}/files/${fileId}/download`);
+      return { ...file, url: file.url.startsWith('/') ? `${API_BASE}${file.url}` : file.url };
+    },
+  },
   resources: {
     list: (query: ResourceQuery, signal?: AbortSignal) => fetchApi<ResourceList>(`/api/resources?${buildResourceQuery(query)}`, { signal }),
     /** The address to open a file (or, for its managers, an older version) at: the server may answer with a path on its own origin. */
@@ -1223,6 +1245,21 @@ export const api = {
       settings: () => fetchApi<AppSetting[]>('/api/admin/apps/settings'),
       update: (app: string, body: { restricted: boolean; member_ids: number[] }) =>
         fetchApi<{ ok: boolean }>(`/api/admin/apps/${encodeURIComponent(app)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    /** Alumni sign-in: allowed domains, allow-listed addresses, accounts and their sign-ins. */
+    alumni: {
+      overview: () => fetchApi<AlumniOverview>('/api/admin/alumni'),
+      addDomain: (domain: string) =>
+        fetchApi<{ domain: string }>('/api/admin/alumni/domains', { method: 'POST', body: JSON.stringify({ domain }) }),
+      removeDomain: (domain: string) =>
+        fetchApi<{ ok: boolean }>(`/api/admin/alumni/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' }),
+      addEmail: (email: string, note: string) =>
+        fetchApi<{ email: string }>('/api/admin/alumni/emails', { method: 'POST', body: JSON.stringify({ email, note: note || null }) }),
+      removeEmail: (email: string) =>
+        fetchApi<{ ok: boolean }>(`/api/admin/alumni/emails/${encodeURIComponent(email)}`, { method: 'DELETE' }),
+      revoke: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}/revoke`, { method: 'POST' }),
+      restore: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}/restore`, { method: 'POST' }),
+      remove: (id: number) => fetchApi<{ ok: boolean }>(`/api/admin/alumni/accounts/${id}`, { method: 'DELETE' }),
     },
     users: {
       list: () => fetchApi<Member[]>('/api/admin/users'),

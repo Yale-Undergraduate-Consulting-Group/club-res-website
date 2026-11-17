@@ -1234,7 +1234,11 @@ async def _scrape_contacts_from_domain_html(
     personal_emails_for_format: list[str] = []  # Non-role emails to detect format
 
     try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        # The domain is member-supplied: every hop, redirects included, must be a public host.
+        from app.services.research_providers import refuse_private_destination
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True,
+                                     event_hooks={"request": [refuse_private_destination]}) as client:
             # More pages = better coverage; team/people pages have higher-quality contacts
             urls_to_check = [
                 f"{base_url.rstrip('/')}/team",
