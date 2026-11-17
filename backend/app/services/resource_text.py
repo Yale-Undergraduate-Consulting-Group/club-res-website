@@ -1,8 +1,9 @@
 """Plain text out of club files, for search.
 
-The Office libraries read text runs and tables without loading embedded image
-bytes; pypdf reads a bounded number of pages. Extraction never raises: a file
-that cannot be read is simply not searchable by its text.
+Decks are read straight from their slide XML, never through python-pptx, which
+loads every embedded image (a 685 MB deck needed 700 MB of memory). pypdf reads
+a bounded number of pages. Extraction never raises: a file that cannot be read
+is simply not searchable by its text.
 """
 from __future__ import annotations
 
@@ -63,27 +64,55 @@ def sections(text: str, size: int = SECTION_CHARS) -> list[str]:
     return [piece for piece in out if piece]
 
 
-def _shape_text(shape):
-    if getattr(shape, "has_text_frame", False):
-        for paragraph in shape.text_frame.paragraphs:
-            yield paragraph.text
-    if getattr(shape, "has_table", False):
-        for row in shape.table.rows:
-            for cell in row.cells:
-                yield cell.text
-    # GroupShape exposes its children as ``shapes``; ordinary shapes do not.
-    for child in getattr(shape, "shapes", ()):
-        yield from _shape_text(child)
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+# One slide's XML is a few hundred KB at most; a larger part is not a real slide.
+MAX_SLIDE_XML = 20 * 1024 * 1024
+
+
+def _slide_parts(archive) -> list[str]:
+    """Slide part names in presentation order (presentation.xml's slide list)."""
+    from xml.etree import ElementTree
+
+    rels = ElementTree.fromstring(archive.read("ppt/_rels/presentation.xml.rels"))
+    targets = {rel.get("Id"): rel.get("Target", "") for rel in rels.iter(f"{_REL}Relationship")}
+    presentation = ElementTree.fromstring(archive.read("ppt/presentation.xml"))
+    parts = []
+    for slide in presentation.iter(f"{_P}sldId"):
+        target = targets.get(slide.get(f"{_R}id"), "")
+        if target:
+            parts.append(target.lstrip("/") if target.startswith("/") else f"ppt/{target}")
+    return parts
+
+
+def _slide_text(xml: bytes) -> str:
+    """Every paragraph of a slide (text boxes, tables, groups), in document order;
+    a line break inside a paragraph separates words as python-pptx's text did."""
+    from xml.etree import ElementTree
+
+    root = ElementTree.fromstring(xml)
+    return " ".join(
+        "".join((node.text or "") if node.tag == f"{_A}t" else " " for node in paragraph.iter() if node.tag in (f"{_A}t", f"{_A}br"))
+        for paragraph in root.iter(f"{_A}p")
+    )
 
 
 def _pptx_pages(path: Path) -> list[str]:
-    from pptx import Presentation
+    import zipfile
 
-    presentation = Presentation(str(path))
-    return _limited(
-        " ".join(text for shape in slide.shapes for text in _shape_text(shape))
-        for slide in presentation.slides
-    )
+    with zipfile.ZipFile(path) as archive:
+        def pages():
+            for name in _slide_parts(archive):
+                try:
+                    info = archive.getinfo(name)
+                except KeyError:
+                    yield ""
+                    continue
+                yield "" if info.file_size > MAX_SLIDE_XML else _slide_text(archive.read(info))
+
+        return _limited(pages())
 
 
 def _docx_sections(path: Path) -> list[str]:
