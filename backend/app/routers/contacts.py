@@ -605,6 +605,8 @@ async def search_person(req: SearchPersonRequest):
             }
 
         import httpx
+        from app.services.costs import record_paid_call
+        await record_paid_call("tavily", search_depth="basic")
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 r = await client.post(

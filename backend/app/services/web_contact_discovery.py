@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable, Iterable, Optional
 
 import httpx
 
+from app.services.costs import record_paid_call
 from app.services.company_email_cache import build_email_for_person_sync, company_brand_words, text_names_brand
 from app.services.contact_scraper import (
     extract_employee_emails_from_text,
@@ -167,6 +168,7 @@ async def _search_once(query: str, max_results: int, page: int = 0) -> list[dict
     if not key or page:
         return []
     try:
+        await record_paid_call("tavily", search_depth=TAVILY_SEARCH_DEPTH)
         async with httpx.AsyncClient(timeout=28.0) as client:
             r = await client.post(
                 "https://api.tavily.com/search",

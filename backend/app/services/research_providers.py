@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 
 from app.database import get_db
 from app.services.discovery_gate import discovery_job
+from app.services.costs import record_paid_call
 from app.services.llm import complete_json, rank_model_id
 
 
@@ -115,6 +116,7 @@ async def search_sources(actor_id: int, query: str) -> list[dict]:
     if cached is not None:
         return cached
     try:
+        await record_paid_call("tavily", actor_id, search_depth="basic")
         async with httpx.AsyncClient(timeout=28, trust_env=False) as client:
             response = await client.post('https://api.tavily.com/search', json={
                 'api_key': key, 'query': query[:1200], 'search_depth': 'basic', 'max_results': 8,

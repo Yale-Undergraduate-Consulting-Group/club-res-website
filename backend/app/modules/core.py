@@ -3,9 +3,9 @@ integrations every app shares. Paths here are called from outside the app
 (Google's OAuth callback, Slack's signed events) and must never move."""
 from app import app_access
 from app.migrations import Migration
-from app.modules import Module, Route, Setting
+from app.modules import Job, Module, Route, Setting
 from app.routers import activity, admin, attachments, auth, invitations, operations, settings, slack, telemetry, workspace
-from app.services import slack_commands
+from app.services import costs, slack_commands
 
 MODULE = Module(
     id="core",
@@ -25,10 +25,14 @@ MODULE = Module(
         Route(operations.router, "/api/admin/operations", "operations"),
         Route(app_access.router, "/api/admin/apps", "apps"),
     ),
+    jobs=(
+        Job("cost_explorer_daily", costs.refresh_cost_explorer, "cron", {"hour": 8, "minute": 5}),
+    ),
     migrations=(
         Migration(1, "app access", app_access.create_tables),
         Migration(2, "Slack feature requests", slack_commands.create_tables),
         Migration(3, "Join sessions (QR sign-up)", invitations.create_join_tables),
+        Migration(4, "Daily Cost Explorer cache", costs.create_tables),
     ),
     settings=(
         Setting("JWT_SECRET", "Signs members' sessions", required=True),

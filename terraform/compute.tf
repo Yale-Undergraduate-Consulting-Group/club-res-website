@@ -100,6 +100,14 @@ resource "aws_iam_role_policy" "box" {
         Resource = "*"
       },
       {
+        # Cost Explorer does not support resource-level permissions. The app
+        # makes one read per UTC day and caches it in this environment's DB.
+        Sid      = "ReadDailyCosts"
+        Effect   = "Allow"
+        Action   = "ce:GetCostAndUsage"
+        Resource = "*"
+      },
+      {
         Sid      = "PullAppImage"
         Effect   = "Allow"
         Action   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"]

@@ -55,6 +55,23 @@ const METRICS = {
   members: [{ user_id: 2, name: 'Ana', searches: 30, drafts: 4, sent: 3, replies: 1, bounces: 0, ready_to_send: true }],
   not_measured: ['Positive replies: replies are not classified yet.'],
 };
+const COSTS = {
+  generated_at: '2026-11-17T03:54:00+00:00',
+  aws: {
+    connected: true, month: '2026-11', fetched_at: '2026-11-17T03:54:00+00:00', total_usd: 16.473, request_usd: 0.01,
+    message: 'Cached daily.', by_service: [
+      { name: 'Amazon Elastic Compute Cloud - Compute', usd: 9.7074 },
+      { name: 'Amazon Virtual Private Cloud', usd: 2.3517 },
+      { name: 'EC2 - Other', usd: 2.3779 },
+    ],
+    by_environment: [{ name: 'club-res-website-prod', usd: 7.1114 }, { name: 'club-res-website-dev', usd: 6.4662 }, { name: 'untagged', usd: 2.8955 }],
+  },
+  providers: [
+    { id: 'llm', name: 'Claude (Anthropic API / Bedrock)', calls: 117, estimated_usd: 4.28, budget_or_limit: '$15.00/month', unit: 'calls', unit_cost_usd: null, note: 'Actual token usage.', trend: [{ month: '2026-09', calls: 0, usd: 0 }, { month: '2026-10', calls: 80, usd: 2.9 }, { month: '2026-11', calls: 117, usd: 4.28 }] },
+    { id: 'tinyfish', name: 'Monid / TinyFish', calls: 932, estimated_usd: 4.66, budget_or_limit: '400/club/hour', unit: 'calls', unit_cost_usd: .005, note: 'A long note about a provider whose stable list price can change independently.', trend: [{ month: '2026-09', calls: 0, usd: 0 }, { month: '2026-10', calls: 300, usd: 1.5 }, { month: '2026-11', calls: 932, usd: 4.66 }] },
+  ],
+  recommendations: [{ rank: 1, title: 'Run dev only when it is needed instead of keeping a fixed office-hours window', saving: '$6–9/month', risk: 'Developers cannot use the environment while it is stopped.' }],
+};
 
 /** Synthetic library entries with the longest strings a card has to hold: title, filename, description, team, contact. */
 const RESOURCES = [
@@ -91,6 +108,7 @@ async function mockApi(page: Page, authenticated: boolean) {
     if (path === '/api/auth/me') body = authenticated ? { authenticated: true, user: admin } : { authenticated: false };
     else if (path === '/api/analytics/dashboard') body = DASHBOARD;
     else if (path === '/api/analytics/club-metrics') body = METRICS;
+    else if (path === '/api/admin/costs') body = COSTS;
     else if (path === '/api/analytics/due-follow-ups') body = { count: 0 };
     else if (path === '/api/contacts') body = { items: CONTACTS, total: CONTACTS.length, limit: 100, offset: 0 };
     else if (path === '/api/contacts/pipeline-metrics' || path === '/api/outreach/metrics/pipeline') body = { by_status: [{ status: 'cold', count: 1 }, { status: 'contacted', count: 1 }, { status: 'replied', count: 1 }] };
@@ -285,6 +303,7 @@ const SURFACES: Surface[] = [
   { name: 'Campaign', url: '/campaigns/1', ready: 'Fall consumer outreach' },
   { name: 'Admin Members', url: '/admin', ready: 'Ana Long-Surname' },
   { name: 'Admin Metrics', url: '/admin?view=metrics', ready: /Members ready to send/ },
+  { name: 'Admin Costs', url: '/admin?view=costs', ready: /Pay-per-call APIs/ },
   { name: 'Profile', url: '/profile', ready: /Profile|Settings/ },
   { name: 'Login', url: '/login', authenticated: false, ready: /Sign in with Google/ },
 ];
