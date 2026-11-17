@@ -9,7 +9,8 @@ Resources, projects, members, clients, outreach or any other member page or API.
 Alumni sign in on YUCG Connect (`/login`), the same page and Google sign-in as
 members; the server sends each person to the member site or the portal. Someone
 who is both a member and on the alumni lists lands on the member site with a
-"Switch to alumni" link, and the portal shows a "Member site" link while their
+"Switch to alumni" link (a member with two-factor gets the alumni session only
+once the code is accepted), and the portal shows a "Member site" link while their
 member session is valid; signing out of either ends both. The sign-in itself (who
 may sign in, the alumni session, revocation) is described in
 [../night/security.md](../night/security.md).

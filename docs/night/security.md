@@ -20,10 +20,11 @@ identity:
   join QR code; two-factor when enabled) gets exactly the member outcome. If the
   address is also on the alumni lists below, the alumni sign-in runs too and sets
   the alumni cookie, so "Switch to alumni" (Home's account links and the menu)
-  needs no second sign-in. It is set at the callback, before a member's
-  two-factor step: alumni access never required two-factor, and the member
-  session still waits for the code. The alumni portal shows "Member site" when a
-  member session is valid. A Gmail connection never sets the alumni cookie.
+  needs no second sign-in. A member with two-factor gets it only when the code
+  is accepted, in the same answer as the member session (`complete_2fa_login`,
+  also recorded in `alumni_sign_ins`); a wrong or abandoned code leaves neither
+  session. The alumni portal shows "Member site" when a member session is valid.
+  A Gmail connection never sets the alumni cookie.
 - **Anyone else** gets the alumni portal if the rule below admits them.
 - **Otherwise** the member refusal (`domain_not_allowed`, `invitation_required`,
   and the other member codes), whatever the alumni lists hold: a refusal never

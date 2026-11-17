@@ -15,6 +15,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import pyotp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 _tmp = Path(tempfile.mkdtemp())
@@ -29,6 +30,14 @@ import main  # noqa: E402
 from app.database import get_db, init_db  # noqa: E402
 
 identity = {"email": "", "id": "", "verified_email": True, "name": "Person"}
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+TOTP = pyotp.TOTP(TOTP_SECRET)
+
+
+def wrong_code() -> str:
+    """A code no step of the accepted window (now ± 30 s) produces."""
+    near = {TOTP.at(time.time() + step) for step in (-30, 0, 30)}
+    return next(c for c in (f"{n:06d}" for n in range(1000000)) if c not in near)
 
 
 def google(request: httpx.Request) -> httpx.Response:
@@ -79,7 +88,7 @@ async def setup() -> None:
         await db.executemany(
             "INSERT INTO users (email, name, role, is_active, google_id, totp_secret) VALUES (?, ?, 'standard', ?, ?, ?)",
             [("member@yale.edu", "Member", 1, "g-member", None), ("both@yale.edu", "Both", 1, "g-both", None),
-             ("twofa@yale.edu", "Two Factor", 1, "g-twofa", "JBSWY3DPEHPK3PXP"),
+             ("twofa@yale.edu", "Two Factor", 1, "g-twofa", TOTP_SECRET),
              ("former@yale.edu", "Former", 0, "g-former", None)],
         )
         now = int(time.time())
@@ -124,10 +133,24 @@ def routing_matrix() -> None:
     assert {c.split("=", 1)[0] for c in out} >= {"yucg_session", "yucg_alumni"}, out
     assert not member_session(browser) and not alumni_session(browser)
 
-    # A member with two-factor still goes through it; no member session yet.
+    # A member with two-factor still goes through it, and is also on the alumni
+    # lists: neither session before the code.
     landed, cookies, browser = sign_in("twofa@yale.edu", "g-twofa")
-    assert landed == "/login?need_2fa=1" and "yucg_session" not in cookies and "yucg_2fa_pending" in cookies, (landed, cookies)
-    assert not member_session(browser)
+    assert landed == "/login?need_2fa=1" and cookies == {"yucg_2fa_pending"}, (landed, cookies)
+    assert not member_session(browser) and not alumni_session(browser)
+    # A wrong code gives neither; the right one gives both, in the same answer.
+    assert browser.post("/api/auth/2fa/login", json={"code": wrong_code()}).status_code == 400
+    assert not member_session(browser) and not alumni_session(browser)
+    done = browser.post("/api/auth/2fa/login", json={"code": TOTP.now()})
+    assert done.status_code == 200, done.text
+    assert {"yucg_session", "yucg_alumni"} <= {c.split("=", 1)[0] for c in done.headers.get_list("set-cookie")}
+    assert member_session(browser) and alumni_session(browser)
+    # Abandoned at the attempt limit: neither session, even with the right code.
+    _, _, browser = sign_in("twofa@yale.edu", "g-twofa")
+    for _ in range(5):
+        assert browser.post("/api/auth/2fa/login", json={"code": wrong_code()}).status_code == 400
+    assert browser.post("/api/auth/2fa/login", json={"code": TOTP.now()}).status_code == 401
+    assert not member_session(browser) and not alumni_session(browser)
 
     # Neither, and a revoked alumnus: the member refusal, nothing more.
     assert sign_in("nobody@yale.edu", "g-nobody")[:2] == ("/login?error=invitation_required", set())

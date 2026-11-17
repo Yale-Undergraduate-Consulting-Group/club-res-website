@@ -272,11 +272,12 @@ async def _do_google_callback(code: str, challenge: dict | None = None):
             await db.execute("INSERT INTO audit_log(user_id,action,resource_type,resource_id,details) VALUES (?,'invitation_accept','invitation',?,'Verified invited Google identity accepted membership')",(user_id,str(invitation['id'])))
         if challenge["purpose"] == "gmail":
             await db.execute("INSERT INTO audit_log(user_id,action,resource_type,resource_id,details) VALUES (?,'gmail_connect','user',?,'Connected own verified Google account')",(user_id,str(user_id)))
-        if signing_in and await alumni.allowed(db, email):
-            # Also an alumnus: the alumni session too, so "Switch to alumni"
-            # needs no second sign-in. It never changes the member outcome.
-            alumni_id, _ = await alumni.sign_in(db, email, str(google_id), name)
         totp_secret = (row or {}).get("totp_secret")
+        if signing_in and not totp_secret and await alumni.allowed(db, email):
+            # Also an alumnus: the alumni session too, so "Switch to alumni"
+            # needs no second sign-in. It never changes the member outcome. With
+            # two-factor it waits for the code (complete_2fa_login).
+            alumni_id, _ = await alumni.sign_in(db, email, str(google_id), name)
         await db.execute(
             "INSERT INTO login_log (user_id, email, name) VALUES (?, ?, ?)",
             (user_id, email, name),
@@ -424,6 +425,8 @@ async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
     import pyotp
     from fastapi.responses import JSONResponse
 
+    from app.routers import alumni
+
     pending = request.cookies.get(PENDING_2FA_COOKIE)
     decoded = decode_token(pending) if pending else None
     if not decoded or decoded.get("2fa") != "pending" or not decoded.get("sub") or not decoded.get("jti"):
@@ -438,7 +441,7 @@ async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
         if attempt and (attempt["used"] or attempt["failures"] >= TWO_FACTOR_MAX_FAILURES):
             await db.commit()
             raise HTTPException(401, "Too many attempts or already used. Sign in again.")
-        cur = await db.execute("SELECT totp_secret, email, name, picture, role FROM users WHERE id = ? AND is_active=1", (user_id,))
+        cur = await db.execute("SELECT totp_secret, email, name, picture, role, google_id FROM users WHERE id = ? AND is_active=1", (user_id,))
         row = row_to_dict(await cur.fetchone())
         if not row or not row.get("totp_secret"):
             await db.commit()
@@ -449,6 +452,11 @@ async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
                ON CONFLICT(jti) DO UPDATE SET failures = failures + excluded.failures, used = excluded.used""",
             (jti, 0 if ok else 1, 1 if ok else 0, int(decoded.get("exp") or now + 900)),
         )
+        alumni_id = None
+        # A member also on the alumni lists gets the alumni session only with
+        # the member session, after the code (_do_google_callback).
+        if ok and row.get("google_id") and await alumni.allowed(db, row["email"]):
+            alumni_id, _ = await alumni.sign_in(db, row["email"], str(row["google_id"]), row.get("name"))
         await db.commit()
     finally:
         await db.close()
@@ -459,7 +467,7 @@ async def complete_2fa_login(payload: TwoFactorLogin, request: Request):
     ck = session_cookie_kwargs()
     resp.set_cookie(ck.pop("key"), token, **ck)
     resp.delete_cookie(PENDING_2FA_COOKIE, path="/")
-    return resp
+    return alumni.with_session(resp, alumni_id) if alumni_id else resp
 
 
 @router.post("/logout")
