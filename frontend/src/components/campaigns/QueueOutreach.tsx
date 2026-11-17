@@ -34,7 +34,11 @@ export default function QueueOutreach({ source, onClose }: { source: OutreachSou
 
   useEffect(() => {
     api.outreach.templates.list()
-      .then(setTemplates)
+      .then((list) => {
+        setTemplates(list);
+        // Every member sends the club's template: with nothing else to choose, it is chosen.
+        if (list.length === 1) setTemplateId(list[0].id);
+      })
       .catch((e) => { setTemplates([]); setError(message(e, 'Could not load templates')); });
   }, []);
 
@@ -118,24 +122,26 @@ export default function QueueOutreach({ source, onClose }: { source: OutreachSou
           </div>
         ) : (
           <div className="ui-dialog__body space-y-4">
-            <label className="block text-sm font-medium text-[var(--ink)]">
-              Template
-              <select
-                ref={selectRef}
-                className="ui-input mt-1 block w-full"
-                value={templateId}
-                disabled={busy || templates === null}
-                onChange={(event) => { setError(''); setTemplateId(event.target.value ? Number(event.target.value) : ''); }}
-              >
-                <option value="">{templates === null ? 'Loading templates…' : 'Choose a template'}</option>
-                {club.length > 0 && <optgroup label="Club templates">
-                  {club.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </optgroup>}
-                {own.length > 0 && <optgroup label="My templates">
-                  {own.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </optgroup>}
-              </select>
-            </label>
+            {templates?.length !== 1 && (
+              <label className="block text-sm font-medium text-[var(--ink)]">
+                Template
+                <select
+                  ref={selectRef}
+                  className="ui-input mt-1 block w-full"
+                  value={templateId}
+                  disabled={busy || templates === null}
+                  onChange={(event) => { setError(''); setTemplateId(event.target.value ? Number(event.target.value) : ''); }}
+                >
+                  <option value="">{templates === null ? 'Loading templates…' : 'Choose a template'}</option>
+                  {club.length > 0 && <optgroup label="Club templates">
+                    {club.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </optgroup>}
+                  {own.length > 0 && <optgroup label="My templates">
+                    {own.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </optgroup>}
+                </select>
+              </label>
+            )}
             {templates?.length === 0 && !error && (
               <Notice tone="info">
                 There are no templates yet. <Link className="underline" to="/outreach?view=resources">Write one</Link> and come back.

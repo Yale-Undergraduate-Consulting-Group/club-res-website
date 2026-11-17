@@ -1,12 +1,17 @@
 """What the recipient receives, and what a repeated Generate costs."""
 
+import asyncio
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("JWT_SECRET", "email-body-test-secret-0123456789abcdef")
+os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()) / 'body.db'}"
 
 from app.services.email_body import (  # noqa: E402
-    SignOff, html_to_text, render_email, sanitize_html,
+    CONFIDENTIALITY_NOTICE, SignOff, html_to_text, render_email, sanitize_html,
 )
 from app.services.gmail_api import _build_message  # noqa: E402
 
@@ -68,6 +73,59 @@ def sign_off_is_assembled_from_stored_facts_not_written_by_a_model() -> None:
     assert "Client recruitment director" in text
 
 
+def the_sign_off_reads_like_the_clubs_with_logo_divider_and_notice() -> None:
+    """'--', then logo | divider | name (pronouns), role, organisation,
+    LinkedIn | phone, then the confidentiality notice in grey italic. The
+    plain-text part says the same without the logo."""
+    sign_off = SignOff(name="Sam Lee", pronouns="they/them", role="Associate",
+                       linkedin_url="https://linkedin.com/in/example", phone="+1 203 555 0100",
+                       logo_url="https://club.example.org/yucg-email-logo.png")
+    text, doc = render_email("Body.", sign_off=sign_off)
+
+    assert '<img src="https://club.example.org/yucg-email-logo.png"' in doc and 'width="72"' in doc
+    assert "border-left:1px solid" in doc, "the thin divider between the logo and the details"
+    assert doc.index("--") < doc.index("yucg-email-logo.png") < doc.index("Sam Lee") < doc.index("Associate")
+    assert '<em style="font-weight:400;">(they/them)</em>' in doc
+    assert 'href="https://linkedin.com/in/example"' in doc and "LinkedIn</a> | +1 203 555 0100" in doc
+    assert "font-style:italic" in doc and CONFIDENTIALITY_NOTICE in doc
+    assert doc.index("Sam Lee") < doc.index("makes protecting client information")
+
+    assert "yucg-email-logo" not in text and "<" not in text
+    assert text.endswith("--\nSam Lee (they/them)\nAssociate\nYale Undergraduate Consulting Group\n"
+                         "https://linkedin.com/in/example | +1 203 555 0100\n\n" + CONFIDENTIALITY_NOTICE), text
+    assert text.count("--") == 1
+
+
+def a_member_without_a_logo_signs_with_the_clubs_served_by_the_site() -> None:
+    from app.database import get_db, init_db
+    from app.services.settings_service import load_sign_off, set_setting
+
+    async def scenario() -> tuple[str, str, str]:
+        await init_db()
+        db = await get_db()
+        try:
+            await db.execute("INSERT INTO users (id, email, name, role, is_active) VALUES (7, 'm@yale.edu', 'Morgan Diaz', 'standard', 1)")
+            await db.commit()
+        finally:
+            await db.close()
+        os.environ["FRONTEND_URL"] = "https://club.example.org/"
+        default = (await load_sign_off(7)).logo_url
+        await set_setting("member:7:sign_off_logo_url", "https://cdn.example.org/mine.png")
+        own = (await load_sign_off(7)).logo_url
+        await set_setting("member:7:sign_off_logo_url", None)
+        # No public address (local development): no logo rather than a broken one.
+        os.environ["FRONTEND_URL"] = "http://localhost:5173"
+        local = (await load_sign_off(7)).logo_url
+        return default, own, local
+
+    default, own, local = asyncio.run(scenario())
+    assert default == "https://club.example.org/yucg-email-logo.png", default
+    assert own == "https://cdn.example.org/mine.png"
+    assert local == ""
+    _, doc = render_email("Body.", sign_off=SignOff(name="Morgan Diaz"))
+    assert "<img" not in doc and "border-left" not in doc, "no logo, no divider"
+
+
 def an_empty_sign_off_adds_no_dangling_separator() -> None:
     text, doc = render_email("<p>Body.</p>", sign_off=SignOff())
     assert "--" not in text
@@ -124,6 +182,8 @@ if __name__ == "__main__":
     typed_text_is_escaped_and_given_paragraphs()
     hostile_markup_is_stripped_from_outgoing_mail()
     sign_off_is_assembled_from_stored_facts_not_written_by_a_model()
+    the_sign_off_reads_like_the_clubs_with_logo_divider_and_notice()
+    a_member_without_a_logo_signs_with_the_clubs_served_by_the_site()
     an_empty_sign_off_adds_no_dangling_separator()
     attachments_are_named_in_the_email_not_just_in_the_envelope()
     composer_formatting_survives_but_style_cannot_fetch_or_position()

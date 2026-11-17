@@ -14,6 +14,8 @@ import { useUrlTab } from '../lib/useUrlTab';
 import { Button, Chip } from '../components/ui/Primitives';
 import { aiDraftingUnavailable } from '../lib/aiDrafting';
 import AiUnavailableNotice from '../components/campaigns/AiUnavailableNotice';
+import SignOffPreview from '../components/SignOffPreview';
+import { EMPTY_SIGN_OFF, signOffFrom } from '../lib/signOff';
 
 
 /** One screen of companies. The catalogue can hold tens of thousands, so the
@@ -187,10 +189,7 @@ export default function EmailStudio() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [email, setEmail] = useState<{ subject: string; body: string } | null>(null);
-  const [signOff, setSignOff] = useState({
-    name: '', pronouns: '', role: '', organization: 'Yale Undergraduate Consulting Group',
-    linkedin: '', phone: '', logoUrl: '',
-  });
+  const [signOff, setSignOff] = useState(EMPTY_SIGN_OFF);
   const [loading, setLoading] = useState(false);
   const [generationError, setGenerationError] = useState('');
   const [aiDown, setAiDown] = useState(false);
@@ -254,15 +253,7 @@ export default function EmailStudio() {
 
   useEffect(() => {
     api.settings.get().then((s) => {
-      setSignOff({
-        name: s.sign_off_name || user?.name || '',
-        pronouns: s.sign_off_pronouns || '',
-        role: s.sign_off_role || '',
-        organization: s.sign_off_organization || 'Yale Undergraduate Consulting Group',
-        linkedin: s.sign_off_linkedin || '',
-        phone: s.sign_off_phone || '',
-        logoUrl: s.sign_off_logo_url || '',
-      });
+      setSignOff(signOffFrom(s, user?.name || ''));
     }).catch(() => {});
   }, [user?.name]);
 
@@ -1610,15 +1601,9 @@ export default function EmailStudio() {
                       )}
                     </div>
                   {(signOff.name || signOff.role) && (
-                    <div className="w-full border-t border-slate-200 dark:border-slate-600 pt-3 flex items-start gap-3 text-xs text-slate-600 dark:text-slate-300">
-                      {signOff.logoUrl && <img src={signOff.logoUrl} alt="YUCG" className="w-14 h-auto object-contain" />}
-                      <div>
-                        <div className="font-bold text-deep-navy dark:text-slate-100">{signOff.name} {signOff.pronouns && <em className="font-normal">({signOff.pronouns})</em>}</div>
-                        {signOff.role && <div>{signOff.role}</div>}
-                        <div>{signOff.organization}</div>
-                        {(signOff.linkedin || signOff.phone) && <div>{signOff.linkedin ? 'LinkedIn' : ''}{signOff.linkedin && signOff.phone ? ' | ' : ''}{signOff.phone}</div>}
-                      </div>
-                    </div>
+                    // The notice is long for this column; the email preview shows it.
+                    <SignOffPreview signOff={{ ...signOff, notice: '' }} logoClassName="w-14"
+                                    className="w-full border-t border-slate-200 dark:border-slate-600 pt-3 text-xs text-slate-600 dark:text-slate-300" />
                   )}
                   {/* One row, one height. The delivery target used to sit in a
                       sentence beside the buttons, which wrapped the row onto a
@@ -1735,15 +1720,7 @@ export default function EmailStudio() {
                       </div>
                     )}
                     {(signOff.name || signOff.role) && (
-                      <div className="mt-5 border-t border-slate-200 pt-3 flex items-start gap-3 text-xs text-slate-700">
-                        {signOff.logoUrl && <img src={signOff.logoUrl} alt="YUCG" className="w-[72px] h-auto object-contain" />}
-                        <div>
-                          <div className="font-bold text-deep-navy">{signOff.name} {signOff.pronouns && <em className="font-normal">({signOff.pronouns})</em>}</div>
-                          {signOff.role && <div>{signOff.role}</div>}
-                          <div>{signOff.organization}</div>
-                          {(signOff.linkedin || signOff.phone) && <div className="mt-0.5 text-deep-navy">{signOff.linkedin ? 'LinkedIn' : ''}{signOff.linkedin && signOff.phone ? ' | ' : ''}{signOff.phone}</div>}
-                        </div>
-                      </div>
+                      <SignOffPreview signOff={signOff} className="mt-5 border-t border-slate-200 pt-3 text-xs text-slate-700" />
                     )}
                   </div>
                 </div>

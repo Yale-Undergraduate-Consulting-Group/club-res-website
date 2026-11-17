@@ -58,7 +58,7 @@ const STOPS: Stop[] = [
     route: '/scraper?view=company',
     target: '[data-testid="message-panel"]',
     title: '4 · Write and send',
-    body: 'The club\'s Intro template is already chosen, with a preview of the first email. Switch template, or choose "Write with AI instead" for an email of their own for each person. "Send to N" asks once, then sends from your own Gmail.',
+    body: 'Every email is the club\'s Intro, with a preview of the first one. Add one line for each company: suggest it, edit it, confirm it (or confirm it empty). "Send to N" asks once, warns if you are writing to many people at one company, then sends from your own Gmail.',
   },
   {
     route: '/studio',

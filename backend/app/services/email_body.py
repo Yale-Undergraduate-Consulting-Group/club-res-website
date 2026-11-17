@@ -18,6 +18,7 @@ emails always put it, without the model being asked to write any of it.
 from __future__ import annotations
 
 import html
+import os
 import re
 from dataclasses import dataclass
 
@@ -129,14 +130,39 @@ def text_to_html(body: str) -> str:
 
 # --- sign-off ----------------------------------------------------------
 
+#: Under every YUCG email, in grey italic, exactly as the club signs.
+CONFIDENTIALITY_NOTICE = (
+    "The Yale Undergraduate Consulting Group (YUCG) makes protecting client information the highest priority. "
+    "This email may contain confidential information. If you are not the person to whom this message is addressed, "
+    "be aware that any use, reproduction, or distribution of this message is strictly prohibited. If you received "
+    "this in error, please contact the sender and immediately delete this email and any attachments."
+)
+
+#: The club logo the site serves itself (frontend/public): 144px wide for a 72px slot.
+CLUB_LOGO_PATH = "/yucg-email-logo.png"
+
+
+def club_logo_url() -> str:
+    """The club logo's public address, from the site's own (FRONTEND_URL).
+
+    Empty without one: a mail client cannot load a logo from localhost, so a
+    site with no public address signs without one rather than with a broken
+    image."""
+    base = (os.getenv("FRONTEND_URL") or "").strip().rstrip("/")
+    if not base.lower().startswith(("http://", "https://")) or "//localhost" in base or "//127.0.0.1" in base:
+        return ""
+    return base + CLUB_LOGO_PATH
+
+
 @dataclass(frozen=True)
 class SignOff:
     """The block at the foot of every YUCG email.
 
-    Modelled on what the club actually sends: logo beside the member's name
-    and pronouns, their role, the organization, then contact links. It is
-    assembled from stored fields rather than written by the model, because a
-    sign-off is a fact about the sender and must never be a generated guess.
+    Modelled on what the club actually sends: "--", then the logo, a thin
+    divider and the member's name and pronouns, role, the organization and
+    contact links, then the confidentiality notice. It is assembled from
+    stored fields rather than written by the model, because a sign-off is a
+    fact about the sender and must never be a generated guess.
     """
 
     name: str = ""
@@ -152,8 +178,13 @@ class SignOff:
         return not any((self.name.strip(), self.role.strip(), self.linkedin_url.strip(), self.phone.strip()))
 
 
+def _linkedin(sign_off: SignOff) -> str:
+    url = sign_off.linkedin_url.strip()
+    return url if url.lower().startswith(("http://", "https://")) else ""
+
+
 def sign_off_html(sign_off: SignOff) -> str:
-    """Table-based so it survives Gmail, Outlook and Apple Mail alike."""
+    """Tables and inline styles, so it survives Gmail, Outlook and Apple Mail alike."""
     if sign_off.is_empty:
         return ""
     e = lambda v: html.escape((v or "").strip())  # noqa: E731 - local shorthand
@@ -169,35 +200,43 @@ def sign_off_html(sign_off: SignOff) -> str:
         lines.append(f'<div>{e(sign_off.organization)}</div>')
 
     links = []
-    if sign_off.linkedin_url.strip():
-        url = sign_off.linkedin_url.strip()
-        if url.lower().startswith(("http://", "https://")):
-            links.append(f'<a href="{html.escape(url, quote=True)}" style="color:#00356b;">LinkedIn</a>')
+    if _linkedin(sign_off):
+        links.append(f'<a href="{html.escape(_linkedin(sign_off), quote=True)}" style="color:#00356b;">LinkedIn</a>')
     if sign_off.phone.strip():
         links.append(e(sign_off.phone))
     if links:
         lines.append(f'<div style="margin-top:2px;">{" | ".join(links)}</div>')
 
-    logo_cell = ""
-    if sign_off.logo_url.strip() and sign_off.logo_url.strip().lower().startswith(("http://", "https://", "cid:")):
-        logo_cell = (
-            f'<td style="vertical-align:top;padding-right:14px;">'
-            f'<img src="{html.escape(sign_off.logo_url.strip(), quote=True)}" alt="YUCG" '
-            f'width="72" style="display:block;width:72px;height:auto;border:0;"></td>'
+    # Logo, then the divider as the details cell's left border: a 1px spacer
+    # column is what Outlook collapses, a td border it draws.
+    logo = sign_off.logo_url.strip()
+    cells = ""
+    # Clients without a doctype do not let a table inherit its font, so the cell names its own.
+    details_style = "vertical-align:middle;font-family:Lato,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;color:#333;"
+    if logo.lower().startswith(("http://", "https://", "cid:")):
+        cells = (
+            '<td style="vertical-align:middle;padding:0 12px 0 0;">'
+            f'<img src="{html.escape(logo, quote=True)}" alt="YUCG" width="72" '
+            'style="display:block;width:72px;height:auto;border:0;"></td>'
         )
+        details_style += "border-left:1px solid #b9c6d3;padding:0 0 0 12px;"
+    cells += f'<td style="{details_style}">{"".join(lines)}</td>'
 
     return (
-        '<table cellpadding="0" cellspacing="0" border="0" '
-        'style="margin-top:20px;border-top:1px solid #c8dced;padding-top:12px;'
-        'font-family:Lato,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;color:#333;">'
-        f'<tr>{logo_cell}<td style="vertical-align:top;">{"".join(lines)}</td></tr></table>'
+        '<div style="margin-top:20px;font-family:Lato,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;color:#333;">'
+        '<div style="margin:0 0 8px 0;">--</div>'
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">'
+        f'<tr>{cells}</tr></table>'
+        '<p style="margin:12px 0 0 0;font-size:11px;line-height:1.4;color:#8a8f98;font-style:italic;">'
+        f'{html.escape(CONFIDENTIALITY_NOTICE)}</p></div>'
     )
 
 
 def sign_off_text(sign_off: SignOff) -> str:
+    """The same block for the plain-text part: no logo, links written out."""
     if sign_off.is_empty:
         return ""
-    parts = []
+    parts = ["--"]
     name = sign_off.name.strip()
     if sign_off.pronouns.strip():
         name = f"{name} ({sign_off.pronouns.strip()})"
@@ -206,10 +245,10 @@ def sign_off_text(sign_off: SignOff) -> str:
     for value in (sign_off.role, sign_off.organization):
         if value.strip():
             parts.append(value.strip())
-    links = [v.strip() for v in (sign_off.linkedin_url, sign_off.phone) if v.strip()]
+    links = [v for v in (_linkedin(sign_off), sign_off.phone.strip()) if v]
     if links:
         parts.append(" | ".join(links))
-    return "\n".join(parts)
+    return "\n".join(parts) + "\n\n" + CONFIDENTIALITY_NOTICE
 
 
 # --- attachments -------------------------------------------------------
@@ -262,7 +301,7 @@ def render_email(
     sig_html = sign_off_html(sign_off) if sign_off else ""
     sig_text = sign_off_text(sign_off) if sign_off else ""
 
-    text = "\n\n".join(p for p in (body_text, attach_text, sig_text and "--\n" + sig_text) if p)
+    text = "\n\n".join(p for p in (body_text, attach_text, sig_text) if p)
     html_doc = (
         '<html><body style="margin:0;padding:0;font-family:Lato,Helvetica,Arial,sans-serif;'
         'font-size:14px;line-height:1.5;color:#1a1a1a;">'

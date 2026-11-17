@@ -75,10 +75,10 @@ def tests() -> None:
     asyncio.run(seed())
     admin, ana, ben = client(ADMIN, "admin"), client(ANA, "standard"), client(BEN, "standard")
 
-    # Starter templates exist for everyone to use, and are the club's.
+    # The club's one template exists for everyone to use, and is the club's.
     starters = ana.get("/api/outreach/templates").json()
-    assert len(starters) == 4 and {t["scope"] for t in starters} == {"club"}, starters
-    assert not any(t["editable"] for t in starters), "a member cannot remove the club's starters"
+    assert [(t["name"], t["scope"]) for t in starters] == [("Intro", "club")], starters
+    assert not any(t["editable"] for t in starters), "a member cannot remove the club's template"
 
     # Private versus club.
     private = make_template(ana, "Ana pitch", "Hello {first}", "About {company}.")

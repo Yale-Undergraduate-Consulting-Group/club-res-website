@@ -35,7 +35,7 @@ MODULE = Module(
         Setting("GOOGLE_CLIENT_ID", "Google sign-in and Connect Gmail", required=True),
         Setting("GOOGLE_CLIENT_SECRET", "Google sign-in and Connect Gmail", required=True),
         Setting("BACKEND_URL", "The site's own address, for sign-in callbacks", required=True),
-        Setting("FRONTEND_URL", "The site's own address, for links back to pages", required=True),
+        Setting("FRONTEND_URL", "The site's own address, for links back to pages and the club logo in email sign-offs", required=True),
         Setting("SLACK_CLIENT_ID", "Connect Slack"),
         Setting("SLACK_CLIENT_SECRET", "Connect Slack"),
         Setting("SLACK_SIGNING_SECRET", "The Slack assistant and /yucg command"),

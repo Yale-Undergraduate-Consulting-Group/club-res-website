@@ -68,7 +68,7 @@ export type ResourceLinkCreate = {
 };
 /** The document register's per-file limit, which resource uploads share (backend UploadRequest). */
 export const RESOURCE_FILE_MAX_BYTES = 100 * 1024 * 1024;
-/** `scope` is club (shared by an administrator, or a starter) or mine (private); `editable` says whether this member may delete it. */
+/** `scope` is club (shared by an administrator, or the club's seeded Intro) or mine (private); `editable` says whether this member may delete it. */
 export type Template = {
   id: number; name: string; subject: string; body: string; industry?: string | null; use_case?: string | null;
   scope: 'club' | 'mine'; mine: boolean; editable: boolean; owner_name?: string | null;
@@ -82,13 +82,23 @@ export type BuildRequest = {
   name?: string; companies?: string[]; contact_ids?: number[]; subject?: string; body?: string;
   messages?: Record<string, { subject: string; body: string }>; preview_only?: boolean;
   template_id?: number; angle?: string; target_list_id?: number;
+  /** The line confirmed for each company, by company name: fills {personalisation}. */
+  personalisation?: Record<string, string>;
 };
 export type BuildHold = { contact_id?: number; email?: string; name?: string; reason: string };
+/** A warning, never a block, about who one send writes to at one company
+ *  (backend/app/services/send_warnings.py); `contact_ids` most senior first. */
+export type SendWarning = {
+  kind: 'company' | 'team'; company: string; team?: string; count: number; threshold: number;
+  keep?: number; contact_ids: number[];
+};
 export type BuildResult = {
   campaign_id: number; created: number; name: string; template?: string | null; recipients?: number; ready?: number;
   /** Chosen people left out before rendering: no email on file, or another member's private contact. */
   skipped?: number;
   sample?: { subject: string; body: string; email?: string } | null; held: BuildHold[];
+  /** Preview only. */
+  warnings?: SendWarning[];
 };
 export type Sequence = { id: number; name: string; steps?: { days_after: number; subject: string; body: string }[] };
 export type ContactNote = { id: number; note: string; created_at: string; user_id?: number };
@@ -133,6 +143,10 @@ export type Settings = {
   sign_off_linkedin?: string;
   sign_off_phone?: string;
   sign_off_logo_url?: string;
+  /** Read only: the club logo a blank logo signs with ('' when the site has no public address). */
+  sign_off_logo_default?: string;
+  /** Read only: the confidentiality notice under every sign-off. */
+  sign_off_notice?: string;
   daily_send_limit?: number;
   daily_send_warn_at?: number | string;
 };
@@ -1079,6 +1093,11 @@ export const api = {
     /** Render one written message per recipient; preview_only stops before creating. */
     build: (data: BuildRequest) =>
       fetchApi<BuildResult>('/api/campaigns/build', { method: 'POST', body: JSON.stringify(data) }),
+    /** One suggested line for one company's Intro; `previous` asks for a different one. */
+    personalisation: (company: string, previous = '') =>
+      fetchApi<{ company: string; line: string; sources: string[] }>('/api/campaigns/personalisation', {
+        method: 'POST', body: JSON.stringify({ company, previous }),
+      }),
     list: () => fetchApi<Campaign[]>('/api/campaigns'),
     get: (id: number) => fetchApi<Campaign>(`/api/campaigns/${id}`),
     delete: (id: number) => fetchApi<{ ok: boolean }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
