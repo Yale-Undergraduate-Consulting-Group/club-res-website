@@ -98,7 +98,7 @@ def only_whole_subcommands_are_taken() -> None:
 
 
 async def a_stranger_can_learn_to_link_but_nothing_more(client) -> None:
-    assert "/profile?view=integrations" in await command(client, STRANGER_SLACK, "link")
+    assert "/profile?tab=integrations" in await command(client, STRANGER_SLACK, "link")
     assert "/yucg link" in await command(client, STRANGER_SLACK, "help")
     tour = await command(client, STRANGER_SLACK, "onboard")
     assert ":white_large_square:" in tour and ":white_check_mark:" not in tour
@@ -191,8 +191,8 @@ async def the_same_words_work_in_a_direct_message() -> None:
         })
     tour, link = post.await_args_list
     assert tour.args[0] == "D1" and "Welcome to YUCG Resources" in tour.args[1]
-    assert ":white_check_mark: <https://outreach.example.org/profile?view=integrations|Link Slack>" in tour.args[1]
-    assert link.args[0] == "D2" and "/profile?view=integrations" in link.args[1]
+    assert ":white_check_mark: <https://outreach.example.org/profile?tab=integrations|Link Slack>" in tour.args[1]
+    assert link.args[0] == "D2" and "/profile?tab=integrations" in link.args[1]
 
 
 async def a_model_question_says_working_then_pings_the_asker() -> None:
