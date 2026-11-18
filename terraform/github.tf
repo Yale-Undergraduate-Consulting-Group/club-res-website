@@ -209,10 +209,9 @@ resource "aws_iam_role_policy" "deploy" {
   })
 }
 
-# Dev only: dev is meant to be stopped between releases, so the Dev deploy job
-# may start the box, deploy and stop it again. The deploy job does not do this
-# yet; until it does, dev must be running for a deploy. The prod deploy role
-# gets none of this.
+# Dev only: dev is stopped between releases, so the Dev deploy job starts the
+# box, deploys and stops it again (.github/workflows/dev.yml, ops/dev_box.py).
+# The prod deploy role gets none of this.
 resource "aws_iam_role_policy" "deploy_dev_box" {
   count = var.environment == "dev" ? 1 : 0
   name  = "start-stop-dev-box"
