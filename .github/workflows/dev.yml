@@ -146,8 +146,15 @@ jobs:
     if: ${{ always() && !cancelled() && needs.required-checks.result == 'success' && needs.scope.outputs.phase == 'ship' &&
       needs.scope.outputs.deploy == 'true' && needs.image.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The box boot and the final stop add a few minutes to the deploy itself.
+    timeout-minutes: 40
     environment: dev
+    # Every deploy starts the dev box and stops it at the end, so one deploy at a
+    # time holds it: a queued run waits here rather than having the box stopped
+    # under it. Never cancel a running deploy half-way.
+    concurrency:
+      group: club-res-website-dev-box
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -172,3 +179,8 @@ jobs:
     - uses: ./.github/actions/ship
       with:
         role: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+    # Runs after success, failure or cancellation once credentials exist, so dev
+    # never stays on after a release. Stopping an already stopped box is a no-op.
+    - name: Stop the dev box
+      if: ${{ always() && env.AWS_ACCESS_KEY_ID != '' }}
+      run: python3 ops/dev_box.py stop

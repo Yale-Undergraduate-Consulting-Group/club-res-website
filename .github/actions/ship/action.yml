@@ -1,5 +1,5 @@
 name: Ship the verified revision
-description: Push the verified image, restart the box through SSM, then (prod) publish the SPA behind CloudFront and check the live site.
+description: Push the verified image, restart the box through SSM (starting the stopped dev box first), then (prod) publish the SPA behind CloudFront and check the live site.
 inputs:
   role:
     description: Deploy role supplied by the stage workflow.
@@ -63,6 +63,11 @@ runs:
         aws-region: ${{ env.AWS_REGION }}
         allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
         retry-max-attempts: 3
+    # Dev is stopped between releases; the Dev workflow stops it again after this action.
+    - name: Start the dev box and wait for SSM
+      if: env.DEPLOYMENT_ENV == 'dev'
+      shell: bash
+      run: python3 ops/dev_box.py start
     - name: Verify the target box before deployment
       shell: bash
       run: python3 ops/check_deployment.py
